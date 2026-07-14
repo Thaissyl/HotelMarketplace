@@ -1,4 +1,5 @@
 using FluentValidation;
+using HotelMarketplace.Application.Common.Validation;
 using HotelMarketplace.Application.Maintenance.Requests;
 using HotelMarketplace.Domain.Enums;
 
@@ -19,7 +20,7 @@ internal sealed class ReportRoomIssueRequestValidator : AbstractValidator<Report
     public ReportRoomIssueRequestValidator()
     {
         RuleFor(request => request.PhysicalRoomId).NotEmpty();
-        RuleFor(request => request.Description).NotEmpty().MaximumLength(1000);
+        RuleFor(request => request.Description).SafeRequiredText(1000, "Description");
         RuleFor(request => request.Severity).IsInEnum();
         RuleFor(request => request.TargetRoomStatus)
             .Must(status => status is RoomOperationalStatus.Maintenance or RoomOperationalStatus.OutOfService)

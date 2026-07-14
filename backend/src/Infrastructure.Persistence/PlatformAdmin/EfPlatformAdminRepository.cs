@@ -638,6 +638,7 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                 booking.CheckOutDate <= request.ToDate &&
                 payment.Status == PaymentStatus.Paid &&
                 payment.ReconciliationStatus != ReconciliationStatus.Exception &&
+                payment.Amount - commission.CommissionAmount >= 0m &&
                 !_dbContext.SettlementItems.IgnoreQueryFilters().Any(item =>
                     item.BookingId == booking.Id &&
                     item.Status != SettlementStatus.Exception)
@@ -646,7 +647,6 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                 commission.Id,
                 payment.Id,
                 payment.Amount - commission.CommissionAmount))
-            .Where(item => item.Amount >= 0m)
             .ToListAsync(cancellationToken);
     }
 
@@ -663,6 +663,7 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                 SuccessfulBookingStatuses.Contains(booking.Status) &&
                 booking.CheckOutDate >= request.FromDate &&
                 booking.CheckOutDate <= request.ToDate &&
+                commission.CommissionAmount > 0m &&
                 !_dbContext.SettlementItems.IgnoreQueryFilters().Any(item =>
                     item.BookingId == booking.Id &&
                     item.Status != SettlementStatus.Exception)
@@ -671,7 +672,6 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                 commission.Id,
                 null,
                 commission.CommissionAmount))
-            .Where(item => item.Amount > 0m)
             .ToListAsync(cancellationToken);
     }
 
@@ -684,11 +684,12 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
             return Array.Empty<AdminSettlementDto>();
         }
 
-        Guid[] settlementIds = settlements.Select(settlement => settlement.Id).ToArray();
+        List<Guid> settlementIds = settlements.Select(settlement => settlement.Id).ToList();
+        List<Guid> hotelIds = settlements.Select(settlement => settlement.HotelId).Distinct().ToList();
         Dictionary<Guid, string> hotelNames = await _dbContext.HotelProperties
             .IgnoreQueryFilters()
             .AsNoTracking()
-            .Where(hotel => settlements.Select(settlement => settlement.HotelId).Contains(hotel.Id))
+            .Where(hotel => hotelIds.Contains(hotel.Id))
             .ToDictionaryAsync(hotel => hotel.Id, hotel => hotel.Name, cancellationToken);
 
         List<SettlementItem> items = await _dbContext.SettlementItems

@@ -7,6 +7,8 @@ public interface IAuthUserRepository
 {
     Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken);
 
+    Task<bool> PhoneNumberExistsAsync(string phoneNumber, CancellationToken cancellationToken);
+
     Task<UserRole?> GetRoleAsync(UserRoleCode roleCode, CancellationToken cancellationToken);
 
     Task AddUserWithRoleAsync(UserAccount userAccount, Guid roleId, CancellationToken cancellationToken);

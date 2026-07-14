@@ -1,3 +1,6 @@
+using FluentValidation;
+using FluentValidation.Results;
+using HotelMarketplace.Application.Common.Validation;
 using HotelMarketplace.Application.Payments.Dtos;
 using HotelMarketplace.Application.Payments.Models;
 using HotelMarketplace.Application.Security;
@@ -10,15 +13,18 @@ internal sealed class PaymentService : IPaymentService
     private readonly IPaymentRepository _paymentRepository;
     private readonly IPayOsGateway _payOsGateway;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IValidator<PaymentWebhookRequest> _webhookValidator;
 
     public PaymentService(
         IPaymentRepository paymentRepository,
         IPayOsGateway payOsGateway,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        IValidator<PaymentWebhookRequest> webhookValidator)
     {
         _paymentRepository = paymentRepository;
         _payOsGateway = payOsGateway;
         _currentUserService = currentUserService;
+        _webhookValidator = webhookValidator;
     }
 
     public async Task<Result<PaymentLinkDto>> CreatePaymentLinkAsync(
@@ -70,6 +76,13 @@ internal sealed class PaymentService : IPaymentService
         PaymentWebhookRequest request,
         CancellationToken cancellationToken)
     {
+        ValidationResult validationResult = await _webhookValidator.ValidateAsync(request, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return Result.Failure<PaymentWebhookResultDto>(
+                ValidationErrorFormatter.ToResultError("Payment.InvalidWebhookRequest", validationResult));
+        }
+
         if (!_payOsGateway.VerifyWebhook(request))
         {
             return Result.Failure<PaymentWebhookResultDto>(PaymentErrors.InvalidWebhookSignature);

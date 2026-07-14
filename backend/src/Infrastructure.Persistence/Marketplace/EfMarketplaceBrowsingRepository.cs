@@ -79,11 +79,11 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
         string? location = request.Location?.Trim();
         if (!string.IsNullOrWhiteSpace(location))
         {
-            string locationPattern = $"%{location}%";
+            string locationPattern = $"%{EscapeLikePattern(location)}%";
             hotelQuery = hotelQuery.Where(hotel =>
-                EF.Functions.Like(hotel.City, locationPattern) ||
-                EF.Functions.Like(hotel.AddressLine, locationPattern) ||
-                EF.Functions.Like(hotel.Name, locationPattern));
+                EF.Functions.Like(hotel.City, locationPattern, "\\") ||
+                EF.Functions.Like(hotel.AddressLine, locationPattern, "\\") ||
+                EF.Functions.Like(hotel.Name, locationPattern, "\\"));
         }
 
         IQueryable<HotelSearchResultDto> query =
@@ -216,4 +216,14 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
         string? Description,
         string ContactEmail,
         string ContactPhone);
+
+    private static string EscapeLikePattern(string value)
+    {
+        return value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal)
+            .Replace("[", "\\[", StringComparison.Ordinal)
+            .Replace("]", "\\]", StringComparison.Ordinal);
+    }
 }

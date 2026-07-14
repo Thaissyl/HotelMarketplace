@@ -21,6 +21,13 @@ internal sealed class EfAuthUserRepository : IAuthUserRepository
             .AnyAsync(user => user.Email == email, cancellationToken);
     }
 
+    public Task<bool> PhoneNumberExistsAsync(string phoneNumber, CancellationToken cancellationToken)
+    {
+        return _dbContext.UserAccounts
+            .IgnoreQueryFilters()
+            .AnyAsync(user => user.PhoneNumber == phoneNumber, cancellationToken);
+    }
+
     public Task<UserRole?> GetRoleAsync(UserRoleCode roleCode, CancellationToken cancellationToken)
     {
         string roleCodeValue = roleCode.ToString().ToUpperInvariant();

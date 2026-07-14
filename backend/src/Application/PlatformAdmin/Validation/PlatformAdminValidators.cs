@@ -1,4 +1,5 @@
 using FluentValidation;
+using HotelMarketplace.Application.Common.Validation;
 using HotelMarketplace.Application.PlatformAdmin.Requests;
 using HotelMarketplace.Domain.Enums;
 
@@ -8,7 +9,7 @@ internal sealed class RejectHotelRequestValidator : AbstractValidator<RejectHote
 {
     public RejectHotelRequestValidator()
     {
-        RuleFor(request => request.Reason).NotEmpty().MaximumLength(900);
+        RuleFor(request => request.Reason).SafeRequiredText(900, "Reason");
     }
 }
 
@@ -31,7 +32,7 @@ internal sealed class CreateSettlementRequestValidator : AbstractValidator<Creat
         RuleFor(request => request.ToDate)
             .GreaterThanOrEqualTo(request => request.FromDate)
             .WithMessage("To date must be greater than or equal to from date.");
-        RuleFor(request => request.AdminNote).MaximumLength(1000);
+        RuleFor(request => request.AdminNote).SafeOptionalText(1000, "Admin note");
     }
 }
 
@@ -46,7 +47,7 @@ internal sealed class UpdateSettlementStatusRequestValidator : AbstractValidator
             .NotEmpty()
             .When(request => request.Status == SettlementStatus.Exception)
             .WithMessage("Admin note is required when marking settlement as exception.");
-        RuleFor(request => request.AdminNote).MaximumLength(1000);
+        RuleFor(request => request.AdminNote).SafeOptionalText(1000, "Admin note");
     }
 }
 

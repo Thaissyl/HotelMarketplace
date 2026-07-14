@@ -53,6 +53,7 @@ public sealed class AuthController : ControllerBase
         int statusCode = error.Code switch
         {
             "Auth.DuplicateEmail" => StatusCodes.Status409Conflict,
+            "Auth.DuplicatePhoneNumber" => StatusCodes.Status409Conflict,
             "Auth.InvalidCredentials" => StatusCodes.Status401Unauthorized,
             "Auth.InactiveAccount" => StatusCodes.Status403Forbidden,
             _ => StatusCodes.Status400BadRequest
