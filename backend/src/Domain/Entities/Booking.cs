@@ -1,5 +1,6 @@
 using HotelMarketplace.Domain.Common;
 using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.SharedKernel.Exceptions;
 
 namespace HotelMarketplace.Domain.Entities;
 
@@ -73,4 +74,59 @@ public sealed class Booking : Entity, IHotelScopedEntity
     public DateTime? PaymentExpiresAtUtc { get; private set; }
 
     public IReadOnlyCollection<BookingRoom> Rooms => _rooms;
+
+    public void AddRoom(BookingRoom bookingRoom)
+    {
+        if (bookingRoom.BookingId != Id)
+        {
+            throw new DomainException("Booking.InvalidBookingRoom", "Booking room must belong to the booking.");
+        }
+
+        if (_rooms.Count > 0)
+        {
+            throw new DomainException("Booking.MultipleRoomTypesNotSupported", "A booking can contain only one room type in this version.");
+        }
+
+        _rooms.Add(bookingRoom);
+    }
+
+    public void SetPaymentExpiration(DateTime expiresAtUtc)
+    {
+        if (expiresAtUtc <= CreatedAtUtc)
+        {
+            throw new DomainException("Booking.InvalidPaymentExpiration", "Payment expiration must be after booking creation time.");
+        }
+
+        PaymentExpiresAtUtc = expiresAtUtc;
+    }
+
+    public void ConfirmPayment()
+    {
+        if (Status == BookingStatus.Confirmed)
+        {
+            return;
+        }
+
+        if (Status != BookingStatus.PendingPayment)
+        {
+            throw new DomainException("Booking.InvalidStatusForConfirmation", "Only pending payment bookings can be confirmed.");
+        }
+
+        Status = BookingStatus.Confirmed;
+    }
+
+    public void ExpirePaymentHold(DateTime utcNow)
+    {
+        if (Status != BookingStatus.PendingPayment)
+        {
+            return;
+        }
+
+        if (PaymentExpiresAtUtc is null || PaymentExpiresAtUtc > utcNow)
+        {
+            throw new DomainException("Booking.PaymentHoldStillValid", "The payment hold has not expired.");
+        }
+
+        Status = BookingStatus.Expired;
+    }
 }

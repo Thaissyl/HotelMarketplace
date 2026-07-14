@@ -3,6 +3,7 @@ using HotelMarketplace.Application.Marketplace.Dtos;
 using HotelMarketplace.Application.Marketplace.Requests;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.SharedKernel.Time;
 using Microsoft.EntityFrameworkCore;
 
 namespace HotelMarketplace.Infrastructure.Persistence.Marketplace;
@@ -11,7 +12,6 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
 {
     private static readonly BookingStatus[] ActiveBookingStatuses =
     {
-        BookingStatus.PendingPayment,
         BookingStatus.Confirmed,
         BookingStatus.CheckedIn
     };
@@ -25,16 +25,22 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
     };
 
     private readonly HotelMarketplaceDbContext _dbContext;
+    private readonly IDateTimeProvider _dateTimeProvider;
 
-    public EfMarketplaceBrowsingRepository(HotelMarketplaceDbContext dbContext)
+    public EfMarketplaceBrowsingRepository(
+        HotelMarketplaceDbContext dbContext,
+        IDateTimeProvider dateTimeProvider)
     {
         _dbContext = dbContext;
+        _dateTimeProvider = dateTimeProvider;
     }
 
     public async Task<IReadOnlyCollection<HotelSearchResultDto>> SearchHotelsAsync(
         HotelSearchRequest request,
         CancellationToken cancellationToken)
     {
+        DateTime utcNow = _dateTimeProvider.UtcNow;
+
         var availableRoomTypes =
             from roomType in _dbContext.RoomTypes.IgnoreQueryFilters().AsNoTracking()
             let physicalRoomCount = _dbContext.PhysicalRooms
@@ -47,7 +53,9 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
                  join booking in _dbContext.Bookings.IgnoreQueryFilters().AsNoTracking()
                      on bookingRoom.BookingId equals booking.Id
                  where bookingRoom.RoomTypeId == roomType.Id &&
-                     ActiveBookingStatuses.Contains(booking.Status) &&
+                     (ActiveBookingStatuses.Contains(booking.Status) ||
+                        (booking.Status == BookingStatus.PendingPayment &&
+                            (booking.PaymentExpiresAtUtc == null || booking.PaymentExpiresAtUtc > utcNow))) &&
                      booking.CheckInDate < request.CheckOutDate &&
                      booking.CheckOutDate > request.CheckInDate
                  select (int?)bookingRoom.Quantity).Sum() ?? 0
@@ -130,6 +138,7 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
         }
 
         int nights = request.CheckOutDate.DayNumber - request.CheckInDate.DayNumber;
+        DateTime utcNow = _dateTimeProvider.UtcNow;
 
         var availableRoomTypeQuery =
             from roomType in _dbContext.RoomTypes.IgnoreQueryFilters().AsNoTracking()
@@ -143,7 +152,9 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
                  join booking in _dbContext.Bookings.IgnoreQueryFilters().AsNoTracking()
                      on bookingRoom.BookingId equals booking.Id
                  where bookingRoom.RoomTypeId == roomType.Id &&
-                     ActiveBookingStatuses.Contains(booking.Status) &&
+                     (ActiveBookingStatuses.Contains(booking.Status) ||
+                        (booking.Status == BookingStatus.PendingPayment &&
+                            (booking.PaymentExpiresAtUtc == null || booking.PaymentExpiresAtUtc > utcNow))) &&
                      booking.CheckInDate < request.CheckOutDate &&
                      booking.CheckOutDate > request.CheckInDate
                  select (int?)bookingRoom.Quantity).Sum() ?? 0
