@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Application/Application.csproj" />
+    <Project Path="src/Domain/Domain.csproj" />
+    <Project Path="src/Infrastructure.Notification/Infrastructure.Notification.csproj" />
+    <Project Path="src/Infrastructure.Payment/Infrastructure.Payment.csproj" />
+    <Project Path="src/Infrastructure.Persistence/Infrastructure.Persistence.csproj" />
+    <Project Path="src/Infrastructure.Scheduling/Infrastructure.Scheduling.csproj" />
+    <Project Path="src/Presentation.Api/Presentation.Api.csproj" />
+    <Project Path="src/SharedKernel/SharedKernel.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Api.IntegrationTests/Api.IntegrationTests.csproj" />
+    <Project Path="tests/Application.UnitTests/Application.UnitTests.csproj" />
+    <Project Path="tests/Domain.UnitTests/Domain.UnitTests.csproj" />
+  </Folder>
+</Solution>
