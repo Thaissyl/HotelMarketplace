@@ -2,18 +2,18 @@ namespace HotelMarketplace.SharedKernel.Tenancy;
 
 public sealed class CurrentHotelContext : ICurrentHotelContext
 {
-    private static readonly AsyncLocal<HotelScope?> CurrentScope = new();
+    private HotelScope? _currentScope;
 
-    public Guid? HotelId => CurrentScope.Value?.HotelId;
+    public Guid? HotelId => _currentScope?.HotelId;
 
-    public bool IsHotelScopeEnforced => CurrentScope.Value is not null;
+    public bool IsHotelScopeEnforced => _currentScope is not null;
 
     public IDisposable UseHotel(Guid hotelId)
     {
-        HotelScope? previousScope = CurrentScope.Value;
-        CurrentScope.Value = new HotelScope(hotelId);
+        HotelScope? previousScope = _currentScope;
+        _currentScope = new HotelScope(hotelId);
 
-        return new ScopeReset(() => CurrentScope.Value = previousScope);
+        return new ScopeReset(() => _currentScope = previousScope);
     }
 
     private sealed record HotelScope(Guid HotelId);
