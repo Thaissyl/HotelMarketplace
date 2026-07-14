@@ -97,7 +97,8 @@ public sealed class HotelMarketplaceDbContext : DbContext
 
             if (typeof(IHotelScopedEntity).IsAssignableFrom(clrType))
             {
-                entityType.SetQueryFilter(CreateRequiredHotelFilter(clrType));
+                string hotelPropertyName = clrType == typeof(HotelProperty) ? nameof(Entity.Id) : "HotelId";
+                entityType.SetQueryFilter(CreateRequiredHotelFilter(clrType, hotelPropertyName));
                 continue;
             }
 
@@ -110,7 +111,7 @@ public sealed class HotelMarketplaceDbContext : DbContext
         }
     }
 
-    private LambdaExpression CreateRequiredHotelFilter(Type entityType)
+    private LambdaExpression CreateRequiredHotelFilter(Type entityType, string hotelPropertyName)
     {
         ParameterExpression parameter = Expression.Parameter(entityType, "entity");
         MethodCallExpression hotelId = Expression.Call(
@@ -118,7 +119,7 @@ public sealed class HotelMarketplaceDbContext : DbContext
             nameof(EF.Property),
             new[] { typeof(Guid) },
             parameter,
-            Expression.Constant("HotelId"));
+            Expression.Constant(hotelPropertyName));
 
         UnaryExpression nullableHotelId = Expression.Convert(hotelId, typeof(Guid?));
 
