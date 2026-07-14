@@ -5,26 +5,36 @@ using HotelMarketplace.Application.Payments.Dtos;
 using HotelMarketplace.Application.Payments.Models;
 using HotelMarketplace.Application.Security;
 using HotelMarketplace.SharedKernel.Results;
+using Microsoft.Extensions.Logging;
 
 namespace HotelMarketplace.Application.Payments;
 
 internal sealed class PaymentService : IPaymentService
 {
+    private static readonly Action<ILogger, Guid, string, Exception> LogPaymentGatewayRejected =
+        LoggerMessage.Define<Guid, string>(
+            LogLevel.Warning,
+            new EventId(2001, nameof(LogPaymentGatewayRejected)),
+            "Payment gateway rejected payment link creation. BookingId={BookingId}, BookingCode={BookingCode}.");
+
     private readonly IPaymentRepository _paymentRepository;
     private readonly IPayOsGateway _payOsGateway;
     private readonly ICurrentUserService _currentUserService;
     private readonly IValidator<PaymentWebhookRequest> _webhookValidator;
+    private readonly ILogger<PaymentService> _logger;
 
     public PaymentService(
         IPaymentRepository paymentRepository,
         IPayOsGateway payOsGateway,
         ICurrentUserService currentUserService,
-        IValidator<PaymentWebhookRequest> webhookValidator)
+        IValidator<PaymentWebhookRequest> webhookValidator,
+        ILogger<PaymentService> logger)
     {
         _paymentRepository = paymentRepository;
         _payOsGateway = payOsGateway;
         _currentUserService = currentUserService;
         _webhookValidator = webhookValidator;
+        _logger = logger;
     }
 
     public async Task<Result<PaymentLinkDto>> CreatePaymentLinkAsync(
@@ -59,8 +69,9 @@ internal sealed class PaymentService : IPaymentService
         {
             gatewayResult = await _payOsGateway.CreatePaymentLinkAsync(preparedPaymentLink.GatewayRequest, cancellationToken);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException exception)
         {
+            LogPaymentGatewayRejected(_logger, bookingId, preparedPaymentLink.BookingCode, exception);
             return Result.Failure<PaymentLinkDto>(PaymentErrors.GatewayRejected);
         }
 
