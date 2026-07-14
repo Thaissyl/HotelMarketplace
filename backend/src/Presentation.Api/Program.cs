@@ -1,16 +1,25 @@
 using System.Globalization;
+using System.IdentityModel.Tokens.Jwt;
 using System.Text;
+using System.Text.Json.Serialization;
 using HotelMarketplace.Application;
+using HotelMarketplace.Application.Security;
 using HotelMarketplace.Infrastructure.Notification;
 using HotelMarketplace.Infrastructure.Payment;
 using HotelMarketplace.Infrastructure.Persistence;
 using HotelMarketplace.Infrastructure.Scheduling;
+using HotelMarketplace.Presentation.Api.Authorization;
 using HotelMarketplace.Presentation.Api.Middleware;
 using HotelMarketplace.Presentation.Api.Options;
+using HotelMarketplace.Presentation.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using Serilog;
+
+JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.FromLogContext()
@@ -31,12 +40,17 @@ try
             .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture);
     });
 
-    builder.Services.AddControllers();
+    builder.Services.AddControllers()
+        .AddJsonOptions(options =>
+        {
+            options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        });
     builder.Services.AddEndpointsApiExplorer();
-    builder.Services.AddSwaggerGen();
+    AddSwagger(builder);
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
     builder.Services.AddHealthChecks();
+    builder.Services.AddHttpContextAccessor();
 
     builder.Services.Configure<JwtOptions>(
         builder.Configuration.GetSection(JwtOptions.SectionName));
@@ -46,13 +60,15 @@ try
 
     AddCors(builder);
     AddAuthentication(builder);
+    AddAuthorization(builder);
 
-    builder.Services.AddAuthorization();
     builder.Services.AddApplicationServices();
     builder.Services.AddPersistenceInfrastructure(builder.Configuration);
     builder.Services.AddPaymentInfrastructure(builder.Configuration);
     builder.Services.AddNotificationInfrastructure(builder.Configuration);
     builder.Services.AddSchedulingInfrastructure(builder.Configuration);
+    builder.Services.AddScoped<ICurrentUserService, HttpContextCurrentUserService>();
+    builder.Services.AddScoped<IAuthorizationHandler, HotelScopedAuthorizationHandler>();
 
     WebApplication app = builder.Build();
 
@@ -66,7 +82,10 @@ try
 
     app.UseHttpsRedirection();
     app.UseCors("MobileClient");
+    app.UseRouting();
+    app.UseMiddleware<HotelContextMiddleware>();
     app.UseAuthentication();
+    app.UseMiddleware<HotelScopeAuthorizationMiddleware>();
     app.UseAuthorization();
 
     app.MapControllers();
@@ -139,6 +158,37 @@ static void AddCors(WebApplicationBuilder builder)
     });
 }
 
+static void AddSwagger(WebApplicationBuilder builder)
+{
+    builder.Services.AddSwaggerGen(options =>
+    {
+        options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+        {
+            Name = "Authorization",
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            In = ParameterLocation.Header,
+            Description = "Enter a valid JWT access token."
+        });
+
+        options.AddSecurityRequirement(new OpenApiSecurityRequirement
+        {
+            {
+                new OpenApiSecurityScheme
+                {
+                    Reference = new OpenApiReference
+                    {
+                        Type = ReferenceType.SecurityScheme,
+                        Id = "Bearer"
+                    }
+                },
+                Array.Empty<string>()
+            }
+        });
+    });
+}
+
 static void AddAuthentication(WebApplicationBuilder builder)
 {
     JwtOptions jwtOptions = builder.Configuration
@@ -182,9 +232,23 @@ static void AddAuthentication(WebApplicationBuilder builder)
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = new SymmetricSecurityKey(signingKeyBytes),
                 ValidateLifetime = true,
-                ClockSkew = TimeSpan.FromMinutes(1)
+                ClockSkew = TimeSpan.FromMinutes(1),
+                NameClaimType = SecurityClaimTypes.UserId,
+                RoleClaimType = SecurityClaimTypes.Role
             };
         });
+}
+
+static void AddAuthorization(WebApplicationBuilder builder)
+{
+    builder.Services.AddAuthorization(options =>
+    {
+        options.AddPolicy(AuthorizationPolicies.HotelScoped, policy =>
+        {
+            policy.RequireAuthenticatedUser();
+            policy.Requirements.Add(new HotelScopedRequirement());
+        });
+    });
 }
 
 static void LoadLocalEnvironmentFile(WebApplicationBuilder builder)
