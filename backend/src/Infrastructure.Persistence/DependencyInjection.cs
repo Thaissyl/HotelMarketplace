@@ -1,3 +1,6 @@
+using HotelMarketplace.Application.Authentication;
+using HotelMarketplace.Infrastructure.Persistence.Authentication;
+using HotelMarketplace.Infrastructure.Persistence.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
@@ -26,6 +29,10 @@ public static class DependencyInjection
                     errorNumbersToAdd: null);
             });
         });
+
+        services.AddScoped<IAuthUserRepository, EfAuthUserRepository>();
+        services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
+        services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 
         return services;
     }

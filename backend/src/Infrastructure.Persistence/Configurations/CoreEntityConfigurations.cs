@@ -1,4 +1,6 @@
 using HotelMarketplace.Domain.Entities;
+using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.Domain.Security;
 using HotelMarketplace.Infrastructure.Persistence.Configurations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -30,6 +32,15 @@ internal sealed class UserRoleConfiguration : IEntityTypeConfiguration<UserRole>
         builder.Property(entity => entity.Name).HasMaxLength(128).IsRequired();
         builder.Property(entity => entity.Scope).HasEnumConversion();
         builder.HasIndex(entity => entity.Code).IsUnique();
+
+        builder.HasData(
+            new UserRole(SeededRoleIds.Customer, UserRoleCode.Customer.ToString(), "Customer", RoleScope.Customer),
+            new UserRole(SeededRoleIds.PropertyOwner, UserRoleCode.PropertyOwner.ToString(), "Property Owner", RoleScope.Hotel),
+            new UserRole(SeededRoleIds.HotelManager, UserRoleCode.HotelManager.ToString(), "Hotel Manager", RoleScope.Hotel),
+            new UserRole(SeededRoleIds.Receptionist, UserRoleCode.Receptionist.ToString(), "Receptionist", RoleScope.Hotel),
+            new UserRole(SeededRoleIds.HousekeepingStaff, UserRoleCode.HousekeepingStaff.ToString(), "Housekeeping Staff", RoleScope.Hotel),
+            new UserRole(SeededRoleIds.MaintenanceStaff, UserRoleCode.MaintenanceStaff.ToString(), "Maintenance Staff", RoleScope.Hotel),
+            new UserRole(SeededRoleIds.PlatformAdministrator, UserRoleCode.PlatformAdministrator.ToString(), "Platform Administrator", RoleScope.Platform));
     }
 }
 
