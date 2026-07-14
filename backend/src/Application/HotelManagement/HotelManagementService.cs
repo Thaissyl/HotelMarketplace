@@ -226,21 +226,14 @@ internal sealed class HotelManagementService : IHotelManagementService
             return Result.Failure<PhysicalRoomDto>(ValidationErrorFormatter.ToResultError("HotelManagement.InvalidPhysicalRoom", validationResult));
         }
 
-        RoomType? roomType = await _repository.GetRoomTypeAsync(hotelId, request.RoomTypeId, cancellationToken);
-        if (roomType is null)
-        {
-            return Result.Failure<PhysicalRoomDto>(HotelManagementErrors.RoomTypeNotFound);
-        }
+        PhysicalRoomPersistenceResult persistenceResult = await _repository.CreatePhysicalRoomAsync(
+            hotelId,
+            request.RoomTypeId,
+            request.RoomNumber,
+            request.InitialStatus,
+            cancellationToken);
 
-        if (await _repository.RoomNumberExistsAsync(hotelId, request.RoomNumber, excludedPhysicalRoomId: null, cancellationToken))
-        {
-            return Result.Failure<PhysicalRoomDto>(HotelManagementErrors.DuplicateRoomNumber);
-        }
-
-        PhysicalRoom physicalRoom = new(Guid.NewGuid(), hotelId, request.RoomTypeId, request.RoomNumber, request.InitialStatus);
-        await _repository.AddPhysicalRoomAsync(physicalRoom, cancellationToken);
-
-        return ToPhysicalRoomDto(physicalRoom);
+        return ToPhysicalRoomResult(persistenceResult);
     }
 
     public async Task<Result<IReadOnlyCollection<PhysicalRoomDto>>> GetPhysicalRoomsAsync(Guid hotelId, Guid? roomTypeId, CancellationToken cancellationToken)
@@ -270,27 +263,14 @@ internal sealed class HotelManagementService : IHotelManagementService
             return Result.Failure<PhysicalRoomDto>(ValidationErrorFormatter.ToResultError("HotelManagement.InvalidPhysicalRoom", validationResult));
         }
 
-        PhysicalRoom? physicalRoom = await _repository.GetPhysicalRoomAsync(hotelId, physicalRoomId, cancellationToken);
-        if (physicalRoom is null)
-        {
-            return Result.Failure<PhysicalRoomDto>(HotelManagementErrors.PhysicalRoomNotFound);
-        }
+        PhysicalRoomPersistenceResult persistenceResult = await _repository.UpdatePhysicalRoomAsync(
+            hotelId,
+            physicalRoomId,
+            request.RoomNumber,
+            request.Status,
+            cancellationToken);
 
-        if (request.Status == RoomOperationalStatus.Inactive && physicalRoom.Status == RoomOperationalStatus.Occupied)
-        {
-            return Result.Failure<PhysicalRoomDto>(HotelManagementErrors.RoomIsOccupied);
-        }
-
-        if (await _repository.RoomNumberExistsAsync(hotelId, request.RoomNumber, physicalRoomId, cancellationToken))
-        {
-            return Result.Failure<PhysicalRoomDto>(HotelManagementErrors.DuplicateRoomNumber);
-        }
-
-        physicalRoom.Rename(request.RoomNumber);
-        physicalRoom.ChangeSetupStatus(request.Status);
-        await _repository.SaveChangesAsync(cancellationToken);
-
-        return ToPhysicalRoomDto(physicalRoom);
+        return ToPhysicalRoomResult(persistenceResult);
     }
 
     private Result? EnsurePropertyOwner()
@@ -352,5 +332,19 @@ internal sealed class HotelManagementService : IHotelManagementService
             physicalRoom.RoomTypeId,
             physicalRoom.RoomNumber,
             physicalRoom.Status);
+    }
+
+    private static Result<PhysicalRoomDto> ToPhysicalRoomResult(PhysicalRoomPersistenceResult result)
+    {
+        return result.Status switch
+        {
+            PhysicalRoomPersistenceStatus.Success => Result.Success(ToPhysicalRoomDto(result.PhysicalRoom!)),
+            PhysicalRoomPersistenceStatus.RoomTypeNotFound => Result.Failure<PhysicalRoomDto>(HotelManagementErrors.RoomTypeNotFound),
+            PhysicalRoomPersistenceStatus.PhysicalRoomNotFound => Result.Failure<PhysicalRoomDto>(HotelManagementErrors.PhysicalRoomNotFound),
+            PhysicalRoomPersistenceStatus.DuplicateRoomNumber => Result.Failure<PhysicalRoomDto>(HotelManagementErrors.DuplicateRoomNumber),
+            PhysicalRoomPersistenceStatus.RoomIsOccupied => Result.Failure<PhysicalRoomDto>(HotelManagementErrors.RoomIsOccupied),
+            PhysicalRoomPersistenceStatus.LockUnavailable => Result.Failure<PhysicalRoomDto>(HotelManagementErrors.LockUnavailable),
+            _ => Result.Failure<PhysicalRoomDto>(HotelManagementErrors.PhysicalRoomNotFound)
+        };
     }
 }

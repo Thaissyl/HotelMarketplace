@@ -1,7 +1,10 @@
+using System.Data;
 using HotelMarketplace.Application.HotelManagement;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.Infrastructure.Persistence.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace HotelMarketplace.Infrastructure.Persistence.HotelManagement;
 
@@ -90,6 +93,72 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<PhysicalRoomPersistenceResult> CreatePhysicalRoomAsync(
+        Guid hotelId,
+        Guid roomTypeId,
+        string roomNumber,
+        RoomOperationalStatus initialStatus,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            string normalizedRoomNumber = roomNumber.Trim();
+            bool roomNumberLockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
+                _dbContext,
+                $"physical-room-number:{hotelId:N}:{normalizedRoomNumber.ToUpperInvariant()}",
+                cancellationToken);
+            if (!roomNumberLockAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PhysicalRoomPersistenceResult.Failure(PhysicalRoomPersistenceStatus.LockUnavailable);
+            }
+
+            bool roomTypeExists = await _dbContext.RoomTypes
+                .AnyAsync(roomType => roomType.HotelId == hotelId &&
+                    roomType.Id == roomTypeId &&
+                    roomType.Status == RecordStatus.Active,
+                    cancellationToken);
+
+            if (!roomTypeExists)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PhysicalRoomPersistenceResult.Failure(PhysicalRoomPersistenceStatus.RoomTypeNotFound);
+            }
+
+            bool duplicateRoomNumber = await _dbContext.PhysicalRooms
+                .AnyAsync(room => room.HotelId == hotelId && room.RoomNumber == normalizedRoomNumber, cancellationToken);
+
+            if (duplicateRoomNumber)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PhysicalRoomPersistenceResult.Failure(PhysicalRoomPersistenceStatus.DuplicateRoomNumber);
+            }
+
+            PhysicalRoom physicalRoom;
+            try
+            {
+                physicalRoom = new PhysicalRoom(Guid.NewGuid(), hotelId, roomTypeId, normalizedRoomNumber, initialStatus);
+            }
+            catch (SharedKernel.Exceptions.DomainException)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PhysicalRoomPersistenceResult.Failure(PhysicalRoomPersistenceStatus.InvalidRoomStatus);
+            }
+
+            await _dbContext.PhysicalRooms.AddAsync(physicalRoom, cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return PhysicalRoomPersistenceResult.Success(physicalRoom);
+        });
+    }
+
     public async Task<IReadOnlyCollection<PhysicalRoom>> GetPhysicalRoomsAsync(Guid hotelId, Guid? roomTypeId, CancellationToken cancellationToken)
     {
         IQueryable<PhysicalRoom> query = _dbContext.PhysicalRooms
@@ -110,6 +179,89 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
     {
         return _dbContext.PhysicalRooms
             .FirstOrDefaultAsync(room => room.HotelId == hotelId && room.Id == physicalRoomId, cancellationToken);
+    }
+
+    public async Task<PhysicalRoomPersistenceResult> UpdatePhysicalRoomAsync(
+        Guid hotelId,
+        Guid physicalRoomId,
+        string roomNumber,
+        RoomOperationalStatus status,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            bool roomLockAcquired = await SqlApplicationLock.AcquireRoomLocksAsync(
+                _dbContext,
+                hotelId,
+                new[] { physicalRoomId },
+                cancellationToken);
+            if (!roomLockAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PhysicalRoomPersistenceResult.Failure(PhysicalRoomPersistenceStatus.LockUnavailable);
+            }
+
+            string normalizedRoomNumber = roomNumber.Trim();
+            bool roomNumberLockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
+                _dbContext,
+                $"physical-room-number:{hotelId:N}:{normalizedRoomNumber.ToUpperInvariant()}",
+                cancellationToken);
+            if (!roomNumberLockAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PhysicalRoomPersistenceResult.Failure(PhysicalRoomPersistenceStatus.LockUnavailable);
+            }
+
+            PhysicalRoom? physicalRoom = await _dbContext.PhysicalRooms
+                .FirstOrDefaultAsync(room => room.HotelId == hotelId && room.Id == physicalRoomId, cancellationToken);
+
+            if (physicalRoom is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PhysicalRoomPersistenceResult.Failure(PhysicalRoomPersistenceStatus.PhysicalRoomNotFound);
+            }
+
+            if (status == RoomOperationalStatus.Inactive && physicalRoom.Status == RoomOperationalStatus.Occupied)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PhysicalRoomPersistenceResult.Failure(PhysicalRoomPersistenceStatus.RoomIsOccupied);
+            }
+
+            bool duplicateRoomNumber = await _dbContext.PhysicalRooms
+                .AsNoTracking()
+                .AnyAsync(room => room.HotelId == hotelId &&
+                    room.RoomNumber == normalizedRoomNumber &&
+                    room.Id != physicalRoomId,
+                    cancellationToken);
+
+            if (duplicateRoomNumber)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PhysicalRoomPersistenceResult.Failure(PhysicalRoomPersistenceStatus.DuplicateRoomNumber);
+            }
+
+            try
+            {
+                physicalRoom.Rename(normalizedRoomNumber);
+                physicalRoom.ChangeSetupStatus(status);
+            }
+            catch (SharedKernel.Exceptions.DomainException)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PhysicalRoomPersistenceResult.Failure(PhysicalRoomPersistenceStatus.InvalidRoomStatus);
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return PhysicalRoomPersistenceResult.Success(physicalRoom);
+        });
     }
 
     public Task<bool> RoomNumberExistsAsync(Guid hotelId, string roomNumber, Guid? excludedPhysicalRoomId, CancellationToken cancellationToken)

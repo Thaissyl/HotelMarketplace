@@ -61,21 +61,6 @@ public sealed class PaymentsController : ControllerBase
             _ => StatusCodes.Status400BadRequest
         };
 
-        ProblemDetails problemDetails = new()
-        {
-            Status = statusCode,
-            Title = statusCode switch
-            {
-                StatusCodes.Status404NotFound => "Not Found",
-                StatusCodes.Status409Conflict => "Conflict",
-                _ => "Bad Request"
-            },
-            Detail = error.Message,
-            Instance = HttpContext.Request.Path
-        };
-
-        problemDetails.Extensions["code"] = error.Code;
-
-        return StatusCode(statusCode, problemDetails);
+        return this.ToProblemResult(error, statusCode);
     }
 }

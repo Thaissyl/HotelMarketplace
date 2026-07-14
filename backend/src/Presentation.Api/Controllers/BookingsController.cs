@@ -99,24 +99,6 @@ public sealed class BookingsController : ControllerBase
             _ => StatusCodes.Status400BadRequest
         };
 
-        ProblemDetails problemDetails = new()
-        {
-            Status = statusCode,
-            Title = statusCode switch
-            {
-                StatusCodes.Status403Forbidden => "Forbidden",
-                StatusCodes.Status404NotFound => "Not Found",
-                StatusCodes.Status409Conflict => "Conflict",
-                StatusCodes.Status423Locked => "Locked",
-                StatusCodes.Status502BadGateway => "Bad Gateway",
-                _ => "Bad Request"
-            },
-            Detail = error.Message,
-            Instance = HttpContext.Request.Path
-        };
-
-        problemDetails.Extensions["code"] = error.Code;
-
-        return StatusCode(statusCode, problemDetails);
+        return this.ToProblemResult(error, statusCode);
     }
 }

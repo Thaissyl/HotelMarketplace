@@ -1,10 +1,10 @@
 using System.Data;
-using System.Data.Common;
 using System.Globalization;
 using HotelMarketplace.Application.Bookings;
 using HotelMarketplace.Application.Bookings.Dtos;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.Infrastructure.Persistence.Common;
 using HotelMarketplace.SharedKernel.Time;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -50,8 +50,11 @@ internal sealed class EfBookingRepository : IBookingRepository
                 IsolationLevel.Serializable,
                 cancellationToken);
 
-            int lockResult = await AcquireReservationLockAsync(request, cancellationToken);
-            if (lockResult < 0)
+            bool lockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
+                _dbContext,
+                $"booking:{request.HotelId:N}:{request.RoomTypeId:N}:{request.CheckInDate:yyyyMMdd}:{request.CheckOutDate:yyyyMMdd}",
+                cancellationToken);
+            if (!lockAcquired)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return CreateBookingRepositoryResult.Failure(CreateBookingRepositoryStatus.ReservationLockUnavailable);
@@ -180,39 +183,6 @@ internal sealed class EfBookingRepository : IBookingRepository
 
             return CreateBookingRepositoryResult.Success(bookingDto);
         });
-    }
-
-    private async Task<int> AcquireReservationLockAsync(
-        CreateBookingRepositoryRequest request,
-        CancellationToken cancellationToken)
-    {
-        DbConnection connection = _dbContext.Database.GetDbConnection();
-        await using DbCommand command = connection.CreateCommand();
-        command.Transaction = _dbContext.Database.CurrentTransaction?.GetDbTransaction();
-        command.CommandText = """
-            DECLARE @lockResult int;
-            EXEC @lockResult = sys.sp_getapplock
-                @Resource = @resource,
-                @LockMode = 'Exclusive',
-                @LockOwner = 'Transaction',
-                @LockTimeout = @lockTimeout;
-            SELECT @lockResult;
-            """;
-
-        DbParameter resourceParameter = command.CreateParameter();
-        resourceParameter.ParameterName = "@resource";
-        resourceParameter.DbType = DbType.String;
-        resourceParameter.Value = $"booking:{request.HotelId:N}:{request.RoomTypeId:N}:{request.CheckInDate:yyyyMMdd}:{request.CheckOutDate:yyyyMMdd}";
-        command.Parameters.Add(resourceParameter);
-
-        DbParameter timeoutParameter = command.CreateParameter();
-        timeoutParameter.ParameterName = "@lockTimeout";
-        timeoutParameter.DbType = DbType.Int32;
-        timeoutParameter.Value = 10_000;
-        command.Parameters.Add(timeoutParameter);
-
-        object? result = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
     private static string GenerateBookingCode(DateTime utcNow)

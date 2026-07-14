@@ -200,25 +200,10 @@ public sealed class OwnerHotelsController : ControllerBase
             "HotelManagement.DuplicateRoomNumber" => StatusCodes.Status409Conflict,
             "HotelManagement.RoomTypeHasFutureBookings" => StatusCodes.Status409Conflict,
             "HotelManagement.RoomIsOccupied" => StatusCodes.Status409Conflict,
+            "HotelManagement.LockUnavailable" => StatusCodes.Status423Locked,
             _ => StatusCodes.Status400BadRequest
         };
 
-        ProblemDetails problemDetails = new()
-        {
-            Status = statusCode,
-            Title = statusCode switch
-            {
-                StatusCodes.Status403Forbidden => "Forbidden",
-                StatusCodes.Status404NotFound => "Not Found",
-                StatusCodes.Status409Conflict => "Conflict",
-                _ => "Bad Request"
-            },
-            Detail = error.Message,
-            Instance = HttpContext.Request.Path
-        };
-
-        problemDetails.Extensions["code"] = error.Code;
-
-        return StatusCode(statusCode, problemDetails);
+        return this.ToProblemResult(error, statusCode);
     }
 }

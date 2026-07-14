@@ -1,11 +1,10 @@
 using System.Data;
-using System.Data.Common;
-using System.Globalization;
 using HotelMarketplace.Application.Maintenance;
 using HotelMarketplace.Application.Maintenance.Dtos;
 using HotelMarketplace.Application.Maintenance.Requests;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.Infrastructure.Persistence.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -74,8 +73,12 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
                 IsolationLevel.Serializable,
                 cancellationToken);
 
-            int lockResult = await AcquireLockAsync($"maintenance:room:{hotelId:N}:{request.PhysicalRoomId:N}", cancellationToken);
-            if (lockResult < 0)
+            bool roomLockAcquired = await SqlApplicationLock.AcquireRoomLocksAsync(
+                _dbContext,
+                hotelId,
+                new[] { request.PhysicalRoomId },
+                cancellationToken);
+            if (!roomLockAcquired)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.LockUnavailable);
@@ -137,8 +140,11 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
                 IsolationLevel.Serializable,
                 cancellationToken);
 
-            int lockResult = await AcquireLockAsync($"maintenance:request:{hotelId:N}:{requestId:N}", cancellationToken);
-            if (lockResult < 0)
+            bool requestLockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
+                _dbContext,
+                $"maintenance:request:{hotelId:N}:{requestId:N}",
+                cancellationToken);
+            if (!requestLockAcquired)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.LockUnavailable);
@@ -152,6 +158,17 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.RequestNotFound);
+            }
+
+            bool roomLockAcquired = await SqlApplicationLock.AcquireRoomLocksAsync(
+                _dbContext,
+                hotelId,
+                new[] { maintenanceRequest.PhysicalRoomId },
+                cancellationToken);
+            if (!roomLockAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.LockUnavailable);
             }
 
             PhysicalRoom? room = await _dbContext.PhysicalRooms
@@ -223,36 +240,4 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
             .FirstAsync(cancellationToken);
     }
 
-    private async Task<int> AcquireLockAsync(
-        string resource,
-        CancellationToken cancellationToken)
-    {
-        DbConnection connection = _dbContext.Database.GetDbConnection();
-        await using DbCommand command = connection.CreateCommand();
-        command.Transaction = _dbContext.Database.CurrentTransaction?.GetDbTransaction();
-        command.CommandText = """
-            DECLARE @lockResult int;
-            EXEC @lockResult = sys.sp_getapplock
-                @Resource = @resource,
-                @LockMode = 'Exclusive',
-                @LockOwner = 'Transaction',
-                @LockTimeout = @lockTimeout;
-            SELECT @lockResult;
-            """;
-
-        DbParameter resourceParameter = command.CreateParameter();
-        resourceParameter.ParameterName = "@resource";
-        resourceParameter.DbType = DbType.String;
-        resourceParameter.Value = resource;
-        command.Parameters.Add(resourceParameter);
-
-        DbParameter timeoutParameter = command.CreateParameter();
-        timeoutParameter.ParameterName = "@lockTimeout";
-        timeoutParameter.DbType = DbType.Int32;
-        timeoutParameter.Value = 10_000;
-        command.Parameters.Add(timeoutParameter);
-
-        object? result = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
-    }
 }

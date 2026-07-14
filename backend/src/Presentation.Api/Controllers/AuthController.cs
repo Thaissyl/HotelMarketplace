@@ -59,22 +59,6 @@ public sealed class AuthController : ControllerBase
             _ => StatusCodes.Status400BadRequest
         };
 
-        ProblemDetails problemDetails = new()
-        {
-            Status = statusCode,
-            Title = statusCode switch
-            {
-                StatusCodes.Status401Unauthorized => "Unauthorized",
-                StatusCodes.Status403Forbidden => "Forbidden",
-                StatusCodes.Status409Conflict => "Conflict",
-                _ => "Bad Request"
-            },
-            Detail = error.Message,
-            Instance = HttpContext.Request.Path
-        };
-
-        problemDetails.Extensions["code"] = error.Code;
-
-        return StatusCode(statusCode, problemDetails);
+        return this.ToProblemResult(error, statusCode);
     }
 }

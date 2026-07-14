@@ -62,16 +62,6 @@ public sealed class PublicHotelsController : ControllerBase
             _ => StatusCodes.Status400BadRequest
         };
 
-        ProblemDetails problemDetails = new()
-        {
-            Status = statusCode,
-            Title = statusCode == StatusCodes.Status404NotFound ? "Not Found" : "Bad Request",
-            Detail = error.Message,
-            Instance = HttpContext.Request.Path
-        };
-
-        problemDetails.Extensions["code"] = error.Code;
-
-        return StatusCode(statusCode, problemDetails);
+        return this.ToProblemResult(error, statusCode);
     }
 }

@@ -11,4 +11,5 @@ public static class HotelManagementErrors
     public static readonly ResultError DuplicateRoomNumber = new("HotelManagement.DuplicateRoomNumber", "Room number must be unique within the hotel.");
     public static readonly ResultError RoomTypeHasFutureBookings = new("HotelManagement.RoomTypeHasFutureBookings", "This room type cannot be deactivated because active future bookings exist.");
     public static readonly ResultError RoomIsOccupied = new("HotelManagement.RoomIsOccupied", "This room cannot be inactivated because it is currently occupied.");
+    public static readonly ResultError LockUnavailable = new("HotelManagement.LockUnavailable", "The room is being updated by another operation. Please retry.");
 }
