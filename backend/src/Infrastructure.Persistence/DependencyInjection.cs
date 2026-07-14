@@ -1,7 +1,9 @@
 using HotelMarketplace.Application.Authentication;
 using HotelMarketplace.Application.HotelManagement;
+using HotelMarketplace.Application.Marketplace;
 using HotelMarketplace.Infrastructure.Persistence.Authentication;
 using HotelMarketplace.Infrastructure.Persistence.HotelManagement;
+using HotelMarketplace.Infrastructure.Persistence.Marketplace;
 using HotelMarketplace.Infrastructure.Persistence.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,6 +36,7 @@ public static class DependencyInjection
 
         services.AddScoped<IAuthUserRepository, EfAuthUserRepository>();
         services.AddScoped<IHotelManagementRepository, EfHotelManagementRepository>();
+        services.AddScoped<IMarketplaceBrowsingRepository, EfMarketplaceBrowsingRepository>();
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 

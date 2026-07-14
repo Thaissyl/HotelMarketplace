@@ -1,0 +1,208 @@
+using HotelMarketplace.Application.Marketplace;
+using HotelMarketplace.Application.Marketplace.Dtos;
+using HotelMarketplace.Application.Marketplace.Requests;
+using HotelMarketplace.Domain.Entities;
+using HotelMarketplace.Domain.Enums;
+using Microsoft.EntityFrameworkCore;
+
+namespace HotelMarketplace.Infrastructure.Persistence.Marketplace;
+
+internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepository
+{
+    private static readonly BookingStatus[] ActiveBookingStatuses =
+    {
+        BookingStatus.PendingPayment,
+        BookingStatus.Confirmed,
+        BookingStatus.CheckedIn
+    };
+
+    private static readonly RoomOperationalStatus[] UnsellableRoomStatuses =
+    {
+        RoomOperationalStatus.Maintenance,
+        RoomOperationalStatus.OutOfService,
+        RoomOperationalStatus.Blocked,
+        RoomOperationalStatus.Inactive
+    };
+
+    private readonly HotelMarketplaceDbContext _dbContext;
+
+    public EfMarketplaceBrowsingRepository(HotelMarketplaceDbContext dbContext)
+    {
+        _dbContext = dbContext;
+    }
+
+    public async Task<IReadOnlyCollection<HotelSearchResultDto>> SearchHotelsAsync(
+        HotelSearchRequest request,
+        CancellationToken cancellationToken)
+    {
+        var availableRoomTypes =
+            from roomType in _dbContext.RoomTypes.IgnoreQueryFilters().AsNoTracking()
+            let physicalRoomCount = _dbContext.PhysicalRooms
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Count(physicalRoom => physicalRoom.RoomTypeId == roomType.Id &&
+                    !UnsellableRoomStatuses.Contains(physicalRoom.Status))
+            let bookedRoomCount =
+                (from bookingRoom in _dbContext.BookingRooms.AsNoTracking()
+                 join booking in _dbContext.Bookings.IgnoreQueryFilters().AsNoTracking()
+                     on bookingRoom.BookingId equals booking.Id
+                 where bookingRoom.RoomTypeId == roomType.Id &&
+                     ActiveBookingStatuses.Contains(booking.Status) &&
+                     booking.CheckInDate < request.CheckOutDate &&
+                     booking.CheckOutDate > request.CheckInDate
+                 select (int?)bookingRoom.Quantity).Sum() ?? 0
+            let availableRoomCount = physicalRoomCount - bookedRoomCount
+            let totalGuestCapacity = roomType.AdultCapacity + roomType.ChildCapacity
+            where roomType.Status == RecordStatus.Active &&
+                availableRoomCount >= request.RoomCount &&
+                (roomType.AdultCapacity + roomType.ChildCapacity) * request.RoomCount >= request.GuestCount
+            select new
+            {
+                roomType.HotelId,
+                roomType.BasePricePerNight
+            };
+
+        IQueryable<HotelProperty> hotelQuery = _dbContext.HotelProperties
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(hotel => hotel.ApprovalStatus == HotelApprovalStatus.Approved &&
+                hotel.PublicationStatus == PublicationStatus.Published);
+
+        string? location = request.Location?.Trim();
+        if (!string.IsNullOrWhiteSpace(location))
+        {
+            string locationPattern = $"%{location}%";
+            hotelQuery = hotelQuery.Where(hotel =>
+                EF.Functions.Like(hotel.City, locationPattern) ||
+                EF.Functions.Like(hotel.AddressLine, locationPattern) ||
+                EF.Functions.Like(hotel.Name, locationPattern));
+        }
+
+        IQueryable<HotelSearchResultDto> query =
+            from hotel in hotelQuery
+            join availableRoomType in availableRoomTypes on hotel.Id equals availableRoomType.HotelId
+            group availableRoomType by new
+            {
+                hotel.Id,
+                hotel.Name,
+                hotel.City,
+                hotel.AddressLine,
+                hotel.Description
+            }
+            into hotelGroup
+            orderby hotelGroup.Min(roomType => roomType.BasePricePerNight), hotelGroup.Key.Name
+            select new HotelSearchResultDto(
+                hotelGroup.Key.Id,
+                hotelGroup.Key.Name,
+                hotelGroup.Key.City,
+                hotelGroup.Key.AddressLine,
+                hotelGroup.Key.Description,
+                hotelGroup.Min(roomType => roomType.BasePricePerNight),
+                hotelGroup.Count());
+
+        return await query.ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<HotelDetailDto?> GetHotelDetailAsync(
+        Guid hotelId,
+        HotelDetailAvailabilityRequest request,
+        CancellationToken cancellationToken)
+    {
+        HotelBaseReadModel? hotel = await _dbContext.HotelProperties
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(hotelProperty => hotelProperty.Id == hotelId &&
+                hotelProperty.ApprovalStatus == HotelApprovalStatus.Approved &&
+                hotelProperty.PublicationStatus == PublicationStatus.Published)
+            .Select(hotelProperty => new HotelBaseReadModel(
+                hotelProperty.Id,
+                hotelProperty.Name,
+                hotelProperty.City,
+                hotelProperty.AddressLine,
+                hotelProperty.Description,
+                hotelProperty.ContactEmail,
+                hotelProperty.ContactPhone))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (hotel is null)
+        {
+            return null;
+        }
+
+        int nights = request.CheckOutDate.DayNumber - request.CheckInDate.DayNumber;
+
+        var availableRoomTypeQuery =
+            from roomType in _dbContext.RoomTypes.IgnoreQueryFilters().AsNoTracking()
+            let physicalRoomCount = _dbContext.PhysicalRooms
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Count(physicalRoom => physicalRoom.RoomTypeId == roomType.Id &&
+                    !UnsellableRoomStatuses.Contains(physicalRoom.Status))
+            let bookedRoomCount =
+                (from bookingRoom in _dbContext.BookingRooms.AsNoTracking()
+                 join booking in _dbContext.Bookings.IgnoreQueryFilters().AsNoTracking()
+                     on bookingRoom.BookingId equals booking.Id
+                 where bookingRoom.RoomTypeId == roomType.Id &&
+                     ActiveBookingStatuses.Contains(booking.Status) &&
+                     booking.CheckInDate < request.CheckOutDate &&
+                     booking.CheckOutDate > request.CheckInDate
+                 select (int?)bookingRoom.Quantity).Sum() ?? 0
+            let availableRoomCount = physicalRoomCount - bookedRoomCount
+            let totalGuestCapacity = roomType.AdultCapacity + roomType.ChildCapacity
+            where roomType.HotelId == hotelId &&
+                roomType.Status == RecordStatus.Active &&
+                availableRoomCount >= request.RoomCount &&
+                (roomType.AdultCapacity + roomType.ChildCapacity) * request.RoomCount >= request.GuestCount
+            select new
+            {
+                roomType.Id,
+                roomType.Name,
+                roomType.AdultCapacity,
+                roomType.ChildCapacity,
+                TotalGuestCapacity = totalGuestCapacity,
+                roomType.BasePricePerNight,
+                AvailableRoomCount = availableRoomCount,
+                roomType.Description
+            };
+
+        AvailableRoomTypeDto[] roomTypes = await availableRoomTypeQuery
+            .OrderBy(roomType => roomType.BasePricePerNight)
+            .ThenBy(roomType => roomType.Name)
+            .Select(roomType => new AvailableRoomTypeDto(
+                roomType.Id,
+                roomType.Name,
+                roomType.AdultCapacity,
+                roomType.ChildCapacity,
+                roomType.TotalGuestCapacity,
+                roomType.BasePricePerNight,
+                roomType.AvailableRoomCount,
+                request.RoomCount,
+                nights,
+                roomType.BasePricePerNight * request.RoomCount * nights,
+                roomType.Description))
+            .ToArrayAsync(cancellationToken);
+
+        return new HotelDetailDto(
+            hotel.Id,
+            hotel.Name,
+            hotel.City,
+            hotel.AddressLine,
+            hotel.Description,
+            hotel.ContactEmail,
+            hotel.ContactPhone,
+            request.CheckInDate,
+            request.CheckOutDate,
+            request.GuestCount,
+            request.RoomCount,
+            roomTypes);
+    }
+
+    private sealed record HotelBaseReadModel(
+        Guid Id,
+        string Name,
+        string City,
+        string AddressLine,
+        string? Description,
+        string ContactEmail,
+        string ContactPhone);
+}
