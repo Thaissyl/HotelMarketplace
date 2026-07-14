@@ -34,6 +34,7 @@ internal sealed class EfAuthUserRepository : IAuthUserRepository
 
         return _dbContext.UserRoles
             .IgnoreQueryFilters()
+            .AsNoTracking()
             .FirstOrDefaultAsync(role => role.Code == roleCodeValue, cancellationToken);
     }
 

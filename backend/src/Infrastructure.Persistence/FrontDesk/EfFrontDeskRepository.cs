@@ -49,7 +49,7 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
 
             Booking? booking = await _dbContext.Bookings
                 .IgnoreQueryFilters()
-                .Include("Rooms")
+                .Include(booking => booking.Rooms)
                 .FirstOrDefaultAsync(entity => entity.Id == bookingId && entity.HotelId == hotelId, cancellationToken);
 
             if (booking is null)
