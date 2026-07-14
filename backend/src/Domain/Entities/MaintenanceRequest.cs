@@ -41,4 +41,27 @@ public sealed class MaintenanceRequest : Entity, IHotelScopedEntity
     public MaintenanceStatus Status { get; private set; }
 
     public DateTime CreatedAtUtc { get; private set; }
+
+    public void Start(Guid assignedToUserAccountId)
+    {
+        Guard.NotEmpty(assignedToUserAccountId, nameof(AssignedToUserAccountId));
+
+        if (Status != MaintenanceStatus.Open)
+        {
+            throw new SharedKernel.Exceptions.DomainException("MaintenanceRequest.InvalidStartStatus", "Only open maintenance requests can be started.");
+        }
+
+        AssignedToUserAccountId = assignedToUserAccountId;
+        Status = MaintenanceStatus.InProgress;
+    }
+
+    public void Resolve()
+    {
+        if (Status != MaintenanceStatus.InProgress)
+        {
+            throw new SharedKernel.Exceptions.DomainException("MaintenanceRequest.InvalidResolveStatus", "Only in-progress maintenance requests can be resolved.");
+        }
+
+        Status = MaintenanceStatus.Resolved;
+    }
 }

@@ -1,0 +1,506 @@
+using System.Data;
+using System.Data.Common;
+using System.Globalization;
+using HotelMarketplace.Application.FrontDesk;
+using HotelMarketplace.Application.FrontDesk.Dtos;
+using HotelMarketplace.Application.FrontDesk.Requests;
+using HotelMarketplace.Domain.Entities;
+using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.SharedKernel.Time;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+
+namespace HotelMarketplace.Infrastructure.Persistence.FrontDesk;
+
+internal sealed class EfFrontDeskRepository : IFrontDeskRepository
+{
+    private readonly HotelMarketplaceDbContext _dbContext;
+    private readonly IDateTimeProvider _dateTimeProvider;
+
+    public EfFrontDeskRepository(
+        HotelMarketplaceDbContext dbContext,
+        IDateTimeProvider dateTimeProvider)
+    {
+        _dbContext = dbContext;
+        _dateTimeProvider = dateTimeProvider;
+    }
+
+    public async Task<FrontDeskPersistenceResult> CheckInBookingAsync(
+        Guid hotelId,
+        Guid bookingId,
+        Guid actorUserAccountId,
+        CheckInBookingRequest request,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            int lockResult = await AcquireFrontDeskLockAsync($"frontdesk:checkin:{hotelId:N}:{bookingId:N}", cancellationToken);
+            if (lockResult < 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.LockUnavailable);
+            }
+
+            Booking? booking = await _dbContext.Bookings
+                .IgnoreQueryFilters()
+                .Include("Rooms")
+                .FirstOrDefaultAsync(entity => entity.Id == bookingId && entity.HotelId == hotelId, cancellationToken);
+
+            if (booking is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.BookingNotFound);
+            }
+
+            if (booking.Status != BookingStatus.Confirmed)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InvalidBookingStatusForCheckIn);
+            }
+
+            BookingRoom bookingRoom = booking.Rooms.Single();
+            List<Guid> requestedRoomIds = request.PhysicalRoomIds.Distinct().ToList();
+            if (requestedRoomIds.Count != bookingRoom.Quantity)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InvalidRoomAssignment);
+            }
+
+            List<PhysicalRoom> rooms = await _dbContext.PhysicalRooms
+                .IgnoreQueryFilters()
+                .Where(room => requestedRoomIds.Contains(room.Id))
+                .ToListAsync(cancellationToken);
+
+            if (!RoomsMatchBooking(hotelId, bookingRoom.RoomTypeId, requestedRoomIds, rooms))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InvalidRoomAssignment);
+            }
+
+            bool hasOverlap = await HasActiveAssignmentOverlapAsync(
+                requestedRoomIds,
+                booking.CheckInDate,
+                booking.CheckOutDate,
+                booking.Id,
+                cancellationToken);
+
+            if (hasOverlap)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.RoomAssignmentOverlap);
+            }
+
+            foreach (PhysicalRoom room in rooms)
+            {
+                RoomOperationalStatus oldStatus = room.Status;
+                room.MarkOccupiedForCheckIn();
+                await _dbContext.RoomStatusHistories.AddAsync(
+                    new RoomStatusHistory(Guid.NewGuid(), hotelId, room.Id, oldStatus, room.Status, actorUserAccountId),
+                    cancellationToken);
+
+                await _dbContext.BookingRoomAssignments.AddAsync(
+                    new BookingRoomAssignment(
+                        Guid.NewGuid(),
+                        hotelId,
+                        booking.Id,
+                        bookingRoom.Id,
+                        room.Id,
+                        booking.CheckInDate,
+                        booking.CheckOutDate,
+                        actorUserAccountId),
+                    cancellationToken);
+            }
+
+            booking.CheckIn();
+
+            GuestStayRecord stayRecord = new(
+                Guid.NewGuid(),
+                hotelId,
+                booking.Id,
+                actorUserAccountId,
+                request.GuestFullName,
+                request.IdentityDocumentNumber);
+
+            await _dbContext.GuestStayRecords.AddAsync(stayRecord, cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return FrontDeskPersistenceResult.Success(await ToFrontDeskBookingDtoAsync(booking.Id, stayRecord.Id, null, cancellationToken));
+        });
+    }
+
+    public async Task<FrontDeskPersistenceResult> CheckOutBookingAsync(
+        Guid hotelId,
+        Guid bookingId,
+        Guid actorUserAccountId,
+        CheckOutBookingRequest request,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            int lockResult = await AcquireFrontDeskLockAsync($"frontdesk:checkout:{hotelId:N}:{bookingId:N}", cancellationToken);
+            if (lockResult < 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.LockUnavailable);
+            }
+
+            Booking? booking = await _dbContext.Bookings
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(entity => entity.Id == bookingId && entity.HotelId == hotelId, cancellationToken);
+
+            if (booking is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.BookingNotFound);
+            }
+
+            if (booking.Status != BookingStatus.CheckedIn)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InvalidBookingStatusForCheckOut);
+            }
+
+            decimal alreadyCollected = await _dbContext.PaymentCollectionRecords
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(payment => payment.BookingId == booking.Id && payment.Status == PaymentStatus.Paid)
+                .SumAsync(payment => (decimal?)payment.Amount, cancellationToken) ?? 0;
+
+            if (booking.PaymentMode == PaymentMode.PayAtProperty &&
+                (!request.ConfirmPayAtPropertyCollection || alreadyCollected + request.CashCollectedAmount < booking.TotalAmount))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.PaymentCollectionRequired);
+            }
+
+            if (request.CashCollectedAmount > 0)
+            {
+                await _dbContext.PaymentCollectionRecords.AddAsync(
+                    new PaymentCollectionRecord(Guid.NewGuid(), hotelId, booking.Id, actorUserAccountId, request.CashCollectedAmount),
+                    cancellationToken);
+            }
+
+            GuestStayRecord? stayRecord = await _dbContext.GuestStayRecords
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(stay => stay.BookingId == booking.Id, cancellationToken);
+
+            if (stayRecord is not null)
+            {
+                stayRecord.CheckOut(actorUserAccountId);
+            }
+
+            List<BookingRoomAssignment> assignments = await _dbContext.BookingRoomAssignments
+                .IgnoreQueryFilters()
+                .Where(assignment => assignment.BookingId == booking.Id && assignment.Status == RecordStatus.Active)
+                .ToListAsync(cancellationToken);
+
+            List<Guid> roomIds = assignments.Select(assignment => assignment.PhysicalRoomId).ToList();
+            List<PhysicalRoom> rooms = await _dbContext.PhysicalRooms
+                .IgnoreQueryFilters()
+                .Where(room => roomIds.Contains(room.Id))
+                .ToListAsync(cancellationToken);
+
+            foreach (PhysicalRoom room in rooms)
+            {
+                RoomOperationalStatus oldStatus = room.Status;
+                room.ReleaseToHousekeeping();
+                await _dbContext.RoomStatusHistories.AddAsync(
+                    new RoomStatusHistory(Guid.NewGuid(), hotelId, room.Id, oldStatus, room.Status, actorUserAccountId),
+                    cancellationToken);
+
+                await _dbContext.HousekeepingTasks.AddAsync(
+                    new HousekeepingTask(Guid.NewGuid(), hotelId, room.Id, "CheckoutCleaning", booking.Id),
+                    cancellationToken);
+            }
+
+            foreach (BookingRoomAssignment assignment in assignments)
+            {
+                assignment.Deactivate();
+            }
+
+            booking.CheckOut();
+
+            Invoice invoice = new(
+                Guid.NewGuid(),
+                hotelId,
+                booking.Id,
+                GenerateInvoiceNumber(_dateTimeProvider.UtcNow),
+                booking.TotalAmount,
+                alreadyCollected + request.CashCollectedAmount);
+
+            await _dbContext.Invoices.AddAsync(invoice, cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return FrontDeskPersistenceResult.Success(await ToFrontDeskBookingDtoAsync(booking.Id, stayRecord?.Id, invoice.Id, cancellationToken));
+        });
+    }
+
+    public async Task<FrontDeskPersistenceResult> CreateWalkInBookingAsync(
+        Guid hotelId,
+        Guid actorUserAccountId,
+        CreateWalkInBookingRequest request,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            string roomLockPart = string.Join('-', request.PhysicalRoomIds.OrderBy(id => id).Select(id => id.ToString("N", CultureInfo.InvariantCulture)));
+            int lockResult = await AcquireFrontDeskLockAsync($"frontdesk:walkin:{hotelId:N}:{roomLockPart}", cancellationToken);
+            if (lockResult < 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.LockUnavailable);
+            }
+
+            RoomType? roomType = await _dbContext.RoomTypes
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(roomType => roomType.Id == request.RoomTypeId &&
+                    roomType.HotelId == hotelId &&
+                    roomType.Status == RecordStatus.Active,
+                    cancellationToken);
+
+            if (roomType is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.RoomTypeNotAvailable);
+            }
+
+            List<Guid> requestedRoomIds = request.PhysicalRoomIds.Distinct().ToList();
+            if ((roomType.AdultCapacity + roomType.ChildCapacity) * requestedRoomIds.Count < request.GuestCount)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.CapacityExceeded);
+            }
+
+            List<PhysicalRoom> rooms = await _dbContext.PhysicalRooms
+                .IgnoreQueryFilters()
+                .Where(room => requestedRoomIds.Contains(room.Id))
+                .ToListAsync(cancellationToken);
+
+            if (!RoomsMatchBooking(hotelId, roomType.Id, requestedRoomIds, rooms))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InvalidRoomAssignment);
+            }
+
+            bool hasOverlap = await HasActiveAssignmentOverlapAsync(
+                requestedRoomIds,
+                request.CheckInDate,
+                request.CheckOutDate,
+                null,
+                cancellationToken);
+
+            if (hasOverlap)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.RoomAssignmentOverlap);
+            }
+
+            int nights = request.CheckOutDate.DayNumber - request.CheckInDate.DayNumber;
+            decimal totalAmount = requestedRoomIds.Count * nights * roomType.BasePricePerNight;
+            Guid bookingId = Guid.NewGuid();
+            DateTime utcNow = _dateTimeProvider.UtcNow;
+
+            Booking booking = new(
+                bookingId,
+                GenerateBookingCode(utcNow),
+                actorUserAccountId,
+                hotelId,
+                request.CheckInDate,
+                request.CheckOutDate,
+                PaymentMode.PayAtProperty,
+                BookingSource.WalkIn,
+                totalAmount,
+                request.GuestFullName,
+                request.GuestPhone);
+
+            BookingRoom bookingRoom = new(
+                Guid.NewGuid(),
+                bookingId,
+                roomType.Id,
+                requestedRoomIds.Count,
+                roomType.BasePricePerNight,
+                nights);
+
+            booking.AddRoom(bookingRoom);
+            await _dbContext.Bookings.AddAsync(booking, cancellationToken);
+
+            foreach (PhysicalRoom room in rooms)
+            {
+                RoomOperationalStatus oldStatus = room.Status;
+                room.MarkOccupiedForCheckIn();
+                await _dbContext.RoomStatusHistories.AddAsync(
+                    new RoomStatusHistory(Guid.NewGuid(), hotelId, room.Id, oldStatus, room.Status, actorUserAccountId),
+                    cancellationToken);
+
+                await _dbContext.BookingRoomAssignments.AddAsync(
+                    new BookingRoomAssignment(
+                        Guid.NewGuid(),
+                        hotelId,
+                        booking.Id,
+                        bookingRoom.Id,
+                        room.Id,
+                        booking.CheckInDate,
+                        booking.CheckOutDate,
+                        actorUserAccountId),
+                    cancellationToken);
+            }
+
+            booking.CheckIn();
+
+            GuestStayRecord stayRecord = new(
+                Guid.NewGuid(),
+                hotelId,
+                booking.Id,
+                actorUserAccountId,
+                request.GuestFullName,
+                request.IdentityDocumentNumber);
+            await _dbContext.GuestStayRecords.AddAsync(stayRecord, cancellationToken);
+
+            if (request.CashCollectedAmount > 0)
+            {
+                await _dbContext.PaymentCollectionRecords.AddAsync(
+                    new PaymentCollectionRecord(Guid.NewGuid(), hotelId, booking.Id, actorUserAccountId, request.CashCollectedAmount),
+                    cancellationToken);
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return FrontDeskPersistenceResult.Success(await ToFrontDeskBookingDtoAsync(booking.Id, stayRecord.Id, null, cancellationToken));
+        });
+    }
+
+    private async Task<bool> HasActiveAssignmentOverlapAsync(
+        IReadOnlyCollection<Guid> physicalRoomIds,
+        DateOnly checkInDate,
+        DateOnly checkOutDate,
+        Guid? ignoredBookingId,
+        CancellationToken cancellationToken)
+    {
+        return await _dbContext.BookingRoomAssignments
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(assignment => physicalRoomIds.Contains(assignment.PhysicalRoomId) &&
+                assignment.Status == RecordStatus.Active &&
+                assignment.StartDate < checkOutDate &&
+                assignment.EndDate > checkInDate &&
+                (ignoredBookingId == null || assignment.BookingId != ignoredBookingId),
+                cancellationToken);
+    }
+
+    private static bool RoomsMatchBooking(
+        Guid hotelId,
+        Guid roomTypeId,
+        List<Guid> requestedRoomIds,
+        List<PhysicalRoom> rooms)
+    {
+        return rooms.Count == requestedRoomIds.Count &&
+            rooms.All(room => room.HotelId == hotelId &&
+                room.RoomTypeId == roomTypeId &&
+                requestedRoomIds.Contains(room.Id) &&
+                room.Status == RoomOperationalStatus.Available);
+    }
+
+    private async Task<int> AcquireFrontDeskLockAsync(
+        string resource,
+        CancellationToken cancellationToken)
+    {
+        DbConnection connection = _dbContext.Database.GetDbConnection();
+        await using DbCommand command = connection.CreateCommand();
+        command.Transaction = _dbContext.Database.CurrentTransaction?.GetDbTransaction();
+        command.CommandText = """
+            DECLARE @lockResult int;
+            EXEC @lockResult = sys.sp_getapplock
+                @Resource = @resource,
+                @LockMode = 'Exclusive',
+                @LockOwner = 'Transaction',
+                @LockTimeout = @lockTimeout;
+            SELECT @lockResult;
+            """;
+
+        DbParameter resourceParameter = command.CreateParameter();
+        resourceParameter.ParameterName = "@resource";
+        resourceParameter.DbType = DbType.String;
+        resourceParameter.Value = resource.Length <= 255 ? resource : resource[..255];
+        command.Parameters.Add(resourceParameter);
+
+        DbParameter timeoutParameter = command.CreateParameter();
+        timeoutParameter.ParameterName = "@lockTimeout";
+        timeoutParameter.DbType = DbType.Int32;
+        timeoutParameter.Value = 10_000;
+        command.Parameters.Add(timeoutParameter);
+
+        object? result = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<FrontDeskBookingDto> ToFrontDeskBookingDtoAsync(
+        Guid bookingId,
+        Guid? guestStayRecordId,
+        Guid? invoiceId,
+        CancellationToken cancellationToken)
+    {
+        Booking booking = await _dbContext.Bookings
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstAsync(entity => entity.Id == bookingId, cancellationToken);
+
+        List<AssignedPhysicalRoomDto> assignedRooms = await (
+            from assignment in _dbContext.BookingRoomAssignments.IgnoreQueryFilters().AsNoTracking()
+            join room in _dbContext.PhysicalRooms.IgnoreQueryFilters().AsNoTracking()
+                on assignment.PhysicalRoomId equals room.Id
+            where assignment.BookingId == bookingId
+            orderby room.RoomNumber
+            select new AssignedPhysicalRoomDto(room.Id, room.RoomNumber, room.RoomTypeId, room.Status))
+            .ToListAsync(cancellationToken);
+
+        return new FrontDeskBookingDto(
+            booking.Id,
+            booking.BookingCode,
+            booking.HotelId,
+            booking.Status,
+            booking.PaymentMode,
+            booking.Source,
+            booking.CheckInDate,
+            booking.CheckOutDate,
+            booking.TotalAmount,
+            booking.GuestFullName,
+            booking.GuestPhone,
+            assignedRooms,
+            guestStayRecordId,
+            invoiceId);
+    }
+
+    private static string GenerateBookingCode(DateTime utcNow)
+    {
+        string suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..10].ToUpperInvariant();
+        return $"WI{utcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture)}{suffix}";
+    }
+
+    private static string GenerateInvoiceNumber(DateTime utcNow)
+    {
+        string suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..8].ToUpperInvariant();
+        return $"INV{utcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture)}{suffix}";
+    }
+}

@@ -101,4 +101,19 @@ public sealed class PaymentTransaction : Entity, IHotelScopedEntity
 
         Status = PaymentStatus.Failed;
     }
+
+    public void MarkReconciled()
+    {
+        if (Status != PaymentStatus.Paid)
+        {
+            throw new DomainException("PaymentTransaction.InvalidStatusForReconciliation", "Only paid transactions can be reconciled.");
+        }
+
+        ReconciliationStatus = ReconciliationStatus.Reconciled;
+    }
+
+    public void MarkReconciliationException()
+    {
+        ReconciliationStatus = ReconciliationStatus.Exception;
+    }
 }

@@ -37,4 +37,24 @@ public sealed class SettlementItem : Entity, IHotelScopedEntity
     public decimal Amount { get; private set; }
 
     public SettlementStatus Status { get; private set; }
+
+    public void MarkSettled()
+    {
+        if (Status != SettlementStatus.Pending)
+        {
+            throw new SharedKernel.Exceptions.DomainException("SettlementItem.InvalidStatusForSettlement", "Only pending settlement items can be marked as settled.");
+        }
+
+        Status = SettlementStatus.Settled;
+    }
+
+    public void MarkException()
+    {
+        if (Status == SettlementStatus.Settled)
+        {
+            throw new SharedKernel.Exceptions.DomainException("SettlementItem.SettledCannotBecomeException", "Settled items cannot be changed to exception.");
+        }
+
+        Status = SettlementStatus.Exception;
+    }
 }

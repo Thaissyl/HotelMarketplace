@@ -33,4 +33,26 @@ public sealed class SettlementRecord : Entity, IHotelScopedEntity
     public string? AdminNote { get; private set; }
 
     public DateTime CreatedAtUtc { get; private set; }
+
+    public void MarkSettled(string? adminNote)
+    {
+        if (Status != SettlementStatus.Pending)
+        {
+            throw new SharedKernel.Exceptions.DomainException("SettlementRecord.InvalidStatusForSettlement", "Only pending settlements can be marked as settled.");
+        }
+
+        Status = SettlementStatus.Settled;
+        AdminNote = Guard.Optional(adminNote, nameof(AdminNote), 1000);
+    }
+
+    public void MarkException(string adminNote)
+    {
+        if (Status == SettlementStatus.Settled)
+        {
+            throw new SharedKernel.Exceptions.DomainException("SettlementRecord.SettledCannotBecomeException", "Settled records cannot be changed to exception.");
+        }
+
+        Status = SettlementStatus.Exception;
+        AdminNote = Guard.NotBlank(adminNote, nameof(AdminNote), 1000);
+    }
 }

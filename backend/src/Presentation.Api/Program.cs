@@ -332,3 +332,7 @@ static void AddMappedConfigurationValue(
         configurationValues[mappedKey] = value;
     }
 }
+
+public partial class Program
+{
+}

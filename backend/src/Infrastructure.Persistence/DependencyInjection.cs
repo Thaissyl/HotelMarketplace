@@ -1,14 +1,22 @@
 using HotelMarketplace.Application.Authentication;
 using HotelMarketplace.Application.Bookings;
 using HotelMarketplace.Application.Bookings.Expiration;
+using HotelMarketplace.Application.FrontDesk;
+using HotelMarketplace.Application.Housekeeping;
 using HotelMarketplace.Application.HotelManagement;
+using HotelMarketplace.Application.Maintenance;
 using HotelMarketplace.Application.Marketplace;
 using HotelMarketplace.Application.Payments;
+using HotelMarketplace.Application.PlatformAdmin;
 using HotelMarketplace.Infrastructure.Persistence.Authentication;
 using HotelMarketplace.Infrastructure.Persistence.Bookings;
+using HotelMarketplace.Infrastructure.Persistence.FrontDesk;
+using HotelMarketplace.Infrastructure.Persistence.Housekeeping;
 using HotelMarketplace.Infrastructure.Persistence.HotelManagement;
+using HotelMarketplace.Infrastructure.Persistence.Maintenance;
 using HotelMarketplace.Infrastructure.Persistence.Marketplace;
 using HotelMarketplace.Infrastructure.Persistence.Payments;
+using HotelMarketplace.Infrastructure.Persistence.PlatformAdmin;
 using HotelMarketplace.Infrastructure.Persistence.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,9 +50,13 @@ public static class DependencyInjection
         services.AddScoped<IAuthUserRepository, EfAuthUserRepository>();
         services.AddScoped<IBookingRepository, EfBookingRepository>();
         services.AddScoped<IExpiredBookingRepository, EfExpiredBookingRepository>();
+        services.AddScoped<IFrontDeskRepository, EfFrontDeskRepository>();
+        services.AddScoped<IHousekeepingRepository, EfHousekeepingRepository>();
         services.AddScoped<IHotelManagementRepository, EfHotelManagementRepository>();
+        services.AddScoped<IMaintenanceRepository, EfMaintenanceRepository>();
         services.AddScoped<IMarketplaceBrowsingRepository, EfMarketplaceBrowsingRepository>();
         services.AddScoped<IPaymentRepository, EfPaymentRepository>();
+        services.AddScoped<IPlatformAdminRepository, EfPlatformAdminRepository>();
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 

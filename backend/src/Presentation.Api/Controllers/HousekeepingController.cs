@@ -1,0 +1,102 @@
+using HotelMarketplace.Application.Housekeeping;
+using HotelMarketplace.Application.Housekeeping.Dtos;
+using HotelMarketplace.Application.Housekeeping.Requests;
+using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.Presentation.Api.Authorization;
+using HotelMarketplace.SharedKernel.Results;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+namespace HotelMarketplace.Presentation.Api.Controllers;
+
+[ApiController]
+[Route("api/hotels/{hotelId:guid}/housekeeping")]
+[Authorize(
+    Policy = AuthorizationPolicies.HotelScoped,
+    Roles = nameof(UserRoleCode.HousekeepingStaff) + "," +
+        nameof(UserRoleCode.HotelManager) + "," +
+        nameof(UserRoleCode.PropertyOwner) + "," +
+        nameof(UserRoleCode.PlatformAdministrator))]
+public sealed class HousekeepingController : ControllerBase
+{
+    private readonly IHousekeepingService _housekeepingService;
+
+    public HousekeepingController(IHousekeepingService housekeepingService)
+    {
+        _housekeepingService = housekeepingService;
+    }
+
+    [HttpGet("tasks")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<HousekeepingTaskDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetTasks(
+        Guid hotelId,
+        [FromQuery] HousekeepingTaskStatus? status,
+        [FromQuery] Guid? assignedToUserAccountId,
+        CancellationToken cancellationToken)
+    {
+        Result<IReadOnlyCollection<HousekeepingTaskDto>> result = await _housekeepingService.GetTasksAsync(
+            hotelId,
+            new HousekeepingTaskQueryRequest(status, assignedToUserAccountId),
+            cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
+    [HttpPatch("tasks/{taskId:guid}/status")]
+    [ProducesResponseType(typeof(HousekeepingTaskDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status423Locked)]
+    public async Task<IActionResult> UpdateTaskStatus(
+        Guid hotelId,
+        Guid taskId,
+        UpdateHousekeepingTaskStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<HousekeepingTaskDto> result = await _housekeepingService.UpdateTaskStatusAsync(
+            hotelId,
+            taskId,
+            request,
+            cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
+    private ObjectResult ToProblem(ResultError error)
+    {
+        int statusCode = error.Code switch
+        {
+            "Housekeeping.Forbidden" => StatusCodes.Status403Forbidden,
+            "Housekeeping.TaskNotFound" => StatusCodes.Status404NotFound,
+            "Housekeeping.RoomNotFound" => StatusCodes.Status404NotFound,
+            "Housekeeping.InvalidTransition" => StatusCodes.Status409Conflict,
+            "Housekeeping.LockUnavailable" => StatusCodes.Status423Locked,
+            _ => StatusCodes.Status400BadRequest
+        };
+
+        ProblemDetails problemDetails = new()
+        {
+            Status = statusCode,
+            Title = statusCode switch
+            {
+                StatusCodes.Status403Forbidden => "Forbidden",
+                StatusCodes.Status404NotFound => "Not Found",
+                StatusCodes.Status409Conflict => "Conflict",
+                StatusCodes.Status423Locked => "Locked",
+                _ => "Bad Request"
+            },
+            Detail = error.Message,
+            Instance = HttpContext.Request.Path
+        };
+
+        problemDetails.Extensions["code"] = error.Code;
+
+        return StatusCode(statusCode, problemDetails);
+    }
+}

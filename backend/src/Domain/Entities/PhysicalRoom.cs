@@ -50,4 +50,79 @@ public sealed class PhysicalRoom : Entity, IHotelScopedEntity
 
         Status = status;
     }
+
+    public void AssignForStay()
+    {
+        if (Status != RoomOperationalStatus.Available)
+        {
+            throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.NotAvailableForAssignment", "Selected physical room is not available for assignment.");
+        }
+
+        Status = RoomOperationalStatus.Assigned;
+    }
+
+    public void MarkOccupiedForCheckIn()
+    {
+        if (Status is not (RoomOperationalStatus.Available or RoomOperationalStatus.Assigned))
+        {
+            throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.NotAvailableForCheckIn", "Selected physical room cannot be occupied for check-in.");
+        }
+
+        Status = RoomOperationalStatus.Occupied;
+    }
+
+    public void ReleaseToHousekeeping()
+    {
+        if (Status != RoomOperationalStatus.Occupied)
+        {
+            throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.InvalidCheckoutStatus", "Only occupied rooms can be released to housekeeping.");
+        }
+
+        Status = RoomOperationalStatus.Dirty;
+    }
+
+    public void StartHousekeeping()
+    {
+        if (Status != RoomOperationalStatus.Dirty && Status != RoomOperationalStatus.InspectionRequired)
+        {
+            throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.InvalidHousekeepingStartStatus", "Only dirty or inspection-required rooms can enter cleaning.");
+        }
+
+        Status = RoomOperationalStatus.Cleaning;
+    }
+
+    public void CompleteHousekeeping()
+    {
+        if (Status != RoomOperationalStatus.Cleaning)
+        {
+            throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.InvalidHousekeepingCompleteStatus", "Only rooms in cleaning can become available.");
+        }
+
+        Status = RoomOperationalStatus.Available;
+    }
+
+    public void BlockForMaintenance(RoomOperationalStatus blockedStatus)
+    {
+        if (blockedStatus is not (RoomOperationalStatus.Maintenance or RoomOperationalStatus.OutOfService))
+        {
+            throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.InvalidMaintenanceBlockStatus", "Maintenance issues can only move rooms to Maintenance or OutOfService.");
+        }
+
+        if (Status == RoomOperationalStatus.Occupied)
+        {
+            throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.OccupiedRoomCannotEnterMaintenance", "An occupied room cannot enter maintenance from this workflow.");
+        }
+
+        Status = blockedStatus;
+    }
+
+    public void ReleaseFromMaintenance()
+    {
+        if (Status is not (RoomOperationalStatus.Maintenance or RoomOperationalStatus.OutOfService))
+        {
+            throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.InvalidMaintenanceReleaseStatus", "Only rooms under maintenance or out of service can be released.");
+        }
+
+        Status = RoomOperationalStatus.Available;
+    }
 }

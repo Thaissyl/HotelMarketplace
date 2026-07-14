@@ -5,6 +5,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Application\Application.csproj" />
+    <ProjectReference Include="..\..\src\Domain\Domain.csproj" />
+    <ProjectReference Include="..\..\src\Infrastructure.Persistence\Infrastructure.Persistence.csproj" />
     <ProjectReference Include="..\..\src\Presentation.Api\Presentation.Api.csproj" />
   </ItemGroup>
 

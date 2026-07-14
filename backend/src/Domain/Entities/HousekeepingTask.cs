@@ -37,4 +37,27 @@ public sealed class HousekeepingTask : Entity, IHotelScopedEntity
     public HousekeepingTaskStatus Status { get; private set; }
 
     public DateTime CreatedAtUtc { get; private set; }
+
+    public void Start(Guid assignedToUserAccountId)
+    {
+        Guard.NotEmpty(assignedToUserAccountId, nameof(AssignedToUserAccountId));
+
+        if (Status != HousekeepingTaskStatus.Open)
+        {
+            throw new SharedKernel.Exceptions.DomainException("HousekeepingTask.InvalidStartStatus", "Only open housekeeping tasks can be started.");
+        }
+
+        AssignedToUserAccountId = assignedToUserAccountId;
+        Status = HousekeepingTaskStatus.InProgress;
+    }
+
+    public void Complete()
+    {
+        if (Status != HousekeepingTaskStatus.InProgress)
+        {
+            throw new SharedKernel.Exceptions.DomainException("HousekeepingTask.InvalidCompleteStatus", "Only in-progress housekeeping tasks can be completed.");
+        }
+
+        Status = HousekeepingTaskStatus.Completed;
+    }
 }

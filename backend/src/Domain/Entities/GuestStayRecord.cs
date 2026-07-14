@@ -38,4 +38,17 @@ public sealed class GuestStayRecord : Entity, IHotelScopedEntity
     public DateTime CheckedInAtUtc { get; private set; }
 
     public DateTime? CheckedOutAtUtc { get; private set; }
+
+    public void CheckOut(Guid checkedOutByUserAccountId)
+    {
+        Guard.NotEmpty(checkedOutByUserAccountId, nameof(CheckedOutByUserAccountId));
+
+        if (CheckedOutAtUtc is not null)
+        {
+            throw new SharedKernel.Exceptions.DomainException("GuestStayRecord.AlreadyCheckedOut", "The stay record is already checked out.");
+        }
+
+        CheckedOutByUserAccountId = checkedOutByUserAccountId;
+        CheckedOutAtUtc = DateTime.UtcNow;
+    }
 }

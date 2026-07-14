@@ -100,4 +100,32 @@ public sealed class HotelProperty : Entity, IHotelScopedEntity
             PublicationStatus = PublicationStatus.Unpublished;
         }
     }
+
+    public void Approve()
+    {
+        if (ApprovalStatus != HotelApprovalStatus.PendingReview)
+        {
+            throw new SharedKernel.Exceptions.DomainException("HotelProperty.InvalidApprovalStatus", "Only hotels pending review can be approved.");
+        }
+
+        ApprovalStatus = HotelApprovalStatus.Approved;
+        PublicationStatus = PublicationStatus.Published;
+    }
+
+    public void Reject()
+    {
+        if (ApprovalStatus != HotelApprovalStatus.PendingReview)
+        {
+            throw new SharedKernel.Exceptions.DomainException("HotelProperty.InvalidRejectionStatus", "Only hotels pending review can be rejected.");
+        }
+
+        ApprovalStatus = HotelApprovalStatus.Rejected;
+        PublicationStatus = PublicationStatus.Unpublished;
+    }
+
+    public void UpdateCommissionRate(decimal commissionRate)
+    {
+        Guard.Rate(commissionRate, nameof(DefaultCommissionRate), 0.30m);
+        DefaultCommissionRate = commissionRate;
+    }
 }

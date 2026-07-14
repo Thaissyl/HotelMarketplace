@@ -115,6 +115,26 @@ public sealed class Booking : Entity, IHotelScopedEntity
         Status = BookingStatus.Confirmed;
     }
 
+    public void CheckIn()
+    {
+        if (Status != BookingStatus.Confirmed)
+        {
+            throw new DomainException("Booking.InvalidStatusForCheckIn", "Only confirmed bookings can be checked in.");
+        }
+
+        Status = BookingStatus.CheckedIn;
+    }
+
+    public void CheckOut()
+    {
+        if (Status != BookingStatus.CheckedIn)
+        {
+            throw new DomainException("Booking.InvalidStatusForCheckOut", "Only checked-in bookings can be checked out.");
+        }
+
+        Status = BookingStatus.CheckedOut;
+    }
+
     public void ExpirePaymentHold(DateTime utcNow)
     {
         if (Status != BookingStatus.PendingPayment)

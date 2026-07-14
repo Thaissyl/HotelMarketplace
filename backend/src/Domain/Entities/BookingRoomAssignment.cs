@@ -46,4 +46,9 @@ public sealed class BookingRoomAssignment : Entity, IHotelScopedEntity
     public RecordStatus Status { get; private set; }
 
     public DateTime AssignedAtUtc { get; private set; }
+
+    public void Deactivate()
+    {
+        Status = RecordStatus.Inactive;
+    }
 }

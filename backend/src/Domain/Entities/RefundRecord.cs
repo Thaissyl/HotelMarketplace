@@ -38,4 +38,53 @@ public sealed class RefundRecord : Entity, IHotelScopedEntity
     public RefundStatus Status { get; private set; }
 
     public DateTime CreatedAtUtc { get; private set; }
+
+    public void Approve(decimal approvedAmount)
+    {
+        if (Status != RefundStatus.PendingReview)
+        {
+            throw new SharedKernel.Exceptions.DomainException("RefundRecord.InvalidStatusForApproval", "Only pending refund requests can be approved.");
+        }
+
+        Guard.NonNegative(approvedAmount, nameof(ApprovedAmount));
+
+        if (approvedAmount > RequestedAmount)
+        {
+            throw new SharedKernel.Exceptions.DomainException("RefundRecord.ApprovedAmountTooLarge", "Approved refund amount cannot exceed requested amount.");
+        }
+
+        ApprovedAmount = approvedAmount;
+        Status = RefundStatus.Approved;
+    }
+
+    public void Reject()
+    {
+        if (Status != RefundStatus.PendingReview)
+        {
+            throw new SharedKernel.Exceptions.DomainException("RefundRecord.InvalidStatusForRejection", "Only pending refund requests can be rejected.");
+        }
+
+        ApprovedAmount = 0m;
+        Status = RefundStatus.Rejected;
+    }
+
+    public void MarkProcessed()
+    {
+        if (Status != RefundStatus.Approved)
+        {
+            throw new SharedKernel.Exceptions.DomainException("RefundRecord.InvalidStatusForProcessing", "Only approved refund requests can be marked as processed.");
+        }
+
+        Status = RefundStatus.Processed;
+    }
+
+    public void MarkFailed()
+    {
+        if (Status != RefundStatus.Approved)
+        {
+            throw new SharedKernel.Exceptions.DomainException("RefundRecord.InvalidStatusForFailure", "Only approved refund requests can be marked as failed.");
+        }
+
+        Status = RefundStatus.Failed;
+    }
 }
