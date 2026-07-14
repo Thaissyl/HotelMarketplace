@@ -80,11 +80,16 @@ internal sealed class PaymentTransactionConfiguration : IEntityTypeConfiguration
         builder.ConfigureEntity("PaymentTransactions");
         builder.Property(entity => entity.Provider).HasMaxLength(64).IsRequired();
         builder.Property(entity => entity.GatewayReference).HasMaxLength(128);
+        builder.Property(entity => entity.GatewayPaymentLinkId).HasMaxLength(128);
+        builder.Property(entity => entity.GatewayTransactionReference).HasMaxLength(128);
+        builder.Property(entity => entity.CheckoutUrl).HasMaxLength(1000);
         builder.Property(entity => entity.Amount).HasPrecision(18, 2);
         builder.Property(entity => entity.Status).HasEnumConversion();
         builder.Property(entity => entity.ReconciliationStatus).HasEnumConversion();
         builder.Property(entity => entity.CreatedAtUtc).HasPrecision(3);
+        builder.Property(entity => entity.PaidAtUtc).HasPrecision(3);
         builder.HasIndex(entity => entity.GatewayReference).IsUnique().HasFilter("[GatewayReference] IS NOT NULL");
+        builder.HasIndex(entity => entity.GatewayTransactionReference).IsUnique().HasFilter("[GatewayTransactionReference] IS NOT NULL");
         builder.HasIndex(entity => new { entity.HotelId, entity.Status, entity.ReconciliationStatus });
         builder.HasOne<HotelProperty>().WithMany().HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Booking>().WithMany().HasForeignKey(entity => entity.BookingId).OnDelete(DeleteBehavior.Restrict);
