@@ -43,4 +43,31 @@ public sealed class RoomType : Entity, IHotelScopedEntity
     public string? Description { get; private set; }
 
     public RecordStatus Status { get; private set; }
+
+    public void UpdateDetails(
+        string name,
+        int adultCapacity,
+        int childCapacity,
+        decimal basePricePerNight,
+        string? description)
+    {
+        Guard.GreaterThanZero(adultCapacity, nameof(AdultCapacity));
+        Guard.NonNegative(basePricePerNight, nameof(BasePricePerNight));
+
+        if (childCapacity < 0)
+        {
+            throw new SharedKernel.Exceptions.DomainException("RoomType.InvalidChildCapacity", "Child capacity cannot be negative.");
+        }
+
+        Name = Guard.NotBlank(name, nameof(Name), 160);
+        AdultCapacity = adultCapacity;
+        ChildCapacity = childCapacity;
+        BasePricePerNight = basePricePerNight;
+        Description = Guard.Optional(description, nameof(Description), 1000);
+    }
+
+    public void Deactivate()
+    {
+        Status = RecordStatus.Inactive;
+    }
 }

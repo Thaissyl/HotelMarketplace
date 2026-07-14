@@ -38,7 +38,7 @@ public sealed class HotelProperty : Entity, IHotelScopedEntity
         ContactEmail = Guard.NotBlank(contactEmail, nameof(ContactEmail), 256).ToLowerInvariant();
         ContactPhone = Guard.NotBlank(contactPhone, nameof(ContactPhone), 32);
         Description = Guard.Optional(description, nameof(Description), 2000);
-        ApprovalStatus = HotelApprovalStatus.Draft;
+        ApprovalStatus = HotelApprovalStatus.PendingReview;
         PublicationStatus = PublicationStatus.Unpublished;
         DefaultCommissionRate = 0.10m;
         IsWalkInEnabled = true;
@@ -78,4 +78,26 @@ public sealed class HotelProperty : Entity, IHotelScopedEntity
     public IReadOnlyCollection<RoomType> RoomTypes => _roomTypes;
 
     public IReadOnlyCollection<PhysicalRoom> PhysicalRooms => _physicalRooms;
+
+    public void UpdateProfile(
+        string name,
+        string city,
+        string addressLine,
+        string contactEmail,
+        string contactPhone,
+        string? description)
+    {
+        Name = Guard.NotBlank(name, nameof(Name), 200);
+        City = Guard.NotBlank(city, nameof(City), 100);
+        AddressLine = Guard.NotBlank(addressLine, nameof(AddressLine), 300);
+        ContactEmail = Guard.NotBlank(contactEmail, nameof(ContactEmail), 256).ToLowerInvariant();
+        ContactPhone = Guard.NotBlank(contactPhone, nameof(ContactPhone), 32);
+        Description = Guard.Optional(description, nameof(Description), 2000);
+
+        if (ApprovalStatus == HotelApprovalStatus.Approved)
+        {
+            ApprovalStatus = HotelApprovalStatus.PendingReview;
+            PublicationStatus = PublicationStatus.Unpublished;
+        }
+    }
 }

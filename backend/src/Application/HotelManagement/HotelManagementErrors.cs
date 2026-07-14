@@ -1,0 +1,14 @@
+using HotelMarketplace.SharedKernel.Results;
+
+namespace HotelMarketplace.Application.HotelManagement;
+
+public static class HotelManagementErrors
+{
+    public static readonly ResultError Forbidden = new("HotelManagement.Forbidden", "The current user is not allowed to manage this hotel resource.");
+    public static readonly ResultError HotelNotFound = new("HotelManagement.HotelNotFound", "The hotel was not found.");
+    public static readonly ResultError RoomTypeNotFound = new("HotelManagement.RoomTypeNotFound", "The room type was not found.");
+    public static readonly ResultError PhysicalRoomNotFound = new("HotelManagement.PhysicalRoomNotFound", "The physical room was not found.");
+    public static readonly ResultError DuplicateRoomNumber = new("HotelManagement.DuplicateRoomNumber", "Room number must be unique within the hotel.");
+    public static readonly ResultError RoomTypeHasFutureBookings = new("HotelManagement.RoomTypeHasFutureBookings", "This room type cannot be deactivated because active future bookings exist.");
+    public static readonly ResultError RoomIsOccupied = new("HotelManagement.RoomIsOccupied", "This room cannot be inactivated because it is currently occupied.");
+}
