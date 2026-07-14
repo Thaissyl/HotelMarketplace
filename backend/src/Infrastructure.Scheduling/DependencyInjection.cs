@@ -11,6 +11,14 @@ public static class DependencyInjection
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
+        BookingExpirationOptions options = new(
+            configuration.GetValue("Scheduling:BookingExpiration:Enabled", true),
+            configuration.GetValue("Scheduling:BookingExpiration:IntervalSeconds", 60),
+            configuration.GetValue("Scheduling:BookingExpiration:BatchSize", 100));
+
+        services.AddSingleton(options);
+        services.AddHostedService<ExpiredBookingBackgroundService>();
+
         return services;
     }
 }

@@ -1,5 +1,6 @@
 using HotelMarketplace.Application.Authentication;
 using HotelMarketplace.Application.Bookings;
+using HotelMarketplace.Application.Bookings.Expiration;
 using HotelMarketplace.Application.HotelManagement;
 using HotelMarketplace.Application.Marketplace;
 using HotelMarketplace.Application.Payments;
@@ -40,6 +41,7 @@ public static class DependencyInjection
 
         services.AddScoped<IAuthUserRepository, EfAuthUserRepository>();
         services.AddScoped<IBookingRepository, EfBookingRepository>();
+        services.AddScoped<IExpiredBookingRepository, EfExpiredBookingRepository>();
         services.AddScoped<IHotelManagementRepository, EfHotelManagementRepository>();
         services.AddScoped<IMarketplaceBrowsingRepository, EfMarketplaceBrowsingRepository>();
         services.AddScoped<IPaymentRepository, EfPaymentRepository>();
