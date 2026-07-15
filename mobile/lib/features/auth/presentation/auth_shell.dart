@@ -12,11 +12,13 @@ class AuthShell extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.child,
+    this.showBackButton = true,
   });
 
   final String title;
   final String subtitle;
   final Widget child;
+  final bool showBackButton;
 
   @override
   Widget build(BuildContext context) {
@@ -28,22 +30,25 @@ class AuthShell extends StatelessWidget {
           padding: const EdgeInsets.all(AppSpacing.xl),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           children: [
-            Align(
-              alignment: Alignment.topLeft,
-              child: IconButton.filledTonal(
-                tooltip: 'Back',
-                onPressed: () {
-                  if (context.canPop()) {
-                    context.pop();
-                    return;
-                  }
+            if (showBackButton) ...[
+              Align(
+                alignment: Alignment.topLeft,
+                child: IconButton.filledTonal(
+                  tooltip: 'Back',
+                  onPressed: () {
+                    if (context.canPop()) {
+                      context.pop();
+                      return;
+                    }
 
-                  context.go(LoginScreen.routePath);
-                },
-                icon: const Icon(Icons.arrow_back_rounded),
+                    context.go(LoginScreen.routePath);
+                  },
+                  icon: const Icon(Icons.arrow_back_rounded),
+                ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
+              const SizedBox(height: AppSpacing.lg),
+            ] else
+              const SizedBox(height: AppSpacing.xxl),
             Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 520),

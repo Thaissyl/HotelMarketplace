@@ -1,9 +1,12 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
+import '../../../core/network/api_exception.dart';
+import '../../auth/application/auth_controller.dart';
 import '../../../shared/utils/app_formatters.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
 import '../../../shared/widgets/app_shimmer.dart';
@@ -25,6 +28,8 @@ class PlatformAdminDashboardScreen extends ConsumerWidget {
           title: const Text('Platform Admin'),
           bottom: const TabBar(
             isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            labelPadding: EdgeInsets.symmetric(horizontal: AppSpacing.md),
             tabs: [
               Tab(icon: Icon(Icons.analytics_rounded), text: 'Analytics'),
               Tab(
@@ -57,11 +62,41 @@ class PlatformAdminDashboardScreen extends ConsumerWidget {
   }
 }
 
-class _AnalyticsTab extends ConsumerWidget {
+class _AnalyticsTab extends ConsumerStatefulWidget {
   const _AnalyticsTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AnalyticsTab> createState() => _AnalyticsTabState();
+}
+
+class _AnalyticsTabState extends ConsumerState<_AnalyticsTab> {
+  static const int _pageSize = 5;
+
+  final TextEditingController _searchController = TextEditingController();
+  String _searchTerm = '';
+  int _pageIndex = 0;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _setSearchTerm(String value) {
+    setState(() {
+      _searchTerm = value.trim().toLowerCase();
+      _pageIndex = 0;
+    });
+  }
+
+  void _goToPage(int pageIndex, int pageCount) {
+    setState(() {
+      _pageIndex = pageIndex.clamp(0, pageCount - 1);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final summary = ref.watch(adminFinanceSummaryProvider);
 
     return RefreshIndicator(
@@ -100,36 +135,45 @@ class _AnalyticsTab extends ConsumerWidget {
                       _KpiData(
                         'Gross revenue',
                         AppFormatters.money(gross),
+                        'Total confirmed booking value',
                         Icons.trending_up_rounded,
                       ),
                       _KpiData(
                         'Commission',
                         AppFormatters.money(commission),
+                        'Platform fee collected',
                         Icons.percent_rounded,
                       ),
                       _KpiData(
                         'Hotel payable',
                         AppFormatters.money(net),
+                        'Amount owed to hotels',
                         Icons.account_balance_rounded,
                       ),
                       _KpiData(
                         'Bookings',
                         bookings.toString(),
+                        'Successful reservations',
                         Icons.confirmation_number_rounded,
                       ),
                     ],
                   ),
                   const SizedBox(height: AppSpacing.xl),
-                  for (final item in items)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                      child: _FinanceHotelCard(item: item),
-                    ),
+                  _FinanceHotelPagedList(
+                    items: items,
+                    pageSize: _pageSize,
+                    pageIndex: _pageIndex,
+                    searchController: _searchController,
+                    searchTerm: _searchTerm,
+                    onSearchChanged: _setSearchTerm,
+                    onPageChanged: _goToPage,
+                  ),
                 ],
               );
             },
             error: (error, stackTrace) => _AdminErrorCard(
               message: 'Unable to load finance summary.',
+              error: error,
               onRetry: () => ref.invalidate(adminFinanceSummaryProvider),
             ),
             loading: () => const _AdminShimmerGrid(),
@@ -172,6 +216,7 @@ class _HotelReviewTab extends ConsumerWidget {
         ),
         error: (error, stackTrace) => _AdminErrorCard(
           message: 'Unable to load pending hotels.',
+          error: error,
           onRetry: () => ref.invalidate(pendingHotelsProvider),
         ),
         loading: () => const _PaddedShimmer(),
@@ -210,6 +255,7 @@ class _SettlementsTab extends ConsumerWidget {
         ),
         error: (error, stackTrace) => _AdminErrorCard(
           message: 'Unable to load settlements.',
+          error: error,
           onRetry: () => ref.invalidate(settlementsProvider),
         ),
         loading: () => const _PaddedShimmer(),
@@ -248,6 +294,7 @@ class _RefundsTab extends ConsumerWidget {
         ),
         error: (error, stackTrace) => _AdminErrorCard(
           message: 'Unable to load refunds.',
+          error: error,
           onRetry: () => ref.invalidate(pendingRefundsProvider),
         ),
         loading: () => const _PaddedShimmer(),
@@ -533,7 +580,7 @@ class _KpiGrid extends StatelessWidget {
       itemCount: cards.length,
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 260,
-        childAspectRatio: 1.45,
+        childAspectRatio: 1.08,
         crossAxisSpacing: AppSpacing.md,
         mainAxisSpacing: AppSpacing.md,
       ),
@@ -543,9 +590,10 @@ class _KpiGrid extends StatelessWidget {
 }
 
 class _KpiData {
-  const _KpiData(this.label, this.value, this.icon);
+  const _KpiData(this.label, this.value, this.helperText, this.icon);
   final String label;
   final String value;
+  final String helperText;
   final IconData icon;
 }
 
@@ -564,9 +612,135 @@ class _KpiCard extends StatelessWidget {
             const Spacer(),
             Text(data.value, style: Theme.of(context).textTheme.titleLarge),
             Text(data.label, style: Theme.of(context).textTheme.bodyMedium),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              data.helperText,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _FinanceHotelPagedList extends StatelessWidget {
+  const _FinanceHotelPagedList({
+    required this.items,
+    required this.pageSize,
+    required this.pageIndex,
+    required this.searchController,
+    required this.searchTerm,
+    required this.onSearchChanged,
+    required this.onPageChanged,
+  });
+
+  final List<AdminFinanceSummary> items;
+  final int pageSize;
+  final int pageIndex;
+  final TextEditingController searchController;
+  final String searchTerm;
+  final ValueChanged<String> onSearchChanged;
+  final void Function(int pageIndex, int pageCount) onPageChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final filteredItems = items.where((item) {
+      if (searchTerm.isEmpty) {
+        return true;
+      }
+
+      final searchableText = '${item.hotelName} ${item.hotelId}'.toLowerCase();
+      return searchableText.contains(searchTerm);
+    }).toList(growable: false);
+
+    final pageCount = filteredItems.isEmpty
+        ? 1
+        : ((filteredItems.length - 1) ~/ pageSize) + 1;
+    final safePageIndex = pageIndex.clamp(0, pageCount - 1);
+    final start = filteredItems.isEmpty ? 0 : safePageIndex * pageSize;
+    final end = filteredItems.isEmpty
+        ? 0
+        : (start + pageSize).clamp(0, filteredItems.length);
+    final visibleItems = filteredItems.sublist(start, end);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Hotel performance',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        TextField(
+          controller: searchController,
+          onChanged: onSearchChanged,
+          decoration: InputDecoration(
+            prefixIcon: const Icon(Icons.search_rounded),
+            hintText: 'Search by hotel name or code',
+            suffixIcon: searchTerm.isEmpty
+                ? null
+                : IconButton(
+                    onPressed: () {
+                      searchController.clear();
+                      onSearchChanged('');
+                    },
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                filteredItems.isEmpty
+                    ? 'No matching hotels'
+                    : 'Showing ${start + 1}-$end of ${filteredItems.length}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+            Text(
+              'Page ${safePageIndex + 1} of $pageCount',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        if (visibleItems.isEmpty)
+          const _EmptyAdminCard(message: 'No hotels match your search.')
+        else
+          for (final item in visibleItems)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.md),
+              child: _FinanceHotelCard(item: item),
+            ),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: safePageIndex == 0
+                    ? null
+                    : () => onPageChanged(safePageIndex - 1, pageCount),
+                icon: const Icon(Icons.chevron_left_rounded),
+                label: const Text('Previous'),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: safePageIndex >= pageCount - 1
+                    ? null
+                    : () => onPageChanged(safePageIndex + 1, pageCount),
+                icon: const Icon(Icons.chevron_right_rounded),
+                label: const Text('Next'),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -576,34 +750,180 @@ class _FinanceHotelCard extends StatelessWidget {
   final AdminFinanceSummary item;
   @override
   Widget build(BuildContext context) {
+    final displayName = _readableHotelName(item.hotelName);
+    final commissionRate = item.grossBookingRevenue <= 0
+        ? 0.0
+        : (item.platformCommission / item.grossBookingRevenue).clamp(0.0, 1.0);
+
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              item.hotelName,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            LinearProgressIndicator(
-              value: item.grossBookingRevenue <= 0
-                  ? 0
-                  : (item.platformCommission / item.grossBookingRevenue)
-                      .clamp(0, 1),
-              minHeight: 8,
-              borderRadius: BorderRadius.circular(AppRadii.sm),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text('Gross: ${AppFormatters.money(item.grossBookingRevenue)}'),
-            Text('Commission: ${AppFormatters.money(item.platformCommission)}'),
-            Text('Hotel net: ${AppFormatters.money(item.hotelNetReceivable)}'),
-          ],
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        onTap: () => _showFinanceHotelDetails(context, item),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          displayName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              LinearProgressIndicator(
+                value: commissionRate,
+                minHeight: 8,
+                borderRadius: BorderRadius.circular(AppRadii.sm),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _MetricRow(
+                label: 'Booking revenue',
+                value: AppFormatters.money(item.grossBookingRevenue),
+              ),
+              _MetricRow(
+                label: 'Platform commission',
+                value: AppFormatters.money(item.platformCommission),
+              ),
+              _MetricRow(
+                label: 'Hotel payout',
+                value: AppFormatters.money(item.hotelNetReceivable),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Tap to view financial details',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+class _MetricRow extends StatelessWidget {
+  const _MetricRow({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+void _showFinanceHotelDetails(
+  BuildContext context,
+  AdminFinanceSummary item,
+) {
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) {
+      final commissionRate = item.grossBookingRevenue <= 0
+          ? 0.0
+          : item.platformCommission / item.grossBookingRevenue;
+
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xl,
+            AppSpacing.sm,
+            AppSpacing.xl,
+            AppSpacing.xl,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _readableHotelName(item.hotelName),
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text('Hotel code ${_shortHotelCode(item.hotelId)}'),
+              const SizedBox(height: AppSpacing.xl),
+              _MetricRow(
+                label: 'Successful bookings',
+                value: item.successfulBookingCount.toString(),
+              ),
+              _MetricRow(
+                label: 'Total customer payments',
+                value: AppFormatters.money(item.grossBookingRevenue),
+              ),
+              _MetricRow(
+                label: 'Platform commission',
+                value: AppFormatters.money(item.platformCommission),
+              ),
+              _MetricRow(
+                label: 'Commission rate',
+                value: '${(commissionRate * 100).toStringAsFixed(1)}%',
+              ),
+              _MetricRow(
+                label: 'Amount payable to hotel',
+                value: AppFormatters.money(item.hotelNetReceivable),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Text(
+                'This card summarizes confirmed bookings for one hotel. '
+                'Use it to compare revenue, platform fee, and the amount owed to the property.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+String _readableHotelName(String value) {
+  final trimmed = value.trim();
+  final cleaned = trimmed.replaceFirst(
+    RegExp(r'\s+[0-9a-fA-F]{24,}$'),
+    '',
+  );
+  return cleaned.isEmpty ? 'Unnamed hotel' : cleaned;
+}
+
+String _shortHotelCode(String value) {
+  final normalized = value.replaceAll('-', '').toUpperCase();
+  if (normalized.length < 6) {
+    return normalized.isEmpty ? 'N/A' : normalized;
+  }
+
+  return 'HM-${normalized.substring(normalized.length - 6)}';
 }
 
 class _AdminShimmerGrid extends StatelessWidget {
@@ -635,12 +955,21 @@ class _PaddedShimmer extends StatelessWidget {
   }
 }
 
-class _AdminErrorCard extends StatelessWidget {
-  const _AdminErrorCard({required this.message, required this.onRetry});
+class _AdminErrorCard extends ConsumerWidget {
+  const _AdminErrorCard({
+    required this.message,
+    required this.error,
+    required this.onRetry,
+  });
+
   final String message;
+  final Object error;
   final VoidCallback onRetry;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isUnauthorized = _isUnauthorized(error);
+
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       children: [
@@ -649,13 +978,43 @@ class _AdminErrorCard extends StatelessWidget {
             padding: const EdgeInsets.all(AppSpacing.xl),
             child: Column(
               children: [
-                Text(message),
+                Icon(
+                  isUnauthorized
+                      ? Icons.lock_outline_rounded
+                      : Icons.cloud_off_rounded,
+                  color: isUnauthorized ? AppColors.warning : AppColors.danger,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  AppErrorPresenter.friendlyMessage(error),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
                 const SizedBox(height: AppSpacing.md),
                 OutlinedButton.icon(
                   onPressed: onRetry,
                   icon: const Icon(Icons.refresh_rounded),
                   label: const Text('Retry'),
                 ),
+                if (isUnauthorized) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        ref.read(authControllerProvider.notifier).logout();
+                      },
+                      icon: const Icon(Icons.login_rounded),
+                      label: const Text('Sign in again'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -663,6 +1022,18 @@ class _AdminErrorCard extends StatelessWidget {
       ],
     );
   }
+}
+
+bool _isUnauthorized(Object error) {
+  if (error is UnauthorizedApiException) {
+    return true;
+  }
+
+  if (error is DioException && error.error is UnauthorizedApiException) {
+    return true;
+  }
+
+  return false;
 }
 
 class _EmptyAdminCard extends StatelessWidget {

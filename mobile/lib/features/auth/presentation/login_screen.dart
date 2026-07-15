@@ -61,6 +61,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return AuthShell(
       title: 'Welcome back',
       subtitle: 'Sign in to continue managing stays and bookings.',
+      showBackButton: false,
       child: Form(
         key: _formKey,
         autovalidateMode: AutovalidateMode.onUserInteraction,

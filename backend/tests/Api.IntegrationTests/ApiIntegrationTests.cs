@@ -356,7 +356,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             {
                 email = $"owner-smoke-{suffix}@example.com",
                 password = "OwnerPassword123!",
-                fullName = "Smoke Test Owner",
+                fullName = "Demo Property Owner",
                 phoneNumber = TestPhoneNumber(suffix),
                 role = UserRoleCode.PropertyOwner
             },
@@ -370,12 +370,12 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             "/api/owner/hotels",
             new
             {
-                name = $"Smoke Hotel {suffix}",
+                name = "Harbor Suites Saigon",
                 city = "Ho Chi Minh City",
-                addressLine = "99 Smoke Street",
-                contactEmail = $"smoke-hotel-{suffix}@example.com",
+                addressLine = "99 Nguyen Hue Boulevard",
+                contactEmail = $"qa-harbor-suites-{suffix}@example.com",
                 contactPhone = "0907654321",
-                description = "Integration smoke hotel"
+                description = "Demo property for end-to-end validation."
             },
             HttpStatusCode.Created,
             owner.AccessToken);
@@ -402,16 +402,16 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             $"/api/owner/hotels/{hotel.Id}",
             new
             {
-                name = $"Smoke Hotel Updated {suffix}",
+                name = "Harbor Suites Saigon Riverside",
                 city = "Ho Chi Minh City",
-                addressLine = "100 Smoke Street",
-                contactEmail = $"smoke-hotel-updated-{suffix}@example.com",
+                addressLine = "100 Nguyen Hue Boulevard",
+                contactEmail = $"qa-harbor-suites-updated-{suffix}@example.com",
                 contactPhone = "0907654321",
-                description = "Updated smoke hotel"
+                description = "Updated demo property."
             },
             HttpStatusCode.OK,
             owner.AccessToken);
-        updatedHotel.Name.Should().StartWith("Smoke Hotel Updated");
+        updatedHotel.Name.Should().Be("Harbor Suites Saigon Riverside");
 
         RoomTypeDto temporaryRoomType = await PostJsonAsync<RoomTypeDto>(
             client,
@@ -972,7 +972,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
         HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
 
         UserAccount owner = CreateSeedUser("hotel-owner");
-        HotelProperty hotel = CreateApprovedHotel(owner.Id, $"Bookable Hotel {Guid.NewGuid():N}");
+        HotelProperty hotel = CreateApprovedHotel(owner.Id, "Marketplace Harbor Suites");
         RoomType roomType = new(Guid.NewGuid(), hotel.Id, "Deluxe", 2, 1, 100m);
         List<PhysicalRoom> rooms = Enumerable.Range(1, physicalRoomCount)
             .Select(index => new PhysicalRoom(Guid.NewGuid(), hotel.Id, roomType.Id, $"10{index}"))

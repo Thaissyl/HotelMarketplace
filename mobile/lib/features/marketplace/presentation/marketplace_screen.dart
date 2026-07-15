@@ -18,6 +18,13 @@ import 'widgets/hotel_card.dart';
 import 'widgets/marketplace_skeletons.dart';
 import 'widgets/quantity_stepper.dart';
 
+enum _HotelSortOption {
+  recommended,
+  priceLowToHigh,
+  priceHighToLow,
+  name,
+}
+
 class MarketplaceScreen extends ConsumerStatefulWidget {
   const MarketplaceScreen({super.key});
 
@@ -29,7 +36,12 @@ class MarketplaceScreen extends ConsumerStatefulWidget {
 }
 
 class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
+  static const int _pageSize = 8;
+
   late final TextEditingController _locationController;
+  int _pageIndex = 0;
+  String? _selectedCity;
+  _HotelSortOption _sortOption = _HotelSortOption.recommended;
 
   @override
   void initState() {
@@ -72,17 +84,45 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       return;
     }
 
-    ref.read(hotelSearchQueryProvider.notifier).state = query.copyWith(
-      checkInDate: picked.start,
-      checkOutDate: picked.end,
+    _setSearchQuery(
+      query.copyWith(
+        checkInDate: picked.start,
+        checkOutDate: picked.end,
+      ),
     );
   }
 
   void _applySearch(HotelSearchQuery query) {
     FocusScope.of(context).unfocus();
-    ref.read(hotelSearchQueryProvider.notifier).state = query.copyWith(
-      location: _locationController.text,
-    );
+    _setSearchQuery(query.copyWith(location: _locationController.text));
+  }
+
+  void _setSearchQuery(HotelSearchQuery query) {
+    setState(() {
+      _pageIndex = 0;
+      _selectedCity = null;
+    });
+    ref.read(hotelSearchQueryProvider.notifier).state = query;
+  }
+
+  void _setCityFilter(String? city) {
+    setState(() {
+      _selectedCity = city;
+      _pageIndex = 0;
+    });
+  }
+
+  void _setSortOption(_HotelSortOption sortOption) {
+    setState(() {
+      _sortOption = sortOption;
+      _pageIndex = 0;
+    });
+  }
+
+  void _goToPage(int pageIndex, int pageCount) {
+    setState(() {
+      _pageIndex = pageIndex.clamp(0, pageCount - 1);
+    });
   }
 
   @override
@@ -155,12 +195,10 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                 onPickDates: () => _pickDateRange(query),
                 onApplySearch: () => _applySearch(query),
                 onGuestChanged: (value) {
-                  ref.read(hotelSearchQueryProvider.notifier).state =
-                      query.copyWith(guestCount: value);
+                  _setSearchQuery(query.copyWith(guestCount: value));
                 },
                 onRoomChanged: (value) {
-                  ref.read(hotelSearchQueryProvider.notifier).state =
-                      query.copyWith(roomCount: value);
+                  _setSearchQuery(query.copyWith(roomCount: value));
                 },
               ),
               const SizedBox(height: AppSpacing.xl),
@@ -170,28 +208,20 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                     return const _EmptySearchResult();
                   }
 
-                  return Column(
-                    children: [
-                      for (var index = 0; index < hotels.length; index += 1)
-                        Padding(
-                          padding: EdgeInsets.only(
-                            bottom:
-                                index == hotels.length - 1 ? 0 : AppSpacing.md,
-                          ),
-                          child: HotelCard(
-                            hotel: hotels[index],
-                            onTap: () {
-                              context.go(
-                                HotelDetailScreen.pathFor(hotels[index].id),
-                                extra: query,
-                              );
-                            },
-                          ),
-                        ),
-                    ],
+                  return _HotelResultPagedList(
+                    hotels: hotels,
+                    query: query,
+                    pageIndex: _pageIndex,
+                    pageSize: _pageSize,
+                    selectedCity: _selectedCity,
+                    sortOption: _sortOption,
+                    onPageChanged: _goToPage,
+                    onCityChanged: _setCityFilter,
+                    onSortChanged: _setSortOption,
                   );
                 },
                 error: (error, stackTrace) => _ErrorPanel(
+                  error: error,
                   onRetry: () {
                     ref.invalidate(hotelSearchResultsProvider(query));
                   },
@@ -200,6 +230,261 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HotelResultPagedList extends StatelessWidget {
+  const _HotelResultPagedList({
+    required this.hotels,
+    required this.query,
+    required this.pageIndex,
+    required this.pageSize,
+    required this.selectedCity,
+    required this.sortOption,
+    required this.onPageChanged,
+    required this.onCityChanged,
+    required this.onSortChanged,
+  });
+
+  final List<HotelSearchResult> hotels;
+  final HotelSearchQuery query;
+  final int pageIndex;
+  final int pageSize;
+  final String? selectedCity;
+  final _HotelSortOption sortOption;
+  final void Function(int pageIndex, int pageCount) onPageChanged;
+  final ValueChanged<String?> onCityChanged;
+  final ValueChanged<_HotelSortOption> onSortChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final cities = hotels
+        .map((hotel) => hotel.city.trim())
+        .where((city) => city.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    final filteredHotels = hotels.where((hotel) {
+      return selectedCity == null || hotel.city == selectedCity;
+    }).toList(growable: false);
+    final sortedHotels = _sortHotels(filteredHotels, sortOption);
+
+    if (sortedHotels.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _HotelResultControls(
+            cities: cities,
+            selectedCity: selectedCity,
+            sortOption: sortOption,
+            onCityChanged: onCityChanged,
+            onSortChanged: onSortChanged,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          const _EmptySearchResult(
+            message: 'No stays match this filter.',
+            description: 'Choose another city or clear the current filter.',
+          ),
+        ],
+      );
+    }
+
+    final pageCount = ((sortedHotels.length - 1) ~/ pageSize) + 1;
+    final safePageIndex = pageIndex.clamp(0, pageCount - 1);
+    final start = safePageIndex * pageSize;
+    final end = (start + pageSize).clamp(0, sortedHotels.length);
+    final visibleHotels = sortedHotels.sublist(start, end);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _HotelResultControls(
+          cities: cities,
+          selectedCity: selectedCity,
+          sortOption: sortOption,
+          onCityChanged: onCityChanged,
+          onSortChanged: onSortChanged,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Showing ${start + 1}-$end of ${sortedHotels.length} stays',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+            Text(
+              'Page ${safePageIndex + 1} of $pageCount',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        for (var index = 0; index < visibleHotels.length; index += 1)
+          Padding(
+            padding: EdgeInsets.only(
+              bottom: index == visibleHotels.length - 1
+                  ? AppSpacing.lg
+                  : AppSpacing.md,
+            ),
+            child: HotelCard(
+              hotel: visibleHotels[index],
+              onTap: () {
+                context.go(
+                  HotelDetailScreen.pathFor(visibleHotels[index].id),
+                  extra: query,
+                );
+              },
+            ),
+          ),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: safePageIndex == 0
+                    ? null
+                    : () => onPageChanged(safePageIndex - 1, pageCount),
+                icon: const Icon(Icons.chevron_left_rounded),
+                label: const Text('Previous'),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: safePageIndex >= pageCount - 1
+                    ? null
+                    : () => onPageChanged(safePageIndex + 1, pageCount),
+                icon: const Icon(Icons.chevron_right_rounded),
+                label: const Text('Next'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+List<HotelSearchResult> _sortHotels(
+  List<HotelSearchResult> hotels,
+  _HotelSortOption sortOption,
+) {
+  final sortedHotels = hotels.toList();
+
+  switch (sortOption) {
+    case _HotelSortOption.recommended:
+      return sortedHotels;
+    case _HotelSortOption.priceLowToHigh:
+      sortedHotels.sort(
+        (left, right) =>
+            left.minimumPricePerNight.compareTo(right.minimumPricePerNight),
+      );
+    case _HotelSortOption.priceHighToLow:
+      sortedHotels.sort(
+        (left, right) =>
+            right.minimumPricePerNight.compareTo(left.minimumPricePerNight),
+      );
+    case _HotelSortOption.name:
+      sortedHotels.sort((left, right) => left.name.compareTo(right.name));
+  }
+
+  return sortedHotels;
+}
+
+class _HotelResultControls extends StatelessWidget {
+  const _HotelResultControls({
+    required this.cities,
+    required this.selectedCity,
+    required this.sortOption,
+    required this.onCityChanged,
+    required this.onSortChanged,
+  });
+
+  final List<String> cities;
+  final String? selectedCity;
+  final _HotelSortOption sortOption;
+  final ValueChanged<String?> onCityChanged;
+  final ValueChanged<_HotelSortOption> onSortChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Refine results',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<_HotelSortOption>(
+                    value: sortOption,
+                    borderRadius: BorderRadius.circular(AppRadii.md),
+                    items: const [
+                      DropdownMenuItem(
+                        value: _HotelSortOption.recommended,
+                        child: Text('Recommended'),
+                      ),
+                      DropdownMenuItem(
+                        value: _HotelSortOption.priceLowToHigh,
+                        child: Text('Lowest price'),
+                      ),
+                      DropdownMenuItem(
+                        value: _HotelSortOption.priceHighToLow,
+                        child: Text('Highest price'),
+                      ),
+                      DropdownMenuItem(
+                        value: _HotelSortOption.name,
+                        child: Text('Name A-Z'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        onSortChanged(value);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+            if (cities.length > 1) ...[
+              const SizedBox(height: AppSpacing.sm),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: AppSpacing.sm),
+                      child: ChoiceChip(
+                        label: const Text('All cities'),
+                        selected: selectedCity == null,
+                        onSelected: (_) => onCityChanged(null),
+                      ),
+                    ),
+                    for (final city in cities)
+                      Padding(
+                        padding: const EdgeInsets.only(right: AppSpacing.sm),
+                        child: ChoiceChip(
+                          label: Text(city),
+                          selected: selectedCity == city,
+                          onSelected: (_) => onCityChanged(city),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -288,7 +573,14 @@ class _SearchPanel extends StatelessWidget {
 }
 
 class _EmptySearchResult extends StatelessWidget {
-  const _EmptySearchResult();
+  const _EmptySearchResult({
+    this.message = 'No stays found',
+    this.description =
+        'Try another city, date range, or reduce the number of rooms.',
+  });
+
+  final String message;
+  final String description;
 
   @override
   Widget build(BuildContext context) {
@@ -308,12 +600,12 @@ class _EmptySearchResult extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.md),
             Text(
-              'No stays found',
+              message,
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Try another city, date range, or reduce the number of rooms.',
+              description,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
@@ -325,8 +617,12 @@ class _EmptySearchResult extends StatelessWidget {
 }
 
 class _ErrorPanel extends StatelessWidget {
-  const _ErrorPanel({required this.onRetry});
+  const _ErrorPanel({
+    required this.error,
+    required this.onRetry,
+  });
 
+  final Object error;
   final VoidCallback onRetry;
 
   @override
@@ -345,6 +641,12 @@ class _ErrorPanel extends StatelessWidget {
             Text(
               'Unable to load hotels',
               style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              AppErrorPresenter.friendlyMessage(error),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: AppSpacing.lg),
             OutlinedButton.icon(

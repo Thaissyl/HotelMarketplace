@@ -50,7 +50,7 @@ class HotelCard extends StatelessWidget {
                     Text(hotel.name, style: textTheme.titleMedium),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      '${hotel.city} · ${hotel.addressLine}',
+                      '${hotel.city} - ${hotel.addressLine}',
                       style: textTheme.bodyMedium,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -74,7 +74,9 @@ class HotelCard extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          '${hotel.availableRoomTypeCount} types',
+                          hotel.availableRoomTypeCount == 1
+                              ? '1 room type'
+                              : '${hotel.availableRoomTypeCount} room types',
                           style: textTheme.labelMedium,
                         ),
                       ],
