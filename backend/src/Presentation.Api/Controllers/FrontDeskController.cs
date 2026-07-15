@@ -1,6 +1,7 @@
 using HotelMarketplace.Application.FrontDesk;
 using HotelMarketplace.Application.FrontDesk.Dtos;
 using HotelMarketplace.Application.FrontDesk.Requests;
+using HotelMarketplace.Application.HotelManagement.Dtos;
 using HotelMarketplace.Domain.Enums;
 using HotelMarketplace.Presentation.Api.Authorization;
 using HotelMarketplace.SharedKernel.Results;
@@ -24,6 +25,21 @@ public sealed class FrontDeskController : ControllerBase
     public FrontDeskController(IFrontDeskService frontDeskService)
     {
         _frontDeskService = frontDeskService;
+    }
+
+    [HttpGet("physical-rooms")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<PhysicalRoomDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetPhysicalRooms(
+        Guid hotelId,
+        [FromQuery] Guid? roomTypeId,
+        CancellationToken cancellationToken)
+    {
+        Result<IReadOnlyCollection<PhysicalRoomDto>> result =
+            await _frontDeskService.GetPhysicalRoomsAsync(hotelId, roomTypeId, cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
     }
 
     [HttpPost("bookings/{bookingId:guid}/check-in")]

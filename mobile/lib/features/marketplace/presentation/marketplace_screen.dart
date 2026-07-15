@@ -89,11 +89,17 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
   Widget build(BuildContext context) {
     final query = ref.watch(hotelSearchQueryProvider);
     final results = ref.watch(hotelSearchResultsProvider(query));
-    final roles =
-        ref.watch(authControllerProvider).userSession?.roles ?? const [];
-    final canOpenOperations = roles.any(
-      (role) => role != UserRoleCode.customer.apiValue,
-    );
+    final session = ref.watch(authControllerProvider).userSession;
+    final roles = session?.roles ?? const [];
+    final canOpenOperations = (session?.hotelIds.isNotEmpty ?? false) &&
+        roles.any((role) {
+          return role == UserRoleCode.propertyOwner.apiValue ||
+              role == UserRoleCode.hotelManager.apiValue ||
+              role == UserRoleCode.receptionist.apiValue ||
+              role == UserRoleCode.housekeepingStaff.apiValue ||
+              role == UserRoleCode.maintenanceStaff.apiValue ||
+              role == UserRoleCode.platformAdministrator.apiValue;
+        });
     final canOpenPlatformAdmin =
         roles.contains(UserRoleCode.platformAdministrator.apiValue);
 
@@ -140,6 +146,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
             ref.invalidate(hotelSearchResultsProvider(query));
           },
           child: ListView(
+            key: const PageStorageKey<String>('marketplace-search-list'),
             padding: const EdgeInsets.all(AppSpacing.xl),
             children: [
               _SearchPanel(

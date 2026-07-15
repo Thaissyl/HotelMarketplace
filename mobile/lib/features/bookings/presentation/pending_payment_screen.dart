@@ -149,17 +149,20 @@ class _PendingPaymentScreenState extends State<PendingPaymentScreen> {
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: AppSpacing.xxl),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      child: Text(
-                        '$minutes:$seconds',
-                        key: ValueKey('$minutes:$seconds'),
-                        style:
-                            Theme.of(context).textTheme.displaySmall?.copyWith(
-                                  color: _remaining.inMinutes < 2
-                                      ? AppColors.danger
-                                      : AppColors.brand,
-                                ),
+                    SizedBox(
+                      height: 72,
+                      child: Center(
+                        child: Text(
+                          '$minutes:$seconds',
+                          style: Theme.of(context)
+                              .textTheme
+                              .displaySmall
+                              ?.copyWith(
+                                color: _remaining.inMinutes < 2
+                                    ? AppColors.danger
+                                    : AppColors.brand,
+                              ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.sm),

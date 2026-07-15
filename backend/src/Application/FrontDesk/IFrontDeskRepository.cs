@@ -1,9 +1,15 @@
 using HotelMarketplace.Application.FrontDesk.Requests;
+using HotelMarketplace.Domain.Entities;
 
 namespace HotelMarketplace.Application.FrontDesk;
 
 public interface IFrontDeskRepository
 {
+    Task<IReadOnlyCollection<PhysicalRoom>> GetPhysicalRoomsAsync(
+        Guid hotelId,
+        Guid? roomTypeId,
+        CancellationToken cancellationToken);
+
     Task<FrontDeskPersistenceResult> CheckInBookingAsync(
         Guid hotelId,
         Guid bookingId,

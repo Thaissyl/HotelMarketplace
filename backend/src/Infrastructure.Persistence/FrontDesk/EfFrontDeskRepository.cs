@@ -25,6 +25,26 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
         _dateTimeProvider = dateTimeProvider;
     }
 
+    public async Task<IReadOnlyCollection<PhysicalRoom>> GetPhysicalRoomsAsync(
+        Guid hotelId,
+        Guid? roomTypeId,
+        CancellationToken cancellationToken)
+    {
+        IQueryable<PhysicalRoom> query = _dbContext.PhysicalRooms
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(room => room.HotelId == hotelId);
+
+        if (roomTypeId is not null)
+        {
+            query = query.Where(room => room.RoomTypeId == roomTypeId);
+        }
+
+        return await query
+            .OrderBy(room => room.RoomNumber)
+            .ToArrayAsync(cancellationToken);
+    }
+
     public async Task<FrontDeskPersistenceResult> CheckInBookingAsync(
         Guid hotelId,
         Guid bookingId,

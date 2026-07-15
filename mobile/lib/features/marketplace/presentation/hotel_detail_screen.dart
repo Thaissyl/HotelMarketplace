@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
-import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../features/bookings/domain/booking_draft.dart';
 import '../../../features/bookings/presentation/booking_confirmation_screen.dart';
@@ -64,7 +63,7 @@ class HotelDetailScreen extends ConsumerWidget {
   }
 }
 
-class _HotelDetailContent extends StatelessWidget {
+class _HotelDetailContent extends StatefulWidget {
   const _HotelDetailContent({
     required this.hotel,
     required this.query,
@@ -74,83 +73,137 @@ class _HotelDetailContent extends StatelessWidget {
   final HotelSearchQuery query;
 
   @override
+  State<_HotelDetailContent> createState() => _HotelDetailContentState();
+}
+
+class _HotelDetailContentState extends State<_HotelDetailContent> {
+  int _selectedRoomTypeIndex = 0;
+
+  @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.xl),
+    final roomTypes = widget.hotel.availableRoomTypes;
+    final selectedRoomType = roomTypes.isEmpty
+        ? null
+        : roomTypes[_selectedRoomTypeIndex.clamp(0, roomTypes.length - 1)];
+
+    return Stack(
       children: [
-        Container(
-          height: 220,
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          decoration: BoxDecoration(
-            color: AppColors.brand,
-            borderRadius: BorderRadius.circular(AppRadii.lg),
+        SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xl,
+            AppSpacing.xl,
+            AppSpacing.xl,
+            112,
           ),
-          child: Align(
-            alignment: Alignment.bottomLeft,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  hotel.name,
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
-                      ?.copyWith(color: Colors.white),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  '${hotel.city} · ${hotel.addressLine}',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(color: Colors.white.withValues(alpha: 0.82)),
-                ),
-              ],
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _HotelHeaderCard(hotel: widget.hotel),
+              const SizedBox(height: AppSpacing.md),
+              _StaySummary(query: widget.query),
+              const SizedBox(height: AppSpacing.lg),
+              Text(
+                'Available rooms',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              if (roomTypes.isEmpty)
+                const _NoRoomsCard()
+              else
+                for (var index = 0; index < roomTypes.length; index += 1)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      bottom: index == roomTypes.length - 1
+                          ? 0
+                          : AppSpacing.md,
+                    ),
+                    child: _RoomTypeCard(
+                      roomType: roomTypes[index],
+                      selected: index == _selectedRoomTypeIndex,
+                      onSelect: () {
+                        setState(() {
+                          _selectedRoomTypeIndex = index;
+                        });
+                      },
+                    ),
+                  ),
+            ],
           ),
         ),
-        const SizedBox(height: AppSpacing.xl),
-        _StaySummary(query: query),
-        if ((hotel.description ?? '').isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.xl),
-          Text('About', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            hotel.description!,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ],
-        const SizedBox(height: AppSpacing.xxl),
-        Text('Available rooms', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: AppSpacing.md),
-        if (hotel.availableRoomTypes.isEmpty)
-          const _NoRoomsCard()
-        else
-          for (var index = 0;
-              index < hotel.availableRoomTypes.length;
-              index += 1)
-            Padding(
-              padding: EdgeInsets.only(
-                bottom: index == hotel.availableRoomTypes.length - 1
-                    ? 0
-                    : AppSpacing.md,
-              ),
-              child: _RoomTypeCard(
-                roomType: hotel.availableRoomTypes[index],
-                onReserve: () {
+        if (selectedRoomType != null)
+          Positioned(
+            left: AppSpacing.xl,
+            right: AppSpacing.xl,
+            bottom: AppSpacing.xl,
+            child: SafeArea(
+              top: false,
+              child: FilledButton(
+                onPressed: () {
                   context.go(
                     BookingConfirmationScreen.routePath,
                     extra: BookingDraft(
-                      hotel: hotel,
-                      roomType: hotel.availableRoomTypes[index],
-                      query: query,
+                      hotel: widget.hotel,
+                      roomType: selectedRoomType,
+                      query: widget.query,
                     ),
                   );
                 },
+                child: Text(
+                  'Reserve ${AppFormatters.money(selectedRoomType.totalPriceForStay)}',
+                ),
               ),
             ),
+          ),
       ],
+    );
+  }
+}
+
+class _HotelHeaderCard extends StatelessWidget {
+  const _HotelHeaderCard({required this.hotel});
+
+  final HotelDetail hotel;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Card(
+      color: AppColors.brand,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              hotel.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.titleLarge?.copyWith(color: Colors.white),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              '${hotel.city} - ${hotel.addressLine}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.bodyMedium?.copyWith(
+                color: Colors.white.withValues(alpha: 0.82),
+              ),
+            ),
+            if ((hotel.description ?? '').isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                hotel.description!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: Colors.white.withValues(alpha: 0.82),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -171,7 +224,7 @@ class _StaySummary extends StatelessWidget {
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Text(
-                '${AppFormatters.displayDate(query.checkInDate)} - ${AppFormatters.displayDate(query.checkOutDate)} · ${query.guestCount} guests · ${query.roomCount} rooms',
+                '${AppFormatters.displayDate(query.checkInDate)} - ${AppFormatters.displayDate(query.checkOutDate)} - ${query.guestCount} guests - ${query.roomCount} rooms',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
@@ -185,63 +238,73 @@ class _StaySummary extends StatelessWidget {
 class _RoomTypeCard extends StatelessWidget {
   const _RoomTypeCard({
     required this.roomType,
-    required this.onReserve,
+    required this.selected,
+    required this.onSelect,
   });
 
   final AvailableRoomType roomType;
-  final VoidCallback onReserve;
+  final bool selected;
+  final VoidCallback onSelect;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(roomType.name, style: textTheme.titleMedium),
-                ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: selected ? AppColors.brand : AppColors.outline,
+          width: selected ? 1.5 : 1,
+        ),
+      ),
+      child: InkWell(
+        onTap: onSelect,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(roomType.name, style: textTheme.titleMedium),
+                  ),
+                  if (selected) ...[
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: AppColors.brand,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                  ],
+                  Text(
+                    AppFormatters.money(roomType.basePricePerNight),
+                    style: textTheme.titleMedium,
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                '${roomType.totalGuestCapacity} guests - ${roomType.availableRoomCount} rooms left',
+                style: textTheme.bodyMedium,
+              ),
+              if ((roomType.description ?? '').isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.sm),
                 Text(
-                  AppFormatters.money(roomType.basePricePerNight),
-                  style: textTheme.titleMedium,
+                  roomType.description!,
+                  style: textTheme.bodyMedium,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              '${roomType.totalGuestCapacity} guests · ${roomType.availableRoomCount} rooms left',
-              style: textTheme.bodyMedium,
-            ),
-            if ((roomType.description ?? '').isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.sm),
+              const SizedBox(height: AppSpacing.md),
               Text(
-                roomType.description!,
-                style: textTheme.bodyMedium,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
+                '${AppFormatters.money(roomType.totalPriceForStay)} total',
+                style: textTheme.labelLarge,
               ),
             ],
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${AppFormatters.money(roomType.totalPriceForStay)} total',
-                    style: textTheme.labelLarge,
-                  ),
-                ),
-                FilledButton(
-                  onPressed: onReserve,
-                  child: const Text('Reserve'),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );

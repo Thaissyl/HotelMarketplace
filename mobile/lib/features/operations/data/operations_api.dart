@@ -13,7 +13,7 @@ class OperationsApi {
     String? roomTypeId,
   }) {
     return _apiClient.get<List<RoomInventoryItem>>(
-      '/api/owner/hotels/$hotelId/physical-rooms',
+      '/api/hotels/$hotelId/front-desk/physical-rooms',
       queryParameters: {
         if (roomTypeId != null && roomTypeId.isNotEmpty)
           'roomTypeId': roomTypeId,
