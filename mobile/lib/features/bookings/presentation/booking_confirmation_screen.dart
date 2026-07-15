@@ -206,7 +206,7 @@ class _BookingSummary extends StatelessWidget {
             Text(draft.hotel.name, style: textTheme.titleLarge),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              '${draft.roomType.name} · ${draft.query.roomCount} room',
+              '${draft.roomType.name} - ${draft.query.roomCount} room',
               style: textTheme.bodyMedium,
             ),
             const SizedBox(height: AppSpacing.xl),

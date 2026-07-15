@@ -227,6 +227,123 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
     }
 
     [Fact]
+    public async Task CheckInExpiredBookingReturnsConflict()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel seededHotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "expired-booking-customer");
+        TestAuthResponse receptionist = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Receptionist,
+            "expired-booking-receptionist",
+            seededHotel.HotelId);
+
+        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, seededHotel);
+
+        using (IServiceScope scope = _factory.Services.CreateScope())
+        {
+            HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+            Booking entity = await dbContext.Bookings
+                .IgnoreQueryFilters()
+                .SingleAsync(item => item.Id == booking.Id);
+
+            entity.ExpirePaymentHold(entity.PaymentExpiresAtUtc!.Value.AddSeconds(1));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using HttpRequestMessage request = new(
+            HttpMethod.Post,
+            $"/api/hotels/{seededHotel.HotelId}/front-desk/bookings/{booking.Id}/check-in");
+        request.Headers.Authorization = Bearer(receptionist.AccessToken);
+        request.Content = JsonContent.Create(
+            new
+            {
+                physicalRoomIds = new[] { seededHotel.PhysicalRoomIds.Single() },
+                guestFullName = "Expired Booking Guest",
+                identityDocumentNumber = "EXPIRED123"
+            },
+            options: JsonOptions);
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        string responseBody = await response.Content.ReadAsStringAsync();
+        responseBody.Should().Contain("FrontDesk.InvalidBookingStatusForCheckIn");
+    }
+
+    [Fact]
+    public async Task ForgedHotelHeaderCannotOverrideRouteScopedAuthorization()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel allowedHotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        SeededHotel forbiddenHotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse receptionist = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Receptionist,
+            "forged-header-receptionist",
+            allowedHotel.HotelId);
+
+        using HttpRequestMessage request = new(
+            HttpMethod.Get,
+            $"/api/hotels/{forbiddenHotel.HotelId}/housekeeping/tasks");
+        request.Headers.Authorization = Bearer(receptionist.AccessToken);
+        request.Headers.Add("X-Hotel-Id", allowedHotel.HotelId.ToString());
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task ConcurrentCheckInRequestsAssignPhysicalRoomOnlyOnce()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel seededHotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "double-checkin-customer");
+        TestAuthResponse receptionist = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Receptionist,
+            "double-checkin-receptionist",
+            seededHotel.HotelId);
+
+        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, seededHotel);
+
+        await PostJsonAsync<PaymentWebhookResultDto>(
+            client,
+            $"/api/bookings/{booking.Id}/simulate-payment-success",
+            new { },
+            HttpStatusCode.OK,
+            customer.AccessToken);
+
+        const int attemptCount = 4;
+        Task<HttpStatusCode>[] attempts = Enumerable.Range(0, attemptCount)
+            .Select(index => SendCheckInAttemptAsync(
+                client,
+                receptionist.AccessToken,
+                seededHotel.HotelId,
+                booking.Id,
+                seededHotel.PhysicalRoomIds.Single(),
+                $"Double Check In Guest {index}"))
+            .ToArray();
+
+        HttpStatusCode[] statusCodes = await Task.WhenAll(attempts);
+
+        statusCodes.Count(statusCode => statusCode == HttpStatusCode.OK).Should().Be(1);
+        statusCodes.Count(statusCode => statusCode is HttpStatusCode.Conflict or (HttpStatusCode)423)
+            .Should()
+            .Be(attemptCount - 1);
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+
+        int activeAssignments = await dbContext.BookingRoomAssignments
+            .IgnoreQueryFilters()
+            .CountAsync(assignment => assignment.BookingId == booking.Id && assignment.Status == RecordStatus.Active);
+
+        activeAssignments.Should().Be(1);
+    }
+
+    [Fact]
     public async Task PublicOwnerOperationsFrontDeskHousekeepingMaintenanceAndAdminApisSmokeTest()
     {
         using HttpClient client = _factory.CreateClient();
@@ -769,6 +886,31 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
                 guestCount = 1,
                 guestFullName = "Concurrent Guest",
                 guestPhone = "0911111111"
+            },
+            options: JsonOptions);
+
+        HttpResponseMessage response = await client.SendAsync(request);
+        return response.StatusCode;
+    }
+
+    private static async Task<HttpStatusCode> SendCheckInAttemptAsync(
+        HttpClient client,
+        string accessToken,
+        Guid hotelId,
+        Guid bookingId,
+        Guid physicalRoomId,
+        string guestFullName)
+    {
+        using HttpRequestMessage request = new(
+            HttpMethod.Post,
+            $"/api/hotels/{hotelId}/front-desk/bookings/{bookingId}/check-in");
+        request.Headers.Authorization = Bearer(accessToken);
+        request.Content = JsonContent.Create(
+            new
+            {
+                physicalRoomIds = new[] { physicalRoomId },
+                guestFullName,
+                identityDocumentNumber = "CONCURRENT"
             },
             options: JsonOptions);
 
