@@ -11,43 +11,109 @@ import '../../auth/presentation/auth_form_validators.dart';
 import '../application/operations_providers.dart';
 import '../domain/operations_models.dart';
 
-class FrontDeskTab extends ConsumerWidget {
+class FrontDeskTab extends StatefulWidget {
   const FrontDeskTab({super.key, required this.hotelId});
 
   final String hotelId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return DefaultTabController(
-      length: 3,
-      child: Column(
-        children: [
-          const TabBar(
-            tabs: [
-              Tab(text: 'Arrivals'),
-              Tab(text: 'Checked In'),
-              Tab(text: 'Departures'),
+  State<FrontDeskTab> createState() => _FrontDeskTabState();
+}
+
+class _FrontDeskTabState extends State<FrontDeskTab> {
+  int _selectedIndex = 0;
+  FrontDeskBookingResult? _recentBooking;
+
+  void _rememberBooking(FrontDeskBookingResult booking) {
+    setState(() => _recentBooking = booking);
+  }
+
+  Widget _buildCurrentPanel() {
+    return switch (_selectedIndex) {
+      0 => _CheckInPanel(
+          hotelId: widget.hotelId,
+          onBookingUpdated: _rememberBooking,
+        ),
+      1 => _WalkInPanel(
+          hotelId: widget.hotelId,
+          onBookingUpdated: _rememberBooking,
+        ),
+      _ => _CheckOutPanel(
+          hotelId: widget.hotelId,
+          recentBooking: _recentBooking,
+        ),
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          child: Row(
+            children: [
+              _FrontDeskSegmentButton(
+                label: 'Arrivals',
+                selected: _selectedIndex == 0,
+                onPressed: () => setState(() => _selectedIndex = 0),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              _FrontDeskSegmentButton(
+                label: 'Checked In',
+                selected: _selectedIndex == 1,
+                onPressed: () => setState(() => _selectedIndex = 1),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              _FrontDeskSegmentButton(
+                label: 'Departures',
+                selected: _selectedIndex == 2,
+                onPressed: () => setState(() => _selectedIndex = 2),
+              ),
             ],
           ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                _CheckInPanel(hotelId: hotelId),
-                _WalkInPanel(hotelId: hotelId),
-                _CheckOutPanel(hotelId: hotelId),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+        Expanded(child: _buildCurrentPanel()),
+      ],
+    );
+  }
+}
+
+class _FrontDeskSegmentButton extends StatelessWidget {
+  const _FrontDeskSegmentButton({
+    required this.label,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+
+    return Expanded(
+      child: selected
+          ? FilledButton(onPressed: onPressed, child: child)
+          : OutlinedButton(onPressed: onPressed, child: child),
     );
   }
 }
 
 class _CheckInPanel extends ConsumerStatefulWidget {
-  const _CheckInPanel({required this.hotelId});
+  const _CheckInPanel({
+    required this.hotelId,
+    required this.onBookingUpdated,
+  });
 
   final String hotelId;
+  final ValueChanged<FrontDeskBookingResult> onBookingUpdated;
 
   @override
   ConsumerState<_CheckInPanel> createState() => _CheckInPanelState();
@@ -91,11 +157,12 @@ class _CheckInPanelState extends ConsumerState<_CheckInPanel> {
             identityDocumentNumber: _identity.text,
           );
       if (mounted) {
+        widget.onBookingUpdated(result);
         _showResult(context, result);
       }
     } catch (error) {
       if (mounted) {
-        await AppErrorPresenter.showBottomSheet(context, error);
+        AppErrorPresenter.showSnackBar(context, error);
       }
     } finally {
       if (mounted) {
@@ -150,9 +217,13 @@ class _CheckInPanelState extends ConsumerState<_CheckInPanel> {
 }
 
 class _CheckOutPanel extends ConsumerStatefulWidget {
-  const _CheckOutPanel({required this.hotelId});
+  const _CheckOutPanel({
+    required this.hotelId,
+    required this.recentBooking,
+  });
 
   final String hotelId;
+  final FrontDeskBookingResult? recentBooking;
 
   @override
   ConsumerState<_CheckOutPanel> createState() => _CheckOutPanelState();
@@ -163,6 +234,20 @@ class _CheckOutPanelState extends ConsumerState<_CheckOutPanel> {
   final _cashAmount = TextEditingController(text: '0');
   bool _confirmCash = true;
   bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _applyRecentBooking(widget.recentBooking);
+  }
+
+  @override
+  void didUpdateWidget(covariant _CheckOutPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.recentBooking?.bookingId != widget.recentBooking?.bookingId) {
+      _applyRecentBooking(widget.recentBooking);
+    }
+  }
 
   @override
   void dispose() {
@@ -186,16 +271,29 @@ class _CheckOutPanelState extends ConsumerState<_CheckOutPanel> {
             cashCollectedAmount: double.tryParse(_cashAmount.text) ?? 0,
           );
       if (mounted) {
+        _bookingId.clear();
+        _cashAmount.text = '0';
         _showResult(context, result);
       }
     } catch (error) {
       if (mounted) {
-        await AppErrorPresenter.showBottomSheet(context, error);
+        AppErrorPresenter.showSnackBar(context, error);
       }
     } finally {
       if (mounted) {
         setState(() => _loading = false);
       }
+    }
+  }
+
+  void _applyRecentBooking(FrontDeskBookingResult? booking) {
+    if (booking == null || booking.status != 'CheckedIn') {
+      return;
+    }
+
+    if (_bookingId.text.trim().isEmpty) {
+      _bookingId.text = booking.bookingId;
+      _cashAmount.text = booking.totalAmount.toStringAsFixed(0);
     }
   }
 
@@ -209,6 +307,12 @@ class _CheckOutPanelState extends ConsumerState<_CheckOutPanel> {
           subtitle:
               'Confirm counter payment and release rooms to housekeeping.',
         ),
+        if (widget.recentBooking != null &&
+            widget.recentBooking!.status == 'CheckedIn')
+          Text(
+            'Loaded recent stay ${widget.recentBooking!.bookingCode} for ${widget.recentBooking!.guestFullName}.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
         _TextInput(controller: _bookingId, label: 'Booking ID'),
         TextField(
           controller: _cashAmount,
@@ -237,9 +341,13 @@ class _CheckOutPanelState extends ConsumerState<_CheckOutPanel> {
 }
 
 class _WalkInPanel extends ConsumerStatefulWidget {
-  const _WalkInPanel({required this.hotelId});
+  const _WalkInPanel({
+    required this.hotelId,
+    required this.onBookingUpdated,
+  });
 
   final String hotelId;
+  final ValueChanged<FrontDeskBookingResult> onBookingUpdated;
 
   @override
   ConsumerState<_WalkInPanel> createState() => _WalkInPanelState();
@@ -266,13 +374,13 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
   }
 
   Future<void> _submit() async {
-    if (_roomTypeId.text.trim().isEmpty ||
-        _guestName.text.trim().isEmpty ||
+    if (_guestName.text.trim().isEmpty ||
         _guestPhone.text.trim().length != 10 ||
-        _selectedRoomIds.isEmpty) {
+        _selectedRoomIds.isEmpty ||
+        _roomTypeId.text.trim().isEmpty) {
       AppErrorPresenter.showSnackBar(
         context,
-        'Room type, room, guest name, and 10-digit phone are required.',
+        'Room, guest name, and 10-digit phone are required.',
       );
       return;
     }
@@ -292,11 +400,13 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
             cashCollectedAmount: double.tryParse(_cash.text) ?? 0,
           );
       if (mounted) {
+        widget.onBookingUpdated(result);
+        setState(() => _selectedRoomIds.clear());
         _showResult(context, result);
       }
     } catch (error) {
       if (mounted) {
-        await AppErrorPresenter.showBottomSheet(context, error);
+        AppErrorPresenter.showSnackBar(context, error);
       }
     } finally {
       if (mounted) {
@@ -333,6 +443,7 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
         _TextInput(
           controller: _roomTypeId,
           label: 'Room type ID',
+          required: false,
           onSubmitted: (_) => setState(() {}),
         ),
         OutlinedButton.icon(
@@ -371,6 +482,11 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
               _roomTypeId.text.trim().isEmpty ? null : _roomTypeId.text.trim(),
           selectedRoomIds: _selectedRoomIds,
           onChanged: () => setState(() {}),
+          onRoomSelected: (room) {
+            if (_roomTypeId.text != room.roomTypeId) {
+              _roomTypeId.text = room.roomTypeId;
+            }
+          },
         ),
         _PrimaryActionButton(
           label: 'Create walk-in stay',
@@ -389,12 +505,14 @@ class _RoomPicker extends ConsumerWidget {
     required this.roomTypeId,
     required this.selectedRoomIds,
     required this.onChanged,
+    this.onRoomSelected,
   });
 
   final String hotelId;
   final String? roomTypeId;
   final Set<String> selectedRoomIds;
   final VoidCallback onChanged;
+  final ValueChanged<RoomInventoryItem>? onRoomSelected;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -436,6 +554,7 @@ class _RoomPicker extends ConsumerWidget {
                         onSelected: (selected) {
                           if (selected) {
                             selectedRoomIds.add(room.id);
+                            onRoomSelected?.call(room);
                           } else {
                             selectedRoomIds.remove(room.id);
                           }
@@ -598,37 +717,15 @@ class _PrimaryActionButton extends StatelessWidget {
 }
 
 void _showResult(BuildContext context, FrontDeskBookingResult result) {
-  showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    builder: (context) {
-      return Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Booking updated',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text('Code: ${result.bookingCode}'),
-            Text('Status: ${result.status}'),
-            Text('Guest: ${result.guestFullName}'),
-            Text('Total: ${AppFormatters.money(result.totalAmount)}'),
-            if (result.invoiceId != null) Text('Invoice: ${result.invoiceId}'),
-            const SizedBox(height: AppSpacing.xl),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Done'),
-              ),
-            ),
-          ],
+  final invoiceText = result.invoiceId == null ? '' : ' Invoice generated.';
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text(
+          '${result.bookingCode} updated to ${result.status}.$invoiceText',
         ),
-      );
-    },
-  );
+      ),
+    );
 }

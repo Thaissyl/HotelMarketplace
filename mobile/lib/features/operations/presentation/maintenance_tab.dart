@@ -282,7 +282,7 @@ class _MaintenanceCardState extends ConsumerState<_MaintenanceCard> {
             const SizedBox(height: AppSpacing.md),
             Text(item.description),
             const SizedBox(height: AppSpacing.xs),
-            Text('Status: ${item.status} · Room: ${item.roomStatus}'),
+            Text('Status: ${item.status} - Room: ${item.roomStatus}'),
             const SizedBox(height: AppSpacing.lg),
             if (_loading)
               const LinearProgressIndicator()
