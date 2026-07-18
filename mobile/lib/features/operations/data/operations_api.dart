@@ -8,6 +8,23 @@ class OperationsApi {
 
   final ApiClient _apiClient;
 
+  Future<List<WorkingHotel>> getWorkingHotels(List<String> hotelIds) async {
+    try {
+      return await _apiClient.get<List<WorkingHotel>>(
+        '/api/operations/hotels',
+        decoder: (data) {
+          if (data is! List) {
+            return hotelIds.map(WorkingHotel.fallback).toList(growable: false);
+          }
+
+          return data.map(WorkingHotel.fromJson).toList(growable: false);
+        },
+      );
+    } catch (_) {
+      return hotelIds.map(WorkingHotel.fallback).toList(growable: false);
+    }
+  }
+
   Future<List<RoomInventoryItem>> getPhysicalRooms({
     required String hotelId,
     String? roomTypeId,
@@ -29,9 +46,31 @@ class OperationsApi {
     );
   }
 
+  Future<List<FrontDeskBookingSummary>> getFrontDeskBookings({
+    required String hotelId,
+    FrontDeskBookingListStatus? status,
+  }) {
+    return _apiClient.get<List<FrontDeskBookingSummary>>(
+      '/api/hotels/$hotelId/front-desk/bookings',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      queryParameters: {
+        if (status != null) 'status': status.apiValue,
+      },
+      decoder: (data) {
+        if (data is! List) {
+          return const <FrontDeskBookingSummary>[];
+        }
+
+        return data
+            .map(FrontDeskBookingSummary.fromJson)
+            .toList(growable: false);
+      },
+    );
+  }
+
   Future<List<RoomTypeInventoryItem>> getRoomTypes(String hotelId) {
     return _apiClient.get<List<RoomTypeInventoryItem>>(
-      '/api/owner/hotels/$hotelId/room-types',
+      '/api/operations/hotels/$hotelId/room-types',
       options: AuthHeaderInterceptor.hotelScopedOptions(),
       decoder: (data) {
         if (data is! List) {
@@ -40,6 +79,76 @@ class OperationsApi {
 
         return data.map(RoomTypeInventoryItem.fromJson).toList(growable: false);
       },
+    );
+  }
+
+  Future<WorkingHotel> getOwnerHotel(String hotelId) {
+    return _apiClient.get<WorkingHotel>(
+      '/api/owner/hotels/$hotelId',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      decoder: WorkingHotel.fromJson,
+    );
+  }
+
+  Future<WorkingHotel> updateOwnerHotel({
+    required String hotelId,
+    required UpdateHotelProfileRequest request,
+  }) {
+    return _apiClient.put<WorkingHotel>(
+      '/api/owner/hotels/$hotelId',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: request.toJson(),
+      decoder: WorkingHotel.fromJson,
+    );
+  }
+
+  Future<RoomTypeInventoryItem> createRoomType({
+    required String hotelId,
+    required CreateRoomTypeRequest request,
+  }) {
+    return _apiClient.post<RoomTypeInventoryItem>(
+      '/api/owner/hotels/$hotelId/room-types',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: request.toJson(),
+      decoder: RoomTypeInventoryItem.fromJson,
+    );
+  }
+
+  Future<RoomInventoryItem> createPhysicalRoom({
+    required String hotelId,
+    required CreatePhysicalRoomRequest request,
+  }) {
+    return _apiClient.post<RoomInventoryItem>(
+      '/api/owner/hotels/$hotelId/physical-rooms',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: request.toJson(),
+      decoder: RoomInventoryItem.fromJson,
+    );
+  }
+
+  Future<List<HotelStaffMember>> getStaff(String hotelId) {
+    return _apiClient.get<List<HotelStaffMember>>(
+      '/api/operations/hotels/$hotelId/staff',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      decoder: (data) {
+        if (data is! List) {
+          return const <HotelStaffMember>[];
+        }
+
+        return data.map(HotelStaffMember.fromJson).toList(growable: false);
+      },
+    );
+  }
+
+  Future<HotelStaffMember> createStaff({
+    required String hotelId,
+    required CreateStaffRequest request,
+  }) {
+    return _apiClient.post<HotelStaffMember>(
+      '/api/owner/hotels/$hotelId/staff',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: request.toJson(),
+      decoder: HotelStaffMember.fromJson,
     );
   }
 
@@ -146,6 +255,19 @@ class OperationsApi {
     );
   }
 
+  Future<HousekeepingTask> assignHousekeepingTask({
+    required String hotelId,
+    required String taskId,
+    required String assignedToUserAccountId,
+  }) {
+    return _apiClient.patch<HousekeepingTask>(
+      '/api/hotels/$hotelId/housekeeping/tasks/$taskId/assignee',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: {'assignedToUserAccountId': assignedToUserAccountId},
+      decoder: HousekeepingTask.fromJson,
+    );
+  }
+
   Future<List<MaintenanceRequestItem>> getMaintenanceRequests({
     required String hotelId,
     MaintenanceStatus? status,
@@ -164,6 +286,22 @@ class OperationsApi {
         return data
             .map(MaintenanceRequestItem.fromJson)
             .toList(growable: false);
+      },
+    );
+  }
+
+  Future<List<RoomInventoryItem>> getMaintenanceRooms({
+    required String hotelId,
+  }) {
+    return _apiClient.get<List<RoomInventoryItem>>(
+      '/api/hotels/$hotelId/maintenance/rooms',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      decoder: (data) {
+        if (data is! List) {
+          return const <RoomInventoryItem>[];
+        }
+
+        return data.map(RoomInventoryItem.fromJson).toList(growable: false);
       },
     );
   }
@@ -197,6 +335,19 @@ class OperationsApi {
       '/api/hotels/$hotelId/maintenance/requests/$requestId/status',
       options: AuthHeaderInterceptor.hotelScopedOptions(),
       data: {'status': status.apiValue},
+      decoder: MaintenanceRequestItem.fromJson,
+    );
+  }
+
+  Future<MaintenanceRequestItem> assignMaintenanceRequest({
+    required String hotelId,
+    required String requestId,
+    required String assignedToUserAccountId,
+  }) {
+    return _apiClient.patch<MaintenanceRequestItem>(
+      '/api/hotels/$hotelId/maintenance/requests/$requestId/assignee',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: {'assignedToUserAccountId': assignedToUserAccountId},
       decoder: MaintenanceRequestItem.fromJson,
     );
   }

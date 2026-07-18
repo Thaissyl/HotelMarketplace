@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_spacing.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../auth/domain/auth_models.dart';
+import '../../marketplace/presentation/marketplace_screen.dart';
 import '../application/selected_hotel_controller.dart';
 import 'front_desk_tab.dart';
 import 'housekeeping_tab.dart';
+import 'manager_overview_tab.dart';
 import 'maintenance_tab.dart';
+import 'owner_property_tab.dart';
+import 'staff_management_tab.dart';
 import 'widgets/hotel_scope_selector.dart';
 
 class OperationsDashboardScreen extends ConsumerWidget {
@@ -18,13 +23,30 @@ class OperationsDashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selectedHotelId = ref.watch(selectedHotelControllerProvider).value;
-    final roles = ref.watch(authControllerProvider).userSession?.roles ?? const [];
+    final selectedHotelState = ref.watch(selectedHotelControllerProvider);
+    final userSession = ref.watch(authControllerProvider).userSession;
+    final hotelIds = userSession?.hotelIds ?? const [];
+    final selectedHotelId = selectedHotelState.value ??
+        (hotelIds.isEmpty ? null : hotelIds.first);
+    final roles = userSession?.roles ?? const [];
     final sections = _OperationSection.visibleFor(roles);
+    final canUseCustomerMarketplace =
+        roles.contains(UserRoleCode.customer.apiValue);
 
     if (sections.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Hotel operations')),
+        appBar: AppBar(
+          title: const Text('Hotel operations'),
+          actions: [
+            IconButton(
+              tooltip: 'Sign out',
+              onPressed: () {
+                ref.read(authControllerProvider.notifier).logout();
+              },
+              icon: const Icon(Icons.logout_rounded),
+            ),
+          ],
+        ),
         body: const SafeArea(child: _NoOperationAccess()),
       );
     }
@@ -33,13 +55,41 @@ class OperationsDashboardScreen extends ConsumerWidget {
       length: sections.length,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Hotel operations'),
-          bottom: TabBar(
-            tabs: [
-              for (final section in sections)
-                Tab(icon: Icon(section.icon), text: section.label),
-            ],
-          ),
+          title: Text(_workspaceTitle(roles)),
+          automaticallyImplyLeading: canUseCustomerMarketplace,
+          leading: canUseCustomerMarketplace
+              ? IconButton(
+                  tooltip: 'Back',
+                  onPressed: () {
+                    if (context.canPop()) {
+                      context.pop();
+                      return;
+                    }
+
+                    context.go(MarketplaceScreen.routePath);
+                  },
+                  icon: const Icon(Icons.arrow_back_rounded),
+                )
+              : null,
+          actions: [
+            IconButton(
+              tooltip: 'Sign out',
+              onPressed: () {
+                ref.read(authControllerProvider.notifier).logout();
+              },
+              icon: const Icon(Icons.logout_rounded),
+            ),
+          ],
+          bottom: sections.length == 1
+              ? null
+              : TabBar(
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  tabs: [
+                    for (final section in sections)
+                      Tab(icon: Icon(section.icon), text: section.label),
+                  ],
+                ),
         ),
         body: SafeArea(
           child: Column(
@@ -48,15 +98,34 @@ class OperationsDashboardScreen extends ConsumerWidget {
                 padding: EdgeInsets.all(AppSpacing.md),
                 child: HotelScopeSelector(),
               ),
+              const Divider(height: 1),
               Expanded(
                 child: selectedHotelId == null
                     ? const _NoHotelScope()
-                    : TabBarView(
-                        children: [
-                          for (final section in sections)
-                            section.buildTab(selectedHotelId),
-                        ],
-                      ),
+                    : sections.length == 1
+                        ? KeyedSubtree(
+                            key: ValueKey(
+                              '${sections.first.name}-$selectedHotelId',
+                            ),
+                            child: sections.first.buildTab(
+                              selectedHotelId,
+                              roles,
+                            ),
+                          )
+                        : TabBarView(
+                            children: [
+                              for (final section in sections)
+                                KeyedSubtree(
+                                  key: ValueKey(
+                                    '${section.name}-$selectedHotelId',
+                                  ),
+                                  child: section.buildTab(
+                                    selectedHotelId,
+                                    roles,
+                                  ),
+                                ),
+                            ],
+                          ),
               ),
             ],
           ),
@@ -64,9 +133,37 @@ class OperationsDashboardScreen extends ConsumerWidget {
       ),
     );
   }
+
+  String _workspaceTitle(List<String> roles) {
+    if (roles.contains(UserRoleCode.propertyOwner.apiValue)) {
+      return 'Property Management';
+    }
+
+    if (roles.contains(UserRoleCode.hotelManager.apiValue)) {
+      return 'Hotel Manager';
+    }
+
+    if (roles.contains(UserRoleCode.receptionist.apiValue)) {
+      return 'Front Desk';
+    }
+
+    if (roles.contains(UserRoleCode.housekeepingStaff.apiValue)) {
+      return 'Housekeeping';
+    }
+
+    if (roles.contains(UserRoleCode.maintenanceStaff.apiValue)) {
+      return 'Maintenance';
+    }
+
+    return 'Hotel operations';
+  }
 }
 
 enum _OperationSection {
+  overview(
+    label: 'Overview',
+    icon: Icons.dashboard_rounded,
+  ),
   frontDesk(
     label: 'Front Desk',
     icon: Icons.room_service_rounded,
@@ -78,6 +175,14 @@ enum _OperationSection {
   maintenance(
     label: 'Maintenance',
     icon: Icons.handyman_rounded,
+  ),
+  staff(
+    label: 'Staff',
+    icon: Icons.manage_accounts_rounded,
+  ),
+  property(
+    label: 'Property',
+    icon: Icons.apartment_rounded,
   );
 
   const _OperationSection({
@@ -96,7 +201,14 @@ enum _OperationSection {
     });
 
     if (hasAllHotelOperations) {
-      return _OperationSection.values;
+      return [
+        overview,
+        if (roles.contains(UserRoleCode.propertyOwner.apiValue)) property,
+        frontDesk,
+        housekeeping,
+        maintenance,
+        if (roles.contains(UserRoleCode.propertyOwner.apiValue)) staff,
+      ];
     }
 
     return [
@@ -106,11 +218,17 @@ enum _OperationSection {
     ];
   }
 
-  Widget buildTab(String hotelId) {
+  Widget buildTab(String hotelId, List<String> roles) {
     return switch (this) {
+      _OperationSection.overview => ManagerOverviewTab(
+          hotelId: hotelId,
+          roles: roles,
+        ),
       _OperationSection.frontDesk => FrontDeskTab(hotelId: hotelId),
       _OperationSection.housekeeping => HousekeepingTab(hotelId: hotelId),
       _OperationSection.maintenance => MaintenanceTab(hotelId: hotelId),
+      _OperationSection.staff => StaffManagementTab(hotelId: hotelId),
+      _OperationSection.property => OwnerPropertyTab(hotelId: hotelId),
     };
   }
 }

@@ -7,8 +7,10 @@ import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../features/auth/application/auth_controller.dart';
 import '../../../features/auth/presentation/auth_form_validators.dart';
+import '../../../features/customer/application/customer_state.dart';
 import '../../../shared/utils/app_formatters.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
+import '../../../shared/widgets/app_text_form_field.dart';
 import '../application/booking_controller.dart';
 import '../domain/booking_draft.dart';
 import '../domain/booking_models.dart';
@@ -84,7 +86,9 @@ class _BookingConfirmationScreenState
       return;
     }
 
-    context.go(
+    ref.read(customerStateProvider.notifier).addBooking(booking);
+
+    context.push(
       PendingPaymentScreen.pathFor(booking.id),
       extra: booking,
     );
@@ -121,17 +125,15 @@ class _BookingConfirmationScreenState
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: AppSpacing.md),
-                      TextFormField(
+                      AppTextFormField(
                         controller: _guestNameController,
                         textInputAction: TextInputAction.next,
                         validator: AuthFormValidators.fullName,
-                        decoration: const InputDecoration(
-                          labelText: 'Guest full name',
-                          prefixIcon: Icon(Icons.person_outline_rounded),
-                        ),
+                        labelText: 'Guest full name',
+                        prefixIcon: const Icon(Icons.person_outline_rounded),
                       ),
                       const SizedBox(height: AppSpacing.md),
-                      TextFormField(
+                      AppTextFormField(
                         controller: _guestPhoneController,
                         keyboardType: TextInputType.phone,
                         inputFormatters: [
@@ -151,10 +153,8 @@ class _BookingConfirmationScreenState
 
                           return null;
                         },
-                        decoration: const InputDecoration(
-                          labelText: 'Guest phone',
-                          prefixIcon: Icon(Icons.phone_outlined),
-                        ),
+                        labelText: 'Guest phone',
+                        prefixIcon: const Icon(Icons.phone_outlined),
                       ),
                       const SizedBox(height: AppSpacing.xl),
                       FilledButton(

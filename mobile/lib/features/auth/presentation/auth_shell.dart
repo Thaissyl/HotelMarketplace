@@ -91,9 +91,9 @@ class _AuthBrandMark extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadii.lg),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x1F1F4E79),
-            blurRadius: 24,
-            offset: Offset(0, 12),
+            color: Color(0x141F4E79),
+            blurRadius: 10,
+            offset: Offset(0, 6),
           ),
         ],
       ),

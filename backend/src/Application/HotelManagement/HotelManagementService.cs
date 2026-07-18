@@ -1,5 +1,6 @@
 using FluentValidation;
 using FluentValidation.Results;
+using HotelMarketplace.Application.Authentication;
 using HotelMarketplace.Application.Common.Validation;
 using HotelMarketplace.Application.HotelManagement.Dtos;
 using HotelMarketplace.Application.HotelManagement.Requests;
@@ -16,8 +17,10 @@ internal sealed class HotelManagementService : IHotelManagementService
     private readonly IHotelManagementRepository _repository;
     private readonly ICurrentUserService _currentUserService;
     private readonly IDateTimeProvider _dateTimeProvider;
+    private readonly IPasswordHasher _passwordHasher;
     private readonly IValidator<RegisterHotelRequest> _registerHotelValidator;
     private readonly IValidator<UpdateHotelProfileRequest> _updateHotelProfileValidator;
+    private readonly IValidator<CreateHotelStaffRequest> _createHotelStaffValidator;
     private readonly IValidator<CreateRoomTypeRequest> _createRoomTypeValidator;
     private readonly IValidator<UpdateRoomTypeRequest> _updateRoomTypeValidator;
     private readonly IValidator<CreatePhysicalRoomRequest> _createPhysicalRoomValidator;
@@ -27,8 +30,10 @@ internal sealed class HotelManagementService : IHotelManagementService
         IHotelManagementRepository repository,
         ICurrentUserService currentUserService,
         IDateTimeProvider dateTimeProvider,
+        IPasswordHasher passwordHasher,
         IValidator<RegisterHotelRequest> registerHotelValidator,
         IValidator<UpdateHotelProfileRequest> updateHotelProfileValidator,
+        IValidator<CreateHotelStaffRequest> createHotelStaffValidator,
         IValidator<CreateRoomTypeRequest> createRoomTypeValidator,
         IValidator<UpdateRoomTypeRequest> updateRoomTypeValidator,
         IValidator<CreatePhysicalRoomRequest> createPhysicalRoomValidator,
@@ -37,8 +42,10 @@ internal sealed class HotelManagementService : IHotelManagementService
         _repository = repository;
         _currentUserService = currentUserService;
         _dateTimeProvider = dateTimeProvider;
+        _passwordHasher = passwordHasher;
         _registerHotelValidator = registerHotelValidator;
         _updateHotelProfileValidator = updateHotelProfileValidator;
+        _createHotelStaffValidator = createHotelStaffValidator;
         _createRoomTypeValidator = createRoomTypeValidator;
         _updateRoomTypeValidator = updateRoomTypeValidator;
         _createPhysicalRoomValidator = createPhysicalRoomValidator;
@@ -87,6 +94,26 @@ internal sealed class HotelManagementService : IHotelManagementService
         return hotels.Select(ToHotelDto).ToArray();
     }
 
+    public async Task<Result<IReadOnlyCollection<HotelDto>>> GetAccessibleOperationHotelsAsync(CancellationToken cancellationToken)
+    {
+        if (_currentUserService.UserId is null ||
+            !_currentUserService.Roles.Any(role => role is UserRoleCode.PropertyOwner
+                or UserRoleCode.HotelManager
+                or UserRoleCode.Receptionist
+                or UserRoleCode.HousekeepingStaff
+                or UserRoleCode.MaintenanceStaff
+                or UserRoleCode.PlatformAdministrator))
+        {
+            return Result.Failure<IReadOnlyCollection<HotelDto>>(HotelManagementErrors.Forbidden);
+        }
+
+        IReadOnlyCollection<HotelProperty> hotels = await _repository.GetHotelsByIdsAsync(
+            _currentUserService.HotelIds,
+            cancellationToken);
+
+        return Result.Success<IReadOnlyCollection<HotelDto>>(hotels.Select(ToHotelDto).ToArray());
+    }
+
     public async Task<Result<HotelDto>> GetHotelAsync(Guid hotelId, CancellationToken cancellationToken)
     {
         Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
@@ -128,6 +155,89 @@ internal sealed class HotelManagementService : IHotelManagementService
         return ToHotelDto(hotel);
     }
 
+    public async Task<Result<IReadOnlyCollection<HotelStaffMemberDto>>> GetStaffAsync(Guid hotelId, CancellationToken cancellationToken)
+    {
+        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        if (accessFailure is not null)
+        {
+            return Result.Failure<IReadOnlyCollection<HotelStaffMemberDto>>(accessFailure.Error);
+        }
+
+        IReadOnlyCollection<HotelStaffMemberDto> staff = await _repository.GetStaffAsync(hotelId, cancellationToken);
+
+        return Result.Success(staff);
+    }
+
+    public async Task<Result<IReadOnlyCollection<HotelStaffMemberDto>>> GetOperationStaffAsync(Guid hotelId, CancellationToken cancellationToken)
+    {
+        Result? accessFailure = EnsureHotelOperationAccess(hotelId);
+        if (accessFailure is not null)
+        {
+            return Result.Failure<IReadOnlyCollection<HotelStaffMemberDto>>(accessFailure.Error);
+        }
+
+        if (!_currentUserService.Roles.Any(role => role is UserRoleCode.HotelManager or UserRoleCode.PropertyOwner or UserRoleCode.PlatformAdministrator))
+        {
+            return Result.Failure<IReadOnlyCollection<HotelStaffMemberDto>>(HotelManagementErrors.Forbidden);
+        }
+
+        IReadOnlyCollection<HotelStaffMemberDto> staff = await _repository.GetStaffAsync(hotelId, cancellationToken);
+
+        return Result.Success(staff);
+    }
+
+    public async Task<Result<HotelStaffMemberDto>> CreateStaffAsync(Guid hotelId, CreateHotelStaffRequest request, CancellationToken cancellationToken)
+    {
+        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        if (accessFailure is not null)
+        {
+            return Result.Failure<HotelStaffMemberDto>(accessFailure.Error);
+        }
+
+        ValidationResult validationResult = await _createHotelStaffValidator.ValidateAsync(request, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return Result.Failure<HotelStaffMemberDto>(
+                ValidationErrorFormatter.ToResultError("HotelManagement.InvalidStaffAccount", validationResult));
+        }
+
+        string normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        string normalizedPhone = request.PhoneNumber.Trim();
+
+        if (await _repository.EmailExistsAsync(normalizedEmail, cancellationToken))
+        {
+            return Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.DuplicateStaffEmail);
+        }
+
+        if (await _repository.PhoneNumberExistsAsync(normalizedPhone, cancellationToken))
+        {
+            return Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.DuplicateStaffPhoneNumber);
+        }
+
+        UserRole? role = await _repository.GetRoleAsync(request.Role, cancellationToken);
+        if (role is null)
+        {
+            return Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.InvalidStaffRole);
+        }
+
+        UserAccount userAccount = new(
+            Guid.NewGuid(),
+            normalizedEmail,
+            _passwordHasher.HashPassword(request.Password),
+            request.FullName.Trim(),
+            normalizedPhone);
+
+        HotelStaffMemberDto staff = await _repository.CreateStaffAsync(
+            hotelId,
+            userAccount,
+            role.Id,
+            _currentUserService.UserId!.Value,
+            request.Role,
+            cancellationToken);
+
+        return Result.Success(staff);
+    }
+
     public async Task<Result<RoomTypeDto>> CreateRoomTypeAsync(Guid hotelId, CreateRoomTypeRequest request, CancellationToken cancellationToken)
     {
         Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
@@ -151,6 +261,19 @@ internal sealed class HotelManagementService : IHotelManagementService
     public async Task<Result<IReadOnlyCollection<RoomTypeDto>>> GetRoomTypesAsync(Guid hotelId, CancellationToken cancellationToken)
     {
         Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        if (accessFailure is not null)
+        {
+            return Result.Failure<IReadOnlyCollection<RoomTypeDto>>(accessFailure.Error);
+        }
+
+        IReadOnlyCollection<RoomType> roomTypes = await _repository.GetRoomTypesAsync(hotelId, cancellationToken);
+
+        return roomTypes.Select(ToRoomTypeDto).ToArray();
+    }
+
+    public async Task<Result<IReadOnlyCollection<RoomTypeDto>>> GetOperationRoomTypesAsync(Guid hotelId, CancellationToken cancellationToken)
+    {
+        Result? accessFailure = EnsureHotelOperationAccess(hotelId);
         if (accessFailure is not null)
         {
             return Result.Failure<IReadOnlyCollection<RoomTypeDto>>(accessFailure.Error);
@@ -293,6 +416,32 @@ internal sealed class HotelManagementService : IHotelManagementService
 
         bool ownsHotel = await _repository.UserOwnsHotelAsync(_currentUserService.UserId!.Value, hotelId, cancellationToken);
         return ownsHotel ? null : Result.Failure(HotelManagementErrors.Forbidden);
+    }
+
+    private Result? EnsureHotelOperationAccess(Guid hotelId)
+    {
+        if (_currentUserService.UserId is null)
+        {
+            return Result.Failure(HotelManagementErrors.Forbidden);
+        }
+
+        if (_currentUserService.Roles.Contains(UserRoleCode.PlatformAdministrator))
+        {
+            return null;
+        }
+
+        bool hasAllowedRole = _currentUserService.Roles.Any(role => role is UserRoleCode.PropertyOwner
+            or UserRoleCode.HotelManager
+            or UserRoleCode.Receptionist
+            or UserRoleCode.HousekeepingStaff
+            or UserRoleCode.MaintenanceStaff);
+
+        if (!hasAllowedRole || !_currentUserService.HotelIds.Contains(hotelId))
+        {
+            return Result.Failure(HotelManagementErrors.Forbidden);
+        }
+
+        return null;
     }
 
     private static HotelDto ToHotelDto(HotelProperty hotel)

@@ -65,6 +65,29 @@ internal sealed class FrontDeskService : IFrontDeskService
             room.Status)).ToArray();
     }
 
+    public async Task<Result<IReadOnlyCollection<FrontDeskBookingSummaryDto>>> GetBookingsAsync(
+        Guid hotelId,
+        BookingStatus? status,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = ValidateAuthorization(hotelId);
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<IReadOnlyCollection<FrontDeskBookingSummaryDto>>(authorizationFailure.Error);
+        }
+
+        IReadOnlyCollection<FrontDeskBookingSummaryDto> bookings = await _frontDeskRepository.GetBookingsAsync(
+            hotelId,
+            status,
+            fromDate,
+            toDate,
+            cancellationToken);
+
+        return Result.Success(bookings);
+    }
+
     public async Task<Result<FrontDeskBookingDto>> CheckInBookingAsync(
         Guid hotelId,
         Guid bookingId,

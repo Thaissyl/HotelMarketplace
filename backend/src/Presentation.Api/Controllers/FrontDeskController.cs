@@ -42,6 +42,23 @@ public sealed class FrontDeskController : ControllerBase
         return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
     }
 
+    [HttpGet("bookings")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<FrontDeskBookingSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetBookings(
+        Guid hotelId,
+        [FromQuery] BookingStatus? status,
+        [FromQuery] DateOnly? fromDate,
+        [FromQuery] DateOnly? toDate,
+        CancellationToken cancellationToken)
+    {
+        Result<IReadOnlyCollection<FrontDeskBookingSummaryDto>> result =
+            await _frontDeskService.GetBookingsAsync(hotelId, status, fromDate, toDate, cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
     [HttpPost("bookings/{bookingId:guid}/check-in")]
     [ProducesResponseType(typeof(FrontDeskBookingDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

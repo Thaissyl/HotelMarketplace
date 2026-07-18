@@ -38,7 +38,7 @@ class AppTheme {
       textTheme: AppTypography.textTheme(),
       scaffoldBackgroundColor: AppColors.canvas,
       visualDensity: VisualDensity.standard,
-      splashFactory: InkSparkle.splashFactory,
+      splashFactory: InkRipple.splashFactory,
       appBarTheme: AppBarTheme(
         centerTitle: false,
         backgroundColor: colorScheme.surface,

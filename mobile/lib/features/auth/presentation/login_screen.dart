@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_spacing.dart';
+import '../../../core/network/api_exception.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
+import '../../../shared/widgets/app_text_form_field.dart';
 import '../application/auth_controller.dart';
 import '../application/auth_state.dart';
 import 'auth_form_validators.dart';
@@ -48,7 +50,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!success && mounted) {
       final error = ref.read(authControllerProvider).error;
       if (error != null) {
-        await AppErrorPresenter.showBottomSheet(context, error);
+        await AppErrorPresenter.showBottomSheet(
+          context,
+          error is UnauthorizedApiException
+              ? 'Email or password is incorrect. Please check your credentials and try again.'
+              : error,
+          title: error is UnauthorizedApiException
+              ? 'Incorrect email or password'
+              : null,
+        );
       }
     }
   }
@@ -68,16 +78,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextFormField(
+            AppTextFormField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               autofillHints: const [AutofillHints.email],
               validator: AuthFormValidators.email,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                prefixIcon: Icon(Icons.mail_outline_rounded),
-              ),
+              labelText: 'Email',
+              prefixIcon: const Icon(Icons.mail_outline_rounded),
             ),
             const SizedBox(height: AppSpacing.md),
             PasswordField(

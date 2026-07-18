@@ -13,12 +13,17 @@ class SecureSessionStorage {
   static const String _currentHotelIdKey = 'session.currentHotelId';
 
   static SecureSessionStorage create() {
+    const androidOptions = AndroidOptions(
+      resetOnError: true,
+      migrateOnAlgorithmChange: false,
+    );
     const iosOptions = IOSOptions(
       accessibility: KeychainAccessibility.first_unlock_this_device,
     );
 
     return SecureSessionStorage(
       const FlutterSecureStorage(
+        aOptions: androidOptions,
         iOptions: iosOptions,
       ),
     );

@@ -1,6 +1,7 @@
 using FluentValidation;
 using FluentValidation.Results;
 using HotelMarketplace.Application.Common.Validation;
+using HotelMarketplace.Application.HotelManagement.Dtos;
 using HotelMarketplace.Application.Maintenance.Dtos;
 using HotelMarketplace.Application.Maintenance.Requests;
 using HotelMarketplace.Application.Security;
@@ -33,19 +34,22 @@ internal sealed class MaintenanceService : IMaintenanceService
     private readonly IValidator<MaintenanceRequestQueryRequest> _queryValidator;
     private readonly IValidator<ReportRoomIssueRequest> _reportValidator;
     private readonly IValidator<UpdateMaintenanceRequestStatusRequest> _updateValidator;
+    private readonly IValidator<AssignMaintenanceRequestRequest> _assignValidator;
 
     public MaintenanceService(
         ICurrentUserService currentUserService,
         IMaintenanceRepository maintenanceRepository,
         IValidator<MaintenanceRequestQueryRequest> queryValidator,
         IValidator<ReportRoomIssueRequest> reportValidator,
-        IValidator<UpdateMaintenanceRequestStatusRequest> updateValidator)
+        IValidator<UpdateMaintenanceRequestStatusRequest> updateValidator,
+        IValidator<AssignMaintenanceRequestRequest> assignValidator)
     {
         _currentUserService = currentUserService;
         _maintenanceRepository = maintenanceRepository;
         _queryValidator = queryValidator;
         _reportValidator = reportValidator;
         _updateValidator = updateValidator;
+        _assignValidator = assignValidator;
     }
 
     public async Task<Result<IReadOnlyCollection<MaintenanceRequestDto>>> GetRequestsAsync(
@@ -74,6 +78,23 @@ internal sealed class MaintenanceService : IMaintenanceService
         return Result.Success(requests);
     }
 
+    public async Task<Result<IReadOnlyCollection<PhysicalRoomDto>>> GetRoomsAsync(
+        Guid hotelId,
+        CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = ValidateAuthorization(hotelId, ReportIssueRoles);
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<IReadOnlyCollection<PhysicalRoomDto>>(authorizationFailure.Error);
+        }
+
+        IReadOnlyCollection<PhysicalRoomDto> rooms = await _maintenanceRepository.GetRoomsAsync(
+            hotelId,
+            cancellationToken);
+
+        return Result.Success(rooms);
+    }
+
     public async Task<Result<MaintenanceRequestDto>> ReportRoomIssueAsync(
         Guid hotelId,
         ReportRoomIssueRequest request,
@@ -96,6 +117,39 @@ internal sealed class MaintenanceService : IMaintenanceService
             hotelId,
             _currentUserService.UserId!.Value,
             request,
+            cancellationToken);
+
+        return ToResult(result);
+    }
+
+    public async Task<Result<MaintenanceRequestDto>> AssignRequestAsync(
+        Guid hotelId,
+        Guid requestId,
+        AssignMaintenanceRequestRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = ValidateAuthorization(hotelId, ViewAndUpdateRoles);
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<MaintenanceRequestDto>(authorizationFailure.Error);
+        }
+
+        if (!_currentUserService.Roles.Any(role => role is UserRoleCode.HotelManager or UserRoleCode.PropertyOwner or UserRoleCode.PlatformAdministrator))
+        {
+            return Result.Failure<MaintenanceRequestDto>(MaintenanceErrors.Forbidden);
+        }
+
+        ValidationResult validationResult = await _assignValidator.ValidateAsync(request, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return Result.Failure<MaintenanceRequestDto>(
+                ValidationErrorFormatter.ToResultError("Maintenance.InvalidRequestAssignment", validationResult));
+        }
+
+        MaintenanceRequestPersistenceResult result = await _maintenanceRepository.AssignRequestAsync(
+            hotelId,
+            requestId,
+            request.AssignedToUserAccountId,
             cancellationToken);
 
         return ToResult(result);
@@ -158,6 +212,7 @@ internal sealed class MaintenanceService : IMaintenanceService
             MaintenancePersistenceStatus.InvalidTransition => Result.Failure<MaintenanceRequestDto>(MaintenanceErrors.InvalidTransition),
             MaintenancePersistenceStatus.InvalidRoomStatus => Result.Failure<MaintenanceRequestDto>(MaintenanceErrors.InvalidRoomStatus),
             MaintenancePersistenceStatus.LockUnavailable => Result.Failure<MaintenanceRequestDto>(MaintenanceErrors.LockUnavailable),
+            MaintenancePersistenceStatus.AssigneeNotFound => Result.Failure<MaintenanceRequestDto>(MaintenanceErrors.AssigneeNotFound),
             _ => Result.Failure<MaintenanceRequestDto>(MaintenanceErrors.InvalidTransition)
         };
     }

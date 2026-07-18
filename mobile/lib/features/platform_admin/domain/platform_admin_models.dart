@@ -75,6 +75,83 @@ class AdminHotel {
   }
 }
 
+class AdminUser {
+  const AdminUser({
+    required this.id,
+    required this.email,
+    required this.fullName,
+    required this.phoneNumber,
+    required this.status,
+    required this.roles,
+    required this.hotelIds,
+    required this.createdAtUtc,
+  });
+
+  final String id;
+  final String email;
+  final String fullName;
+  final String? phoneNumber;
+  final String status;
+  final List<String> roles;
+  final List<String> hotelIds;
+  final DateTime createdAtUtc;
+
+  static AdminUser fromJson(Object? data) {
+    final json = _asMap(data);
+    return AdminUser(
+      id: json['id']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      fullName: json['fullName']?.toString() ?? '',
+      phoneNumber: json['phoneNumber']?.toString(),
+      status: json['status']?.toString() ?? '',
+      roles: _stringList(json['roles']),
+      hotelIds: _stringList(json['hotelIds']),
+      createdAtUtc:
+          DateTime.tryParse(json['createdAtUtc']?.toString() ?? '')?.toUtc() ??
+              DateTime.now().toUtc(),
+    );
+  }
+}
+
+class AdminUserActivity {
+  const AdminUserActivity({
+    required this.id,
+    required this.actorUserAccountId,
+    required this.actorEmail,
+    required this.actionType,
+    required this.targetEntityType,
+    required this.targetEntityId,
+    required this.summary,
+    required this.actionTimestampUtc,
+  });
+
+  final String id;
+  final String actorUserAccountId;
+  final String actorEmail;
+  final String actionType;
+  final String targetEntityType;
+  final String targetEntityId;
+  final String summary;
+  final DateTime actionTimestampUtc;
+
+  static AdminUserActivity fromJson(Object? data) {
+    final json = _asMap(data);
+    return AdminUserActivity(
+      id: json['id']?.toString() ?? '',
+      actorUserAccountId: json['actorUserAccountId']?.toString() ?? '',
+      actorEmail: json['actorEmail']?.toString() ?? '',
+      actionType: json['actionType']?.toString() ?? '',
+      targetEntityType: json['targetEntityType']?.toString() ?? '',
+      targetEntityId: json['targetEntityId']?.toString() ?? '',
+      summary: json['summary']?.toString() ?? '',
+      actionTimestampUtc:
+          DateTime.tryParse(json['actionTimestampUtc']?.toString() ?? '')
+                  ?.toUtc() ??
+              DateTime.now().toUtc(),
+    );
+  }
+}
+
 class AdminSettlement {
   const AdminSettlement({
     required this.id,
@@ -191,4 +268,12 @@ Map<String, dynamic> _asMap(Object? data) {
   }
 
   return const <String, dynamic>{};
+}
+
+List<String> _stringList(Object? value) {
+  if (value is! List) {
+    return const <String>[];
+  }
+
+  return value.map((item) => item.toString()).toList(growable: false);
 }

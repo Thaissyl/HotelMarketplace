@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,10 +9,12 @@ import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../features/auth/application/auth_controller.dart';
 import '../../../features/auth/domain/auth_models.dart';
+import '../../../features/customer/application/customer_state.dart';
 import '../../../features/operations/presentation/operations_dashboard_screen.dart';
 import '../../../features/platform_admin/presentation/platform_admin_dashboard_screen.dart';
 import '../../../shared/utils/app_formatters.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
+import '../../../shared/widgets/app_text_form_field.dart';
 import '../application/marketplace_providers.dart';
 import '../domain/marketplace_models.dart';
 import 'hotel_detail_screen.dart';
@@ -26,10 +30,15 @@ enum _HotelSortOption {
 }
 
 class MarketplaceScreen extends ConsumerStatefulWidget {
-  const MarketplaceScreen({super.key});
+  const MarketplaceScreen({
+    super.key,
+    this.showAppBar = true,
+  });
 
   static const String routeName = 'marketplace';
   static const String routePath = '/marketplace';
+
+  final bool showAppBar;
 
   @override
   ConsumerState<MarketplaceScreen> createState() => _MarketplaceScreenState();
@@ -39,6 +48,8 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
   static const int _pageSize = 8;
 
   late final TextEditingController _locationController;
+  late HotelSearchQuery _draftQuery;
+  Timer? _searchDebounce;
   int _pageIndex = 0;
   String? _selectedCity;
   _HotelSortOption _sortOption = _HotelSortOption.recommended;
@@ -49,12 +60,27 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
     _locationController = TextEditingController(
       text: ref.read(hotelSearchQueryProvider).location,
     );
+    _draftQuery = ref.read(hotelSearchQueryProvider);
+    _locationController.addListener(_scheduleLocationSearch);
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _locationController.removeListener(_scheduleLocationSearch);
     _locationController.dispose();
     super.dispose();
+  }
+
+  void _scheduleLocationSearch() {
+    final query = ref.read(hotelSearchQueryProvider);
+    if (_locationController.text.trim() == query.location.trim()) {
+      return;
+    }
+
+    _setSearchQueryDebounced(
+      query.copyWith(location: _locationController.text),
+    );
   }
 
   Future<void> _pickDateRange(HotelSearchQuery query) async {
@@ -84,8 +110,8 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       return;
     }
 
-    _setSearchQuery(
-      query.copyWith(
+    _setSearchQueryDebounced(
+      _draftQuery.copyWith(
         checkInDate: picked.start,
         checkOutDate: picked.end,
       ),
@@ -97,8 +123,25 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
     _setSearchQuery(query.copyWith(location: _locationController.text));
   }
 
+  void _setSearchQueryDebounced(HotelSearchQuery query) {
+    _searchDebounce?.cancel();
+    setState(() {
+      _draftQuery = query;
+      _pageIndex = 0;
+      _selectedCity = null;
+    });
+    _searchDebounce = Timer(const Duration(milliseconds: 420), () {
+      if (!mounted) {
+        return;
+      }
+
+      _setSearchQuery(query);
+    });
+  }
+
   void _setSearchQuery(HotelSearchQuery query) {
     setState(() {
+      _draftQuery = query;
       _pageIndex = 0;
       _selectedCity = null;
     });
@@ -152,34 +195,36 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
     });
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Find stays'),
-        actions: [
-          if (canOpenOperations)
-            IconButton(
-              tooltip: 'Hotel operations',
-              onPressed: () {
-                context.go(OperationsDashboardScreen.routePath);
-              },
-              icon: const Icon(Icons.dashboard_customize_rounded),
-            ),
-          if (canOpenPlatformAdmin)
-            IconButton(
-              tooltip: 'Platform admin',
-              onPressed: () {
-                context.go(PlatformAdminDashboardScreen.routePath);
-              },
-              icon: const Icon(Icons.admin_panel_settings_rounded),
-            ),
-          IconButton(
-            tooltip: 'Sign out',
-            onPressed: () {
-              ref.read(authControllerProvider.notifier).logout();
-            },
-            icon: const Icon(Icons.logout_rounded),
-          ),
-        ],
-      ),
+      appBar: widget.showAppBar
+          ? AppBar(
+              title: const Text('Find stays'),
+              actions: [
+                if (canOpenOperations)
+                  IconButton(
+                    tooltip: 'Hotel operations',
+                    onPressed: () {
+                      context.go(OperationsDashboardScreen.routePath);
+                    },
+                    icon: const Icon(Icons.dashboard_customize_rounded),
+                  ),
+                if (canOpenPlatformAdmin)
+                  IconButton(
+                    tooltip: 'Platform admin',
+                    onPressed: () {
+                      context.go(PlatformAdminDashboardScreen.routePath);
+                    },
+                    icon: const Icon(Icons.admin_panel_settings_rounded),
+                  ),
+                IconButton(
+                  tooltip: 'Sign out',
+                  onPressed: () {
+                    ref.read(authControllerProvider.notifier).logout();
+                  },
+                  icon: const Icon(Icons.logout_rounded),
+                ),
+              ],
+            )
+          : null,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
@@ -190,15 +235,19 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
             padding: const EdgeInsets.all(AppSpacing.xl),
             children: [
               _SearchPanel(
-                query: query,
+                query: _draftQuery,
                 locationController: _locationController,
-                onPickDates: () => _pickDateRange(query),
+                onPickDates: () => _pickDateRange(_draftQuery),
                 onApplySearch: () => _applySearch(query),
                 onGuestChanged: (value) {
-                  _setSearchQuery(query.copyWith(guestCount: value));
+                  _setSearchQueryDebounced(
+                    _draftQuery.copyWith(guestCount: value),
+                  );
                 },
                 onRoomChanged: (value) {
-                  _setSearchQuery(query.copyWith(roomCount: value));
+                  _setSearchQueryDebounced(
+                    _draftQuery.copyWith(roomCount: value),
+                  );
                 },
               ),
               const SizedBox(height: AppSpacing.xl),
@@ -218,6 +267,17 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                     onPageChanged: _goToPage,
                     onCityChanged: _setCityFilter,
                     onSortChanged: _setSortOption,
+                    onToggleSaved: (hotel) {
+                      ref
+                          .read(customerStateProvider.notifier)
+                          .toggleSavedHotel(hotel);
+                    },
+                    isSaved: (hotelId) {
+                      return ref
+                          .watch(customerStateProvider)
+                          .savedHotels
+                          .any((hotel) => hotel.id == hotelId);
+                    },
                   );
                 },
                 error: (error, stackTrace) => _ErrorPanel(
@@ -247,6 +307,8 @@ class _HotelResultPagedList extends StatelessWidget {
     required this.onPageChanged,
     required this.onCityChanged,
     required this.onSortChanged,
+    required this.onToggleSaved,
+    required this.isSaved,
   });
 
   final List<HotelSearchResult> hotels;
@@ -258,6 +320,8 @@ class _HotelResultPagedList extends StatelessWidget {
   final void Function(int pageIndex, int pageCount) onPageChanged;
   final ValueChanged<String?> onCityChanged;
   final ValueChanged<_HotelSortOption> onSortChanged;
+  final ValueChanged<HotelSearchResult> onToggleSaved;
+  final bool Function(String hotelId) isSaved;
 
   @override
   Widget build(BuildContext context) {
@@ -333,38 +397,132 @@ class _HotelResultPagedList extends StatelessWidget {
             ),
             child: HotelCard(
               hotel: visibleHotels[index],
+              saved: isSaved(visibleHotels[index].id),
+              onToggleSaved: () => onToggleSaved(visibleHotels[index]),
               onTap: () {
-                context.go(
+                context.push(
                   HotelDetailScreen.pathFor(visibleHotels[index].id),
                   extra: query,
                 );
               },
             ),
           ),
-        Row(
+        _PaginationControls(
+          currentPageIndex: safePageIndex,
+          pageCount: pageCount,
+          onPageChanged: onPageChanged,
+        ),
+      ],
+    );
+  }
+}
+
+class _PaginationControls extends StatefulWidget {
+  const _PaginationControls({
+    required this.currentPageIndex,
+    required this.pageCount,
+    required this.onPageChanged,
+  });
+
+  final int currentPageIndex;
+  final int pageCount;
+  final void Function(int pageIndex, int pageCount) onPageChanged;
+
+  @override
+  State<_PaginationControls> createState() => _PaginationControlsState();
+}
+
+class _PaginationControlsState extends State<_PaginationControls> {
+  late final TextEditingController _pageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = TextEditingController(
+      text: (widget.currentPageIndex + 1).toString(),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _PaginationControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextText = (widget.currentPageIndex + 1).toString();
+    if (_pageController.text != nextText) {
+      _pageController.text = nextText;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _jumpToPage() {
+    final pageNumber = int.tryParse(_pageController.text.trim());
+    if (pageNumber == null) {
+      return;
+    }
+
+    widget.onPageChanged(pageNumber - 1, widget.pageCount);
+    FocusScope.of(context).unfocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentPage = widget.currentPageIndex + 1;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
           children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: safePageIndex == 0
-                    ? null
-                    : () => onPageChanged(safePageIndex - 1, pageCount),
-                icon: const Icon(Icons.chevron_left_rounded),
-                label: const Text('Previous'),
-              ),
+            Row(
+              children: [
+                Flexible(
+                  child: OutlinedButton(
+                    onPressed: widget.currentPageIndex == 0
+                        ? null
+                        : () => widget.onPageChanged(
+                              widget.currentPageIndex - 1,
+                              widget.pageCount,
+                            ),
+                    child: const Icon(Icons.chevron_left_rounded),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                SizedBox(
+                  width: 92,
+                  child: AppTextFormField(
+                    controller: _pageController,
+                    labelText: 'Page',
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => _jumpToPage(),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Flexible(
+                  child: FilledButton(
+                    onPressed: widget.currentPageIndex >= widget.pageCount - 1
+                        ? null
+                        : () => widget.onPageChanged(
+                              widget.currentPageIndex + 1,
+                              widget.pageCount,
+                            ),
+                    child: const Icon(Icons.chevron_right_rounded),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: safePageIndex >= pageCount - 1
-                    ? null
-                    : () => onPageChanged(safePageIndex + 1, pageCount),
-                icon: const Icon(Icons.chevron_right_rounded),
-                label: const Text('Next'),
-              ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Page $currentPage of ${widget.pageCount}',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -521,19 +679,17 @@ class _SearchPanel extends StatelessWidget {
             Text('Where to next?', style: textTheme.headlineSmall),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Search approved hotels with live room availability.',
+              'Search approved hotels. Guests and rooms update automatically.',
               style: textTheme.bodyMedium,
             ),
             const SizedBox(height: AppSpacing.xl),
-            TextField(
+            AppTextFormField(
               controller: locationController,
               textInputAction: TextInputAction.search,
-              onSubmitted: (_) => onApplySearch(),
-              decoration: const InputDecoration(
-                labelText: 'Destination',
-                hintText: 'City or area',
-                prefixIcon: Icon(Icons.search_rounded),
-              ),
+              onFieldSubmitted: (_) => onApplySearch(),
+              labelText: 'Destination',
+              hintText: 'City or area',
+              prefixIcon: const Icon(Icons.search_rounded),
             ),
             const SizedBox(height: AppSpacing.md),
             OutlinedButton.icon(
@@ -559,11 +715,10 @@ class _SearchPanel extends StatelessWidget {
               maximum: 10,
               onChanged: onRoomChanged,
             ),
-            const SizedBox(height: AppSpacing.xl),
-            FilledButton.icon(
-              onPressed: onApplySearch,
-              icon: const Icon(Icons.travel_explore_rounded),
-              label: const Text('Search hotels'),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'Type a destination or adjust dates, guests, and rooms to refresh results.',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),

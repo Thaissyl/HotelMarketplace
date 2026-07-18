@@ -5,6 +5,8 @@ namespace HotelMarketplace.Application.PlatformAdmin;
 public static class PlatformAdminErrors
 {
     public static readonly ResultError Forbidden = new("PlatformAdmin.Forbidden", "Only Platform Administrator can access this operation.");
+    public static readonly ResultError UserNotFound = new("PlatformAdmin.UserNotFound", "The user account was not found.");
+    public static readonly ResultError InvalidUserStatus = new("PlatformAdmin.InvalidUserStatus", "The selected user status transition is not allowed.");
     public static readonly ResultError HotelNotFound = new("PlatformAdmin.HotelNotFound", "The hotel was not found.");
     public static readonly ResultError InvalidHotelReviewState = new("PlatformAdmin.InvalidHotelReviewState", "Only hotels pending review can be reviewed.");
     public static readonly ResultError SettlementNotFound = new("PlatformAdmin.SettlementNotFound", "The settlement record was not found.");

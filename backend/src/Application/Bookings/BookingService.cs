@@ -66,4 +66,19 @@ internal sealed class BookingService : IBookingService
             _ => Result.Failure<BookingDto>(BookingErrors.InsufficientAvailability)
         };
     }
+
+    public async Task<Result<IReadOnlyCollection<BookingDto>>> GetMyBookingsAsync(CancellationToken cancellationToken)
+    {
+        if (_currentUserService.UserId is null ||
+            !_currentUserService.Roles.Any(role => role is UserRoleCode.Customer or UserRoleCode.PlatformAdministrator))
+        {
+            return Result.Failure<IReadOnlyCollection<BookingDto>>(BookingErrors.Forbidden);
+        }
+
+        IReadOnlyCollection<BookingDto> bookings = await _bookingRepository.GetBookingsForCustomerAsync(
+            _currentUserService.UserId.Value,
+            cancellationToken);
+
+        return Result.Success(bookings);
+    }
 }

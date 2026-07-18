@@ -26,6 +26,17 @@ public sealed class BookingsController : ControllerBase
         _paymentService = paymentService;
     }
 
+    [HttpGet("my")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<BookingDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetMyBookings(CancellationToken cancellationToken)
+    {
+        Result<IReadOnlyCollection<BookingDto>> result = await _bookingService.GetMyBookingsAsync(cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
     [HttpPost]
     [ProducesResponseType(typeof(BookingDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

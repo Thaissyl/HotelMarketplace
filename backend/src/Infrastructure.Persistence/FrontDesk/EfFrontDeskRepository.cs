@@ -45,6 +45,126 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
             .ToArrayAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<FrontDeskBookingSummaryDto>> GetBookingsAsync(
+        Guid hotelId,
+        BookingStatus? status,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        CancellationToken cancellationToken)
+    {
+        IQueryable<Booking> bookingsQuery = _dbContext.Bookings
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(booking => booking.HotelId == hotelId);
+
+        if (status is not null)
+        {
+            bookingsQuery = bookingsQuery.Where(booking => booking.Status == status);
+        }
+
+        if (fromDate is not null)
+        {
+            bookingsQuery = bookingsQuery.Where(booking => booking.CheckOutDate >= fromDate);
+        }
+
+        if (toDate is not null)
+        {
+            bookingsQuery = bookingsQuery.Where(booking => booking.CheckInDate <= toDate);
+        }
+
+        List<FrontDeskBookingSummaryBase> baseRows = await (
+            from booking in bookingsQuery
+            join bookingRoom in _dbContext.BookingRooms.IgnoreQueryFilters().AsNoTracking()
+                on booking.Id equals bookingRoom.BookingId
+            join roomType in _dbContext.RoomTypes.IgnoreQueryFilters().AsNoTracking()
+                on bookingRoom.RoomTypeId equals roomType.Id
+            join stayRecord in _dbContext.GuestStayRecords.IgnoreQueryFilters().AsNoTracking()
+                on booking.Id equals stayRecord.BookingId into stayRecords
+            from stayRecord in stayRecords.DefaultIfEmpty()
+            join invoice in _dbContext.Invoices.IgnoreQueryFilters().AsNoTracking()
+                on booking.Id equals invoice.BookingId into invoices
+            from invoice in invoices.DefaultIfEmpty()
+            orderby booking.CheckInDate, booking.GuestFullName
+            select new FrontDeskBookingSummaryBase(
+                booking.Id,
+                booking.BookingCode,
+                booking.HotelId,
+                booking.Status,
+                booking.PaymentMode,
+                booking.Source,
+                booking.CheckInDate,
+                booking.CheckOutDate,
+                booking.TotalAmount,
+                booking.GuestFullName,
+                booking.GuestPhone,
+                bookingRoom.RoomTypeId,
+                roomType.Name,
+                bookingRoom.Quantity,
+                bookingRoom.Nights,
+                stayRecord == null ? null : stayRecord.Id,
+                invoice == null ? null : invoice.Id,
+                booking.CreatedAtUtc))
+            .Take(100)
+            .ToListAsync(cancellationToken);
+
+        if (baseRows.Count == 0)
+        {
+            return Array.Empty<FrontDeskBookingSummaryDto>();
+        }
+
+        List<Guid> bookingIds = baseRows.Select(row => row.BookingId).ToList();
+        List<AssignedPhysicalRoomWithBookingDto> assignedRooms = await (
+            from assignment in _dbContext.BookingRoomAssignments.IgnoreQueryFilters().AsNoTracking()
+            join room in _dbContext.PhysicalRooms.IgnoreQueryFilters().AsNoTracking()
+                on assignment.PhysicalRoomId equals room.Id
+            where bookingIds.Contains(assignment.BookingId)
+            orderby room.RoomNumber
+            select new AssignedPhysicalRoomWithBookingDto(
+                assignment.BookingId,
+                room.Id,
+                room.RoomNumber,
+                room.RoomTypeId,
+                room.Status))
+            .ToListAsync(cancellationToken);
+
+        Dictionary<Guid, AssignedPhysicalRoomDto[]> roomsByBooking = assignedRooms
+            .GroupBy(room => room.BookingId)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .Select(room => new AssignedPhysicalRoomDto(
+                        room.PhysicalRoomId,
+                        room.RoomNumber,
+                        room.RoomTypeId,
+                        room.Status))
+                    .ToArray());
+
+        return baseRows
+            .Select(row => new FrontDeskBookingSummaryDto(
+                row.BookingId,
+                row.BookingCode,
+                row.HotelId,
+                row.Status,
+                row.PaymentMode,
+                row.Source,
+                row.CheckInDate,
+                row.CheckOutDate,
+                row.TotalAmount,
+                row.GuestFullName,
+                row.GuestPhone,
+                row.RoomTypeId,
+                row.RoomTypeName,
+                row.RoomQuantity,
+                row.Nights,
+                roomsByBooking.TryGetValue(row.BookingId, out AssignedPhysicalRoomDto[]? rooms)
+                    ? rooms
+                    : Array.Empty<AssignedPhysicalRoomDto>(),
+                row.GuestStayRecordId,
+                row.InvoiceId,
+                row.CreatedAtUtc))
+            .ToArray();
+    }
+
     public async Task<FrontDeskPersistenceResult> CheckInBookingAsync(
         Guid hotelId,
         Guid bookingId,
@@ -535,4 +655,31 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
         string suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..8].ToUpperInvariant();
         return $"INV{utcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture)}{suffix}";
     }
+
+    private sealed record FrontDeskBookingSummaryBase(
+        Guid BookingId,
+        string BookingCode,
+        Guid HotelId,
+        BookingStatus Status,
+        PaymentMode PaymentMode,
+        BookingSource Source,
+        DateOnly CheckInDate,
+        DateOnly CheckOutDate,
+        decimal TotalAmount,
+        string GuestFullName,
+        string GuestPhone,
+        Guid RoomTypeId,
+        string RoomTypeName,
+        int RoomQuantity,
+        int Nights,
+        Guid? GuestStayRecordId,
+        Guid? InvoiceId,
+        DateTime CreatedAtUtc);
+
+    private sealed record AssignedPhysicalRoomWithBookingDto(
+        Guid BookingId,
+        Guid PhysicalRoomId,
+        string RoomNumber,
+        Guid RoomTypeId,
+        RoomOperationalStatus Status);
 }

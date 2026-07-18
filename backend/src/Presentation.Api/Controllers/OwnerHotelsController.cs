@@ -74,6 +74,37 @@ public sealed class OwnerHotelsController : ControllerBase
         return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
     }
 
+    [HttpGet("{hotelId:guid}/staff")]
+    [Authorize(Policy = AuthorizationPolicies.HotelScoped)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<HotelStaffMemberDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetStaff(Guid hotelId, CancellationToken cancellationToken)
+    {
+        Result<IReadOnlyCollection<HotelStaffMemberDto>> result = await _hotelManagementService.GetStaffAsync(hotelId, cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
+    [HttpPost("{hotelId:guid}/staff")]
+    [Authorize(Policy = AuthorizationPolicies.HotelScoped)]
+    [ProducesResponseType(typeof(HotelStaffMemberDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CreateStaff(
+        Guid hotelId,
+        CreateHotelStaffRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<HotelStaffMemberDto> result = await _hotelManagementService.CreateStaffAsync(hotelId, request, cancellationToken);
+
+        return result.IsFailure
+            ? ToProblem(result.Error)
+            : CreatedAtAction(nameof(GetStaff), new { hotelId }, result.Value);
+    }
+
     [HttpPost("{hotelId:guid}/room-types")]
     [Authorize(Policy = AuthorizationPolicies.HotelScoped)]
     [ProducesResponseType(typeof(RoomTypeDto), StatusCodes.Status201Created)]
@@ -201,6 +232,9 @@ public sealed class OwnerHotelsController : ControllerBase
             "HotelManagement.RoomTypeHasFutureBookings" => StatusCodes.Status409Conflict,
             "HotelManagement.RoomIsOccupied" => StatusCodes.Status409Conflict,
             "HotelManagement.LockUnavailable" => StatusCodes.Status423Locked,
+            "HotelManagement.DuplicateStaffEmail" => StatusCodes.Status409Conflict,
+            "HotelManagement.DuplicateStaffPhoneNumber" => StatusCodes.Status409Conflict,
+            "HotelManagement.InvalidStaffRole" => StatusCodes.Status400BadRequest,
             _ => StatusCodes.Status400BadRequest
         };
 

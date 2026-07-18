@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_spacing.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
+import '../../../shared/widgets/app_text_form_field.dart';
 import '../application/auth_controller.dart';
 import '../application/auth_state.dart';
 import '../domain/auth_models.dart';
@@ -77,30 +78,26 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextFormField(
+            AppTextFormField(
               controller: _fullNameController,
               textInputAction: TextInputAction.next,
               autofillHints: const [AutofillHints.name],
               validator: AuthFormValidators.fullName,
-              decoration: const InputDecoration(
-                labelText: 'Full name',
-                prefixIcon: Icon(Icons.person_outline_rounded),
-              ),
+              labelText: 'Full name',
+              prefixIcon: const Icon(Icons.person_outline_rounded),
             ),
             const SizedBox(height: AppSpacing.md),
-            TextFormField(
+            AppTextFormField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               autofillHints: const [AutofillHints.email],
               validator: AuthFormValidators.email,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                prefixIcon: Icon(Icons.mail_outline_rounded),
-              ),
+              labelText: 'Email',
+              prefixIcon: const Icon(Icons.mail_outline_rounded),
             ),
             const SizedBox(height: AppSpacing.md),
-            TextFormField(
+            AppTextFormField(
               controller: _phoneController,
               keyboardType: TextInputType.phone,
               textInputAction: TextInputAction.next,
@@ -109,10 +106,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 LengthLimitingTextInputFormatter(10),
               ],
               validator: AuthFormValidators.phoneNumber,
-              decoration: const InputDecoration(
-                labelText: 'Phone number',
-                prefixIcon: Icon(Icons.phone_outlined),
-              ),
+              labelText: 'Phone number',
+              prefixIcon: const Icon(Icons.phone_outlined),
             ),
             const SizedBox(height: AppSpacing.md),
             PasswordField(

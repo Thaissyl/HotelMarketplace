@@ -109,9 +109,9 @@ class _BrandMark extends StatelessWidget {
         border: Border.all(color: AppColors.outline),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 30,
-            offset: Offset(0, 16),
+            color: Color(0x0F000000),
+            blurRadius: 12,
+            offset: Offset(0, 8),
           ),
         ],
       ),

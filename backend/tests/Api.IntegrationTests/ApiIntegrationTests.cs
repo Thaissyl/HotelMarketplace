@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using HotelMarketplace.Application.Bookings.Dtos;
+using HotelMarketplace.Application.CustomerAccount.Dtos;
 using HotelMarketplace.Application.FrontDesk.Dtos;
 using HotelMarketplace.Application.HotelManagement.Dtos;
 using HotelMarketplace.Application.Housekeeping.Dtos;
@@ -566,6 +567,35 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             HttpStatusCode.Created,
             customer.AccessToken);
 
+        IReadOnlyCollection<BookingDto> customerBookings = await GetJsonAsync<IReadOnlyCollection<BookingDto>>(
+            client,
+            "/api/bookings/my",
+            HttpStatusCode.OK,
+            customer.AccessToken);
+        customerBookings.Should().Contain(item => item.Id == booking.Id);
+
+        CustomerProfileDto profile = await GetJsonAsync<CustomerProfileDto>(
+            client,
+            "/api/customer/account/profile",
+            HttpStatusCode.OK,
+            customer.AccessToken);
+        profile.Email.Should().Be(customer.Email);
+
+        string updatedCustomerPhoneNumber = TestPhoneNumber("8291");
+        CustomerProfileDto updatedProfile = await SendJsonAsync<CustomerProfileDto>(
+            client,
+            HttpMethod.Put,
+            "/api/customer/account/profile",
+            new
+            {
+                fullName = "Updated Smoke Customer",
+                phoneNumber = updatedCustomerPhoneNumber
+            },
+            HttpStatusCode.OK,
+            customer.AccessToken);
+        updatedProfile.FullName.Should().Be("Updated Smoke Customer");
+        updatedProfile.PhoneNumber.Should().Be(updatedCustomerPhoneNumber);
+
         PaymentWebhookResultDto simulatedPayment = await PostJsonAsync<PaymentWebhookResultDto>(
             client,
             $"/api/bookings/{booking.Id}/simulate-payment-success",
@@ -612,6 +642,13 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
         TestAuthResponse housekeeper = await SeedUserAndLoginAsync(client, UserRoleCode.HousekeepingStaff, "smoke-housekeeper", hotel.Id);
         TestAuthResponse maintenance = await SeedUserAndLoginAsync(client, UserRoleCode.MaintenanceStaff, "smoke-maintenance", hotel.Id);
 
+        IReadOnlyCollection<RoomTypeDto> operationRoomTypes = await GetJsonAsync<IReadOnlyCollection<RoomTypeDto>>(
+            client,
+            $"/api/operations/hotels/{hotel.Id}/room-types",
+            HttpStatusCode.OK,
+            receptionist.AccessToken);
+        operationRoomTypes.Should().Contain(item => item.Id == roomType.Id && item.Name == "Deluxe Smoke Updated");
+
         FrontDeskBookingDto checkedIn = await PostJsonAsync<FrontDeskBookingDto>(
             client,
             $"/api/hotels/{hotel.Id}/front-desk/bookings/{booking.Id}/check-in",
@@ -643,6 +680,23 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             HttpStatusCode.OK,
             housekeeper.AccessToken);
         HousekeepingTaskDto housekeepingTask = housekeepingTasks.Single(item => item.PhysicalRoomId == firstRoom.Id);
+
+        IReadOnlyCollection<HotelStaffMemberDto> operationStaff = await GetJsonAsync<IReadOnlyCollection<HotelStaffMemberDto>>(
+            client,
+            $"/api/operations/hotels/{hotel.Id}/staff",
+            HttpStatusCode.OK,
+            owner.AccessToken);
+        operationStaff.Should().Contain(item => item.UserAccountId == housekeeper.UserId && item.Role == UserRoleCode.HousekeepingStaff);
+        operationStaff.Should().Contain(item => item.UserAccountId == maintenance.UserId && item.Role == UserRoleCode.MaintenanceStaff);
+
+        HousekeepingTaskDto assignedHousekeepingTask = await SendJsonAsync<HousekeepingTaskDto>(
+            client,
+            HttpMethod.Patch,
+            $"/api/hotels/{hotel.Id}/housekeeping/tasks/{housekeepingTask.Id}/assignee",
+            new { assignedToUserAccountId = housekeeper.UserId },
+            HttpStatusCode.OK,
+            owner.AccessToken);
+        assignedHousekeepingTask.AssignedToUserAccountId.Should().Be(housekeeper.UserId);
 
         HousekeepingTaskDto taskInProgress = await SendJsonAsync<HousekeepingTaskDto>(
             client,
@@ -683,6 +737,15 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             HttpStatusCode.OK,
             maintenance.AccessToken);
         maintenanceRequests.Should().Contain(item => item.Id == maintenanceRequest.Id);
+
+        MaintenanceRequestDto assignedMaintenanceRequest = await SendJsonAsync<MaintenanceRequestDto>(
+            client,
+            HttpMethod.Patch,
+            $"/api/hotels/{hotel.Id}/maintenance/requests/{maintenanceRequest.Id}/assignee",
+            new { assignedToUserAccountId = maintenance.UserId },
+            HttpStatusCode.OK,
+            owner.AccessToken);
+        assignedMaintenanceRequest.AssignedToUserAccountId.Should().Be(maintenance.UserId);
 
         MaintenanceRequestDto repairInProgress = await SendJsonAsync<MaintenanceRequestDto>(
             client,
@@ -820,12 +883,12 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             "/api/owner/hotels",
             new
             {
-                name = $"Reject Smoke Hotel {suffix}",
+                name = "Harbor Suites Rejection Review",
                 city = "Da Nang",
-                addressLine = "1 Reject Street",
-                contactEmail = $"reject-smoke-{suffix}@example.com",
+                addressLine = "1 Bach Dang Riverside",
+                contactEmail = $"harbor-rejection-review-{suffix}@example.com",
                 contactPhone = "0901112222",
-                description = "Hotel for rejection smoke"
+                description = "Demo property for hotel rejection workflow validation."
             },
             HttpStatusCode.Created,
             owner.AccessToken);
@@ -833,7 +896,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
         AdminHotelDto rejectedHotel = await PostJsonAsync<AdminHotelDto>(
             client,
             $"/api/platform-admin/hotels/{hotelToReject.Id}/reject",
-            new { reason = "Smoke rejection" },
+            new { reason = "Demo rejection reason" },
             HttpStatusCode.OK,
             admin.AccessToken);
         rejectedHotel.ApprovalStatus.Should().Be(HotelApprovalStatus.Rejected);

@@ -1,11 +1,16 @@
 using HotelMarketplace.Application.Maintenance.Dtos;
 using HotelMarketplace.Application.Maintenance.Requests;
+using HotelMarketplace.Application.HotelManagement.Dtos;
 using HotelMarketplace.Domain.Enums;
 
 namespace HotelMarketplace.Application.Maintenance;
 
 public interface IMaintenanceRepository
 {
+    Task<IReadOnlyCollection<PhysicalRoomDto>> GetRoomsAsync(
+        Guid hotelId,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<MaintenanceRequestDto>> GetRequestsAsync(
         Guid hotelId,
         MaintenanceRequestQueryRequest request,
@@ -22,5 +27,11 @@ public interface IMaintenanceRepository
         Guid requestId,
         Guid actorUserAccountId,
         MaintenanceStatus targetStatus,
+        CancellationToken cancellationToken);
+
+    Task<MaintenanceRequestPersistenceResult> AssignRequestAsync(
+        Guid hotelId,
+        Guid requestId,
+        Guid assignedToUserAccountId,
         CancellationToken cancellationToken);
 }

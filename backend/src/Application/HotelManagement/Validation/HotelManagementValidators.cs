@@ -31,6 +31,29 @@ internal sealed class UpdateHotelProfileRequestValidator : AbstractValidator<Upd
     }
 }
 
+internal sealed class CreateHotelStaffRequestValidator : AbstractValidator<CreateHotelStaffRequest>
+{
+    public CreateHotelStaffRequestValidator()
+    {
+        RuleFor(request => request.Email).NotEmpty().EmailAddress().MaximumLength(256);
+        RuleFor(request => request.Password)
+            .NotEmpty()
+            .MinimumLength(8)
+            .MaximumLength(128)
+            .Matches("[A-Z]").WithMessage("Password must contain at least one uppercase letter.")
+            .Matches("[a-z]").WithMessage("Password must contain at least one lowercase letter.")
+            .Matches("[0-9]").WithMessage("Password must contain at least one number.");
+        RuleFor(request => request.FullName).SafeRequiredText(200, "Full name");
+        RuleFor(request => request.PhoneNumber).TenDigitPhone("Phone number");
+        RuleFor(request => request.Role)
+            .Must(role => role is UserRoleCode.HotelManager
+                or UserRoleCode.Receptionist
+                or UserRoleCode.HousekeepingStaff
+                or UserRoleCode.MaintenanceStaff)
+            .WithMessage("Staff role must be HotelManager, Receptionist, HousekeepingStaff, or MaintenanceStaff.");
+    }
+}
+
 internal sealed class CreateRoomTypeRequestValidator : AbstractValidator<CreateRoomTypeRequest>
 {
     public CreateRoomTypeRequestValidator()

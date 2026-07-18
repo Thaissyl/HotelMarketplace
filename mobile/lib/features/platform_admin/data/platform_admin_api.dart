@@ -6,6 +6,54 @@ class PlatformAdminApi {
 
   final ApiClient _apiClient;
 
+  Future<List<AdminUser>> getUsers({
+    String? role,
+    String? searchTerm,
+  }) {
+    return _apiClient.get<List<AdminUser>>(
+      '/api/platform-admin/users',
+      queryParameters: {
+        if (role != null && role.isNotEmpty) 'role': role,
+        if (searchTerm != null && searchTerm.trim().isNotEmpty)
+          'searchTerm': searchTerm.trim(),
+      },
+      decoder: (data) {
+        if (data is! List) {
+          return const <AdminUser>[];
+        }
+
+        return data.map(AdminUser.fromJson).toList(growable: false);
+      },
+    );
+  }
+
+  Future<AdminUser> suspendUser(String userId) {
+    return _apiClient.post<AdminUser>(
+      '/api/platform-admin/users/$userId/suspend',
+      decoder: AdminUser.fromJson,
+    );
+  }
+
+  Future<AdminUser> reactivateUser(String userId) {
+    return _apiClient.post<AdminUser>(
+      '/api/platform-admin/users/$userId/reactivate',
+      decoder: AdminUser.fromJson,
+    );
+  }
+
+  Future<List<AdminUserActivity>> getUserActivity(String userId) {
+    return _apiClient.get<List<AdminUserActivity>>(
+      '/api/platform-admin/users/$userId/activity',
+      decoder: (data) {
+        if (data is! List) {
+          return const <AdminUserActivity>[];
+        }
+
+        return data.map(AdminUserActivity.fromJson).toList(growable: false);
+      },
+    );
+  }
+
   Future<List<AdminFinanceSummary>> getFinanceSummary() {
     return _apiClient.get<List<AdminFinanceSummary>>(
       '/api/platform-admin/finance/summary',

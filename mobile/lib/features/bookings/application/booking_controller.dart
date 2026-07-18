@@ -13,6 +13,10 @@ final bookingControllerProvider =
   return BookingController(ref.watch(bookingApiProvider));
 });
 
+final myBookingsProvider = FutureProvider.autoDispose<List<Booking>>((ref) {
+  return ref.watch(bookingApiProvider).getMyBookings();
+});
+
 class BookingController extends StateNotifier<AsyncValue<Booking?>> {
   BookingController(this._bookingApi) : super(const AsyncData(null));
 

@@ -12,4 +12,7 @@ public static class HotelManagementErrors
     public static readonly ResultError RoomTypeHasFutureBookings = new("HotelManagement.RoomTypeHasFutureBookings", "This room type cannot be deactivated because active future bookings exist.");
     public static readonly ResultError RoomIsOccupied = new("HotelManagement.RoomIsOccupied", "This room cannot be inactivated because it is currently occupied.");
     public static readonly ResultError LockUnavailable = new("HotelManagement.LockUnavailable", "The room is being updated by another operation. Please retry.");
+    public static readonly ResultError DuplicateStaffEmail = new("HotelManagement.DuplicateStaffEmail", "A user account with this email already exists.");
+    public static readonly ResultError DuplicateStaffPhoneNumber = new("HotelManagement.DuplicateStaffPhoneNumber", "A user account with this phone number already exists.");
+    public static readonly ResultError InvalidStaffRole = new("HotelManagement.InvalidStaffRole", "The selected staff role is not valid for hotel operations.");
 }

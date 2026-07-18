@@ -14,7 +14,15 @@ public enum PlatformAdminPersistenceStatus
     InvalidRefundStatus = 8,
     PaymentTransactionNotFound = 9,
     InvalidReconciliationStatus = 10,
-    LockUnavailable = 11
+    LockUnavailable = 11,
+    UserNotFound = 12,
+    InvalidUserStatus = 13
+}
+
+public sealed record PlatformAdminUserResult(PlatformAdminPersistenceStatus Status, AdminUserDto? User)
+{
+    public static PlatformAdminUserResult Success(AdminUserDto user) => new(PlatformAdminPersistenceStatus.Success, user);
+    public static PlatformAdminUserResult Failure(PlatformAdminPersistenceStatus status) => new(status, null);
 }
 
 public sealed record PlatformAdminHotelResult(PlatformAdminPersistenceStatus Status, AdminHotelDto? Hotel)

@@ -37,3 +37,11 @@ internal sealed class UpdateMaintenanceRequestStatusRequestValidator : AbstractV
             .WithMessage("Maintenance requests can only be moved to InProgress or Resolved through this workflow.");
     }
 }
+
+internal sealed class AssignMaintenanceRequestRequestValidator : AbstractValidator<AssignMaintenanceRequestRequest>
+{
+    public AssignMaintenanceRequestRequestValidator()
+    {
+        RuleFor(request => request.AssignedToUserAccountId).NotEmpty();
+    }
+}

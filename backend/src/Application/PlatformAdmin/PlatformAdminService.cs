@@ -40,6 +40,70 @@ internal sealed class PlatformAdminService : IPlatformAdminService
         _reconciliationValidator = reconciliationValidator;
     }
 
+    public async Task<Result<IReadOnlyCollection<AdminUserDto>>> GetUsersAsync(
+        UserRoleCode? role,
+        string? searchTerm,
+        CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = ValidatePlatformAdministrator();
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<IReadOnlyCollection<AdminUserDto>>(authorizationFailure.Error);
+        }
+
+        string? normalizedSearchTerm = string.IsNullOrWhiteSpace(searchTerm)
+            ? null
+            : searchTerm.Trim();
+
+        return Result.Success(await _platformAdminRepository.GetUsersAsync(role, normalizedSearchTerm, cancellationToken));
+    }
+
+    public async Task<Result<AdminUserDto>> SuspendUserAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = ValidatePlatformAdministrator();
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<AdminUserDto>(authorizationFailure.Error);
+        }
+
+        if (userId == _currentUserService.UserId)
+        {
+            return Result.Failure<AdminUserDto>(PlatformAdminErrors.InvalidUserStatus);
+        }
+
+        return ToUserResult(await _platformAdminRepository.SuspendUserAsync(
+            userId,
+            _currentUserService.UserId!.Value,
+            cancellationToken));
+    }
+
+    public async Task<Result<AdminUserDto>> ReactivateUserAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = ValidatePlatformAdministrator();
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<AdminUserDto>(authorizationFailure.Error);
+        }
+
+        return ToUserResult(await _platformAdminRepository.ReactivateUserAsync(
+            userId,
+            _currentUserService.UserId!.Value,
+            cancellationToken));
+    }
+
+    public async Task<Result<IReadOnlyCollection<AdminUserActivityDto>>> GetUserActivityAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = ValidatePlatformAdministrator();
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<IReadOnlyCollection<AdminUserActivityDto>>(authorizationFailure.Error);
+        }
+
+        return Result.Success(await _platformAdminRepository.GetUserActivityAsync(userId, cancellationToken));
+    }
+
     public async Task<Result<IReadOnlyCollection<AdminHotelDto>>> GetPendingHotelsAsync(CancellationToken cancellationToken)
     {
         Result? authorizationFailure = ValidatePlatformAdministrator();
@@ -274,6 +338,18 @@ internal sealed class PlatformAdminService : IPlatformAdminService
             PlatformAdminPersistenceStatus.InvalidHotelReviewState => Result.Failure<AdminHotelDto>(PlatformAdminErrors.InvalidHotelReviewState),
             PlatformAdminPersistenceStatus.LockUnavailable => Result.Failure<AdminHotelDto>(PlatformAdminErrors.LockUnavailable),
             _ => Result.Failure<AdminHotelDto>(PlatformAdminErrors.HotelNotFound)
+        };
+    }
+
+    private static Result<AdminUserDto> ToUserResult(PlatformAdminUserResult result)
+    {
+        return result.Status switch
+        {
+            PlatformAdminPersistenceStatus.Success => Result.Success(result.User!),
+            PlatformAdminPersistenceStatus.UserNotFound => Result.Failure<AdminUserDto>(PlatformAdminErrors.UserNotFound),
+            PlatformAdminPersistenceStatus.InvalidUserStatus => Result.Failure<AdminUserDto>(PlatformAdminErrors.InvalidUserStatus),
+            PlatformAdminPersistenceStatus.LockUnavailable => Result.Failure<AdminUserDto>(PlatformAdminErrors.LockUnavailable),
+            _ => Result.Failure<AdminUserDto>(PlatformAdminErrors.UserNotFound)
         };
     }
 

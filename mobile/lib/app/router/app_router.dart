@@ -4,12 +4,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/auth/application/auth_controller.dart';
 import '../../features/auth/application/auth_state.dart';
+import '../../features/auth/domain/auth_models.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
 import '../../features/bookings/domain/booking_draft.dart';
 import '../../features/bookings/domain/booking_models.dart';
 import '../../features/bookings/presentation/booking_confirmation_screen.dart';
 import '../../features/bookings/presentation/pending_payment_screen.dart';
+import '../../features/customer/presentation/customer_home_screen.dart';
 import '../../features/marketplace/application/marketplace_providers.dart';
 import '../../features/marketplace/domain/marketplace_models.dart';
 import '../../features/marketplace/presentation/hotel_detail_screen.dart';
@@ -39,11 +41,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isLogin = location == LoginScreen.routePath;
       final isRegister = location == RegisterScreen.routePath;
       final isAuthRoute = isLogin || isRegister;
+      final isCustomerHomeRoute = location == CustomerHomeScreen.routePath;
+      final isCustomerOnlyRoute = isCustomerHomeRoute ||
+          location == MarketplaceScreen.routePath ||
+          location == HotelDetailScreen.routePath ||
+          location == BookingConfirmationScreen.routePath ||
+          location == PendingPaymentScreen.routePath;
+      final isOperationsRoute = location == OperationsDashboardScreen.routePath;
       final isPlatformAdminRoute =
           location == PlatformAdminDashboardScreen.routePath;
-      final isPlatformAdmin =
-          authState.userSession?.roles.contains('PlatformAdministrator') ==
-              true;
+      final userSession = authState.userSession;
+      final landingPath = _landingPathForRoles(userSession?.roles ?? const []);
+      final isPlatformAdmin = _isPlatformAdmin(userSession?.roles ?? const []);
+      final hasHotelOperationsAccess =
+          _hasHotelOperationsAccess(userSession?.roles ?? const []);
+      final isCustomer = _isCustomer(userSession?.roles ?? const []);
 
       if (authState.status == AuthStatus.checking) {
         return isSplash ? null : SplashScreen.routePath;
@@ -51,10 +63,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       if (authState.isAuthenticated) {
         if (isPlatformAdminRoute && !isPlatformAdmin) {
-          return MarketplaceScreen.routePath;
+          return landingPath;
         }
 
-        return isAuthRoute || isSplash ? MarketplaceScreen.routePath : null;
+        if (isOperationsRoute && !hasHotelOperationsAccess) {
+          return landingPath;
+        }
+
+        if (isCustomerOnlyRoute && !isCustomer) {
+          return landingPath;
+        }
+
+        return isAuthRoute || isSplash ? landingPath : null;
       }
 
       if (isSplash) {
@@ -93,6 +113,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: CustomerHomeScreen.routePath,
+        name: CustomerHomeScreen.routeName,
+        pageBuilder: (context, state) => _slideFadePage(
+          key: state.pageKey,
+          child: const CustomerHomeScreen(),
+        ),
+      ),
+      GoRoute(
         path: MarketplaceScreen.routePath,
         name: MarketplaceScreen.routeName,
         pageBuilder: (context, state) => _slideFadePage(
@@ -126,7 +154,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           if (extra is! BookingDraft) {
             return _slideFadePage(
               key: state.pageKey,
-              child: const MarketplaceScreen(),
+              child: const CustomerHomeScreen(),
             );
           }
 
@@ -144,7 +172,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           if (extra is! Booking) {
             return _slideFadePage(
               key: state.pageKey,
-              child: const MarketplaceScreen(),
+              child: const CustomerHomeScreen(),
             );
           }
 
@@ -181,6 +209,36 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+String _landingPathForRoles(List<String> roles) {
+  if (_isPlatformAdmin(roles)) {
+    return PlatformAdminDashboardScreen.routePath;
+  }
+
+  if (_hasHotelOperationsAccess(roles)) {
+    return OperationsDashboardScreen.routePath;
+  }
+
+  return CustomerHomeScreen.routePath;
+}
+
+bool _isCustomer(List<String> roles) {
+  return roles.contains(UserRoleCode.customer.apiValue);
+}
+
+bool _isPlatformAdmin(List<String> roles) {
+  return roles.contains(UserRoleCode.platformAdministrator.apiValue);
+}
+
+bool _hasHotelOperationsAccess(List<String> roles) {
+  return roles.any((role) {
+    return role == UserRoleCode.propertyOwner.apiValue ||
+        role == UserRoleCode.hotelManager.apiValue ||
+        role == UserRoleCode.receptionist.apiValue ||
+        role == UserRoleCode.housekeepingStaff.apiValue ||
+        role == UserRoleCode.maintenanceStaff.apiValue;
+  });
+}
 
 CustomTransitionPage<void> _fadePage({
   required LocalKey key,

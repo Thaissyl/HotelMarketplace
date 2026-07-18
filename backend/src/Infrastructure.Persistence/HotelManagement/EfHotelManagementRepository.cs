@@ -1,5 +1,6 @@
 using System.Data;
 using HotelMarketplace.Application.HotelManagement;
+using HotelMarketplace.Application.HotelManagement.Dtos;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
 using HotelMarketplace.Infrastructure.Persistence.Common;
@@ -32,6 +33,23 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
             .ToArrayAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<HotelProperty>> GetHotelsByIdsAsync(
+        IReadOnlyCollection<Guid> hotelIds,
+        CancellationToken cancellationToken)
+    {
+        if (hotelIds.Count == 0)
+        {
+            return Array.Empty<HotelProperty>();
+        }
+
+        return await _dbContext.HotelProperties
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(hotel => hotelIds.Contains(hotel.Id))
+            .OrderBy(hotel => hotel.Name)
+            .ToArrayAsync(cancellationToken);
+    }
+
     public Task<HotelProperty?> GetHotelByIdAsync(Guid hotelId, CancellationToken cancellationToken)
     {
         return _dbContext.HotelProperties
@@ -42,6 +60,93 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
     {
         return _dbContext.HotelProperties
             .AnyAsync(hotel => hotel.Id == hotelId && hotel.OwnerUserAccountId == userAccountId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<HotelStaffMemberDto>> GetStaffAsync(Guid hotelId, CancellationToken cancellationToken)
+    {
+        List<HotelStaffMemberDto> staff = await (
+            from assignment in _dbContext.HotelStaffAssignments.IgnoreQueryFilters().AsNoTracking()
+            join user in _dbContext.UserAccounts.IgnoreQueryFilters().AsNoTracking()
+                on assignment.UserAccountId equals user.Id
+            join role in _dbContext.UserRoles.IgnoreQueryFilters().AsNoTracking()
+                on assignment.RoleId equals role.Id
+            where assignment.HotelId == hotelId && assignment.IsActive
+            orderby role.Name, user.FullName
+            select new HotelStaffMemberDto(
+                user.Id,
+                assignment.Id,
+                assignment.HotelId,
+                user.Email,
+                user.FullName,
+                user.PhoneNumber,
+                ParseRoleCode(role.Code),
+                user.Status,
+                assignment.AssignedAtUtc))
+            .ToListAsync(cancellationToken);
+
+        return staff;
+    }
+
+    public Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken)
+    {
+        return _dbContext.UserAccounts
+            .IgnoreQueryFilters()
+            .AnyAsync(user => user.Email == email, cancellationToken);
+    }
+
+    public Task<bool> PhoneNumberExistsAsync(string phoneNumber, CancellationToken cancellationToken)
+    {
+        return _dbContext.UserAccounts
+            .IgnoreQueryFilters()
+            .AnyAsync(user => user.PhoneNumber == phoneNumber, cancellationToken);
+    }
+
+    public Task<UserRole?> GetRoleAsync(UserRoleCode roleCode, CancellationToken cancellationToken)
+    {
+        string roleCodeValue = roleCode.ToString().ToUpperInvariant();
+
+        return _dbContext.UserRoles
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(role => role.Code == roleCodeValue, cancellationToken);
+    }
+
+    public async Task<HotelStaffMemberDto> CreateStaffAsync(
+        Guid hotelId,
+        UserAccount userAccount,
+        Guid roleId,
+        Guid assignedByUserAccountId,
+        UserRoleCode roleCode,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            UserAccountRole userAccountRole = new(Guid.NewGuid(), userAccount.Id, roleId);
+            HotelStaffAssignment assignment = new(Guid.NewGuid(), userAccount.Id, hotelId, roleId, assignedByUserAccountId);
+
+            await _dbContext.UserAccounts.AddAsync(userAccount, cancellationToken);
+            await _dbContext.UserAccountRoles.AddAsync(userAccountRole, cancellationToken);
+            await _dbContext.HotelStaffAssignments.AddAsync(assignment, cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return new HotelStaffMemberDto(
+                userAccount.Id,
+                assignment.Id,
+                hotelId,
+                userAccount.Email,
+                userAccount.FullName,
+                userAccount.PhoneNumber,
+                roleCode,
+                userAccount.Status,
+                assignment.AssignedAtUtc);
+        });
     }
 
     public async Task AddRoomTypeAsync(RoomType roomType, CancellationToken cancellationToken)
@@ -283,5 +388,12 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
     public Task SaveChangesAsync(CancellationToken cancellationToken)
     {
         return _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static UserRoleCode ParseRoleCode(string roleCode)
+    {
+        return Enum.TryParse(roleCode, ignoreCase: true, out UserRoleCode parsedRole)
+            ? parsedRole
+            : UserRoleCode.Receptionist;
     }
 }

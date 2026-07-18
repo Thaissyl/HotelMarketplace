@@ -11,10 +11,14 @@ class HotelCard extends StatelessWidget {
     super.key,
     required this.hotel,
     required this.onTap,
+    required this.saved,
+    required this.onToggleSaved,
   });
 
   final HotelSearchResult hotel;
   final VoidCallback onTap;
+  final bool saved;
+  final VoidCallback onToggleSaved;
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +51,23 @@ class HotelCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(hotel.name, style: textTheme.titleMedium),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(hotel.name, style: textTheme.titleMedium),
+                        ),
+                        IconButton(
+                          tooltip: saved ? 'Remove saved hotel' : 'Save hotel',
+                          onPressed: onToggleSaved,
+                          icon: Icon(
+                            saved
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            color: saved ? AppColors.danger : null,
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
                       '${hotel.city} - ${hotel.addressLine}',

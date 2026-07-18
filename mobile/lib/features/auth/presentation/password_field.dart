@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/widgets/app_text_form_field.dart';
+
 class PasswordField extends StatefulWidget {
   const PasswordField({
     super.key,
@@ -23,7 +25,7 @@ class _PasswordFieldState extends State<PasswordField> {
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
+    return AppTextFormField(
       controller: widget.controller,
       obscureText: _obscureText,
       enableSuggestions: false,
@@ -31,21 +33,19 @@ class _PasswordFieldState extends State<PasswordField> {
       textInputAction: widget.textInputAction,
       validator: widget.validator,
       onFieldSubmitted: widget.onFieldSubmitted,
-      decoration: InputDecoration(
-        labelText: 'Password',
-        prefixIcon: const Icon(Icons.lock_outline_rounded),
-        suffixIcon: IconButton(
-          tooltip: _obscureText ? 'Show password' : 'Hide password',
-          onPressed: () {
-            setState(() {
-              _obscureText = !_obscureText;
-            });
-          },
-          icon: Icon(
-            _obscureText
-                ? Icons.visibility_rounded
-                : Icons.visibility_off_rounded,
-          ),
+      labelText: 'Password',
+      prefixIcon: const Icon(Icons.lock_outline_rounded),
+      suffixIcon: IconButton(
+        tooltip: _obscureText ? 'Show password' : 'Hide password',
+        onPressed: () {
+          setState(() {
+            _obscureText = !_obscureText;
+          });
+        },
+        icon: Icon(
+          _obscureText
+              ? Icons.visibility_rounded
+              : Icons.visibility_off_rounded,
         ),
       ),
     );

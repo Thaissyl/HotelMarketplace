@@ -23,17 +23,20 @@ internal sealed class HousekeepingService : IHousekeepingService
     private readonly IHousekeepingRepository _housekeepingRepository;
     private readonly IValidator<HousekeepingTaskQueryRequest> _queryValidator;
     private readonly IValidator<UpdateHousekeepingTaskStatusRequest> _updateValidator;
+    private readonly IValidator<AssignHousekeepingTaskRequest> _assignValidator;
 
     public HousekeepingService(
         ICurrentUserService currentUserService,
         IHousekeepingRepository housekeepingRepository,
         IValidator<HousekeepingTaskQueryRequest> queryValidator,
-        IValidator<UpdateHousekeepingTaskStatusRequest> updateValidator)
+        IValidator<UpdateHousekeepingTaskStatusRequest> updateValidator,
+        IValidator<AssignHousekeepingTaskRequest> assignValidator)
     {
         _currentUserService = currentUserService;
         _housekeepingRepository = housekeepingRepository;
         _queryValidator = queryValidator;
         _updateValidator = updateValidator;
+        _assignValidator = assignValidator;
     }
 
     public async Task<Result<IReadOnlyCollection<HousekeepingTaskDto>>> GetTasksAsync(
@@ -93,6 +96,48 @@ internal sealed class HousekeepingService : IHousekeepingService
             HousekeepingPersistenceStatus.Success => Result.Success(result.Task!),
             HousekeepingPersistenceStatus.TaskNotFound => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.TaskNotFound),
             HousekeepingPersistenceStatus.RoomNotFound => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.RoomNotFound),
+            HousekeepingPersistenceStatus.InvalidTransition => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.InvalidTransition),
+            HousekeepingPersistenceStatus.LockUnavailable => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.LockUnavailable),
+            HousekeepingPersistenceStatus.AssigneeNotFound => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.AssigneeNotFound),
+            _ => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.InvalidTransition)
+        };
+    }
+
+    public async Task<Result<HousekeepingTaskDto>> AssignTaskAsync(
+        Guid hotelId,
+        Guid taskId,
+        AssignHousekeepingTaskRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = ValidateAuthorization(hotelId);
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<HousekeepingTaskDto>(authorizationFailure.Error);
+        }
+
+        if (!_currentUserService.Roles.Any(role => role is UserRoleCode.HotelManager or UserRoleCode.PropertyOwner or UserRoleCode.PlatformAdministrator))
+        {
+            return Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.Forbidden);
+        }
+
+        ValidationResult validationResult = await _assignValidator.ValidateAsync(request, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return Result.Failure<HousekeepingTaskDto>(
+                ValidationErrorFormatter.ToResultError("Housekeeping.InvalidTaskAssignment", validationResult));
+        }
+
+        HousekeepingTaskUpdateResult result = await _housekeepingRepository.AssignTaskAsync(
+            hotelId,
+            taskId,
+            request.AssignedToUserAccountId,
+            cancellationToken);
+
+        return result.Status switch
+        {
+            HousekeepingPersistenceStatus.Success => Result.Success(result.Task!),
+            HousekeepingPersistenceStatus.TaskNotFound => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.TaskNotFound),
+            HousekeepingPersistenceStatus.AssigneeNotFound => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.AssigneeNotFound),
             HousekeepingPersistenceStatus.InvalidTransition => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.InvalidTransition),
             HousekeepingPersistenceStatus.LockUnavailable => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.LockUnavailable),
             _ => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.InvalidTransition)

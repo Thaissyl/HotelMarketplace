@@ -154,6 +154,74 @@ internal sealed class EfHousekeepingRepository : IHousekeepingRepository
         });
     }
 
+    public async Task<HousekeepingTaskUpdateResult> AssignTaskAsync(
+        Guid hotelId,
+        Guid taskId,
+        Guid assignedToUserAccountId,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            bool taskLockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
+                _dbContext,
+                $"housekeeping:{hotelId:N}:{taskId:N}",
+                cancellationToken);
+            if (!taskLockAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return HousekeepingTaskUpdateResult.Failure(HousekeepingPersistenceStatus.LockUnavailable);
+            }
+
+            bool assigneeExists = await (
+                from assignment in _dbContext.HotelStaffAssignments.IgnoreQueryFilters().AsNoTracking()
+                join role in _dbContext.UserRoles.AsNoTracking()
+                    on assignment.RoleId equals role.Id
+                where assignment.HotelId == hotelId
+                    && assignment.UserAccountId == assignedToUserAccountId
+                    && assignment.IsActive
+                    && role.Code == nameof(UserRoleCode.HousekeepingStaff)
+                select assignment.Id)
+                .AnyAsync(cancellationToken);
+
+            if (!assigneeExists)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return HousekeepingTaskUpdateResult.Failure(HousekeepingPersistenceStatus.AssigneeNotFound);
+            }
+
+            HousekeepingTask? task = await _dbContext.HousekeepingTasks
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(entity => entity.Id == taskId && entity.HotelId == hotelId, cancellationToken);
+
+            if (task is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return HousekeepingTaskUpdateResult.Failure(HousekeepingPersistenceStatus.TaskNotFound);
+            }
+
+            try
+            {
+                task.Assign(assignedToUserAccountId);
+            }
+            catch (SharedKernel.Exceptions.DomainException)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return HousekeepingTaskUpdateResult.Failure(HousekeepingPersistenceStatus.InvalidTransition);
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return HousekeepingTaskUpdateResult.Success(await ToDtoAsync(task.Id, cancellationToken));
+        });
+    }
+
     private async Task<HousekeepingTaskDto> ToDtoAsync(
         Guid taskId,
         CancellationToken cancellationToken)

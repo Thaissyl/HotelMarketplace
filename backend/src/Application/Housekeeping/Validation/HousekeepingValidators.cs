@@ -23,3 +23,11 @@ internal sealed class UpdateHousekeepingTaskStatusRequestValidator : AbstractVal
             .WithMessage("Housekeeping tasks can only be moved to InProgress or Completed through this workflow.");
     }
 }
+
+internal sealed class AssignHousekeepingTaskRequestValidator : AbstractValidator<AssignHousekeepingTaskRequest>
+{
+    public AssignHousekeepingTaskRequestValidator()
+    {
+        RuleFor(request => request.AssignedToUserAccountId).NotEmpty();
+    }
+}

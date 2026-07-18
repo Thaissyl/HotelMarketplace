@@ -1,5 +1,6 @@
 using System.Data;
 using HotelMarketplace.Application.Maintenance;
+using HotelMarketplace.Application.HotelManagement.Dtos;
 using HotelMarketplace.Application.Maintenance.Dtos;
 using HotelMarketplace.Application.Maintenance.Requests;
 using HotelMarketplace.Domain.Entities;
@@ -17,6 +18,24 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
     public EfMaintenanceRepository(HotelMarketplaceDbContext dbContext)
     {
         _dbContext = dbContext;
+    }
+
+    public async Task<IReadOnlyCollection<PhysicalRoomDto>> GetRoomsAsync(
+        Guid hotelId,
+        CancellationToken cancellationToken)
+    {
+        return await _dbContext.PhysicalRooms
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(room => room.HotelId == hotelId)
+            .OrderBy(room => room.RoomNumber)
+            .Select(room => new PhysicalRoomDto(
+                room.Id,
+                room.HotelId,
+                room.RoomTypeId,
+                room.RoomNumber,
+                room.Status))
+            .ToArrayAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<MaintenanceRequestDto>> GetRequestsAsync(
@@ -202,6 +221,74 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
                     await transaction.RollbackAsync(cancellationToken);
                     return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.InvalidTransition);
                 }
+            }
+            catch (SharedKernel.Exceptions.DomainException)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.InvalidTransition);
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return MaintenanceRequestPersistenceResult.Success(await ToDtoAsync(maintenanceRequest.Id, cancellationToken));
+        });
+    }
+
+    public async Task<MaintenanceRequestPersistenceResult> AssignRequestAsync(
+        Guid hotelId,
+        Guid requestId,
+        Guid assignedToUserAccountId,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            bool requestLockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
+                _dbContext,
+                $"maintenance:request:{hotelId:N}:{requestId:N}",
+                cancellationToken);
+            if (!requestLockAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.LockUnavailable);
+            }
+
+            bool assigneeExists = await (
+                from assignment in _dbContext.HotelStaffAssignments.IgnoreQueryFilters().AsNoTracking()
+                join role in _dbContext.UserRoles.AsNoTracking()
+                    on assignment.RoleId equals role.Id
+                where assignment.HotelId == hotelId
+                    && assignment.UserAccountId == assignedToUserAccountId
+                    && assignment.IsActive
+                    && role.Code == nameof(UserRoleCode.MaintenanceStaff)
+                select assignment.Id)
+                .AnyAsync(cancellationToken);
+
+            if (!assigneeExists)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.AssigneeNotFound);
+            }
+
+            MaintenanceRequest? maintenanceRequest = await _dbContext.MaintenanceRequests
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(entity => entity.Id == requestId && entity.HotelId == hotelId, cancellationToken);
+
+            if (maintenanceRequest is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.RequestNotFound);
+            }
+
+            try
+            {
+                maintenanceRequest.Assign(assignedToUserAccountId);
             }
             catch (SharedKernel.Exceptions.DomainException)
             {

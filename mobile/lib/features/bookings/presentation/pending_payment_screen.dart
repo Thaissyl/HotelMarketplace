@@ -1,16 +1,20 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
-import '../../../features/marketplace/presentation/marketplace_screen.dart';
+import '../../../features/customer/application/customer_state.dart';
+import '../../../features/customer/presentation/customer_home_screen.dart';
 import '../../../shared/utils/app_formatters.dart';
+import '../../../shared/widgets/app_error_presenter.dart';
+import '../application/booking_controller.dart';
 import '../domain/booking_models.dart';
 
-class PendingPaymentScreen extends StatefulWidget {
+class PendingPaymentScreen extends ConsumerStatefulWidget {
   const PendingPaymentScreen({
     super.key,
     required this.booking,
@@ -24,13 +28,15 @@ class PendingPaymentScreen extends StatefulWidget {
   static String pathFor(String bookingId) => '/bookings/$bookingId/pending';
 
   @override
-  State<PendingPaymentScreen> createState() => _PendingPaymentScreenState();
+  ConsumerState<PendingPaymentScreen> createState() =>
+      _PendingPaymentScreenState();
 }
 
-class _PendingPaymentScreenState extends State<PendingPaymentScreen> {
+class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
   Timer? _timer;
   late Duration _remaining;
   bool _expiredHandled = false;
+  bool _isProcessingPayment = false;
 
   @override
   void initState() {
@@ -74,6 +80,10 @@ class _PendingPaymentScreenState extends State<PendingPaymentScreen> {
   }
 
   Future<void> _showExpiredAndLeave() async {
+    if (_isProcessingPayment) {
+      return;
+    }
+
     _timer?.cancel();
     await showDialog<void>(
       context: context,
@@ -100,7 +110,68 @@ class _PendingPaymentScreenState extends State<PendingPaymentScreen> {
     );
 
     if (mounted) {
-      context.go(MarketplaceScreen.routePath);
+      context.go(CustomerHomeScreen.routePath);
+    }
+  }
+
+  Future<void> _completePayment() async {
+    if (_isProcessingPayment || _remaining == Duration.zero) {
+      if (_remaining == Duration.zero) {
+        await _showExpiredAndLeave();
+      }
+      return;
+    }
+
+    setState(() => _isProcessingPayment = true);
+
+    try {
+      final result = await ref
+          .read(bookingApiProvider)
+          .simulatePaymentSuccess(widget.booking.id);
+
+      if (!mounted) {
+        return;
+      }
+
+      _timer?.cancel();
+      ref.read(customerStateProvider.notifier).markBookingPaid(
+            widget.booking.id,
+          );
+
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadii.lg),
+            ),
+            title: const Text('Payment completed'),
+            content: Text(
+              result.message.isEmpty
+                  ? 'Your booking has been confirmed.'
+                  : result.message,
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Continue'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (mounted) {
+        context.go(CustomerHomeScreen.routePath);
+      }
+    } catch (error) {
+      if (mounted) {
+        await AppErrorPresenter.showBottomSheet(context, error);
+        setState(() => _isProcessingPayment = false);
+      }
     }
   }
 
@@ -187,22 +258,29 @@ class _PendingPaymentScreenState extends State<PendingPaymentScreen> {
                     ),
                     const SizedBox(height: AppSpacing.xl),
                     FilledButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Payment integration is not enabled in this mobile phase.',
-                            ),
-                          ),
-                        );
-                      },
+                      onPressed: _isProcessingPayment ? null : _completePayment,
                       icon: const Icon(Icons.payments_outlined),
-                      label: const Text('Payment pending'),
+                      label: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        child: _isProcessingPayment
+                            ? const SizedBox.square(
+                                key: ValueKey('payment-loading'),
+                                dimension: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text(
+                                'Payment',
+                                key: ValueKey('payment-label'),
+                              ),
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     TextButton(
                       onPressed: () {
-                        context.go(MarketplaceScreen.routePath);
+                        context.go(CustomerHomeScreen.routePath);
                       },
                       child: const Text('Back to search'),
                     ),

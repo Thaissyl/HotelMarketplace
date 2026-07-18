@@ -14,6 +14,8 @@ class AppColors {
   static const Color brandDark = Color(0xFF163B5C);
   static const Color accent = Color(0xFFC7A76C);
   static const Color success = Color(0xFF2E7D5B);
+  static const Color successSoft = Color(0xFFE6F4EE);
   static const Color warning = Color(0xFFB7791F);
+  static const Color warningSoft = Color(0xFFFFF4DE);
   static const Color danger = Color(0xFFB42318);
 }

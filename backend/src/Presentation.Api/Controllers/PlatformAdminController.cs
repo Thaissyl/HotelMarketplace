@@ -20,6 +20,59 @@ public sealed class PlatformAdminController : ControllerBase
         _platformAdminService = platformAdminService;
     }
 
+    [HttpGet("users")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<AdminUserDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetUsers(
+        [FromQuery] UserRoleCode? role,
+        [FromQuery] string? searchTerm,
+        CancellationToken cancellationToken)
+    {
+        Result<IReadOnlyCollection<AdminUserDto>> result = await _platformAdminService.GetUsersAsync(
+            role,
+            searchTerm,
+            cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
+    [HttpPost("users/{userId:guid}/suspend")]
+    [ProducesResponseType(typeof(AdminUserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status423Locked)]
+    public async Task<IActionResult> SuspendUser(Guid userId, CancellationToken cancellationToken)
+    {
+        Result<AdminUserDto> result = await _platformAdminService.SuspendUserAsync(userId, cancellationToken);
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
+    [HttpPost("users/{userId:guid}/reactivate")]
+    [ProducesResponseType(typeof(AdminUserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status423Locked)]
+    public async Task<IActionResult> ReactivateUser(Guid userId, CancellationToken cancellationToken)
+    {
+        Result<AdminUserDto> result = await _platformAdminService.ReactivateUserAsync(userId, cancellationToken);
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
+    [HttpGet("users/{userId:guid}/activity")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<AdminUserActivityDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetUserActivity(Guid userId, CancellationToken cancellationToken)
+    {
+        Result<IReadOnlyCollection<AdminUserActivityDto>> result = await _platformAdminService.GetUserActivityAsync(userId, cancellationToken);
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
     [HttpGet("hotels/pending-review")]
     [ProducesResponseType(typeof(IReadOnlyCollection<AdminHotelDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -222,6 +275,8 @@ public sealed class PlatformAdminController : ControllerBase
         int statusCode = error.Code switch
         {
             "PlatformAdmin.Forbidden" => StatusCodes.Status403Forbidden,
+            "PlatformAdmin.UserNotFound" => StatusCodes.Status404NotFound,
+            "PlatformAdmin.InvalidUserStatus" => StatusCodes.Status409Conflict,
             "PlatformAdmin.HotelNotFound" => StatusCodes.Status404NotFound,
             "PlatformAdmin.SettlementNotFound" => StatusCodes.Status404NotFound,
             "PlatformAdmin.RefundNotFound" => StatusCodes.Status404NotFound,

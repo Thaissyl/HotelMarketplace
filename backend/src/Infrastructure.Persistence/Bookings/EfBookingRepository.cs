@@ -185,6 +185,55 @@ internal sealed class EfBookingRepository : IBookingRepository
         });
     }
 
+    public async Task<IReadOnlyCollection<BookingDto>> GetBookingsForCustomerAsync(
+        Guid customerUserAccountId,
+        CancellationToken cancellationToken)
+    {
+        List<BookingReadModel> rows = await (
+            from booking in _dbContext.Bookings.IgnoreQueryFilters().AsNoTracking()
+            join bookingRoom in _dbContext.BookingRooms.IgnoreQueryFilters().AsNoTracking()
+                on booking.Id equals bookingRoom.BookingId
+            where booking.CustomerUserAccountId == customerUserAccountId
+            orderby booking.CreatedAtUtc descending
+            select new BookingReadModel(
+                booking.Id,
+                booking.BookingCode,
+                booking.HotelId,
+                bookingRoom.RoomTypeId,
+                booking.CheckInDate,
+                booking.CheckOutDate,
+                bookingRoom.Quantity,
+                bookingRoom.Nights,
+                bookingRoom.UnitPricePerNight,
+                booking.TotalAmount,
+                booking.Status,
+                booking.CreatedAtUtc,
+                booking.PaymentExpiresAtUtc,
+                booking.GuestFullName,
+                booking.GuestPhone))
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(row => new BookingDto(
+                row.Id,
+                row.BookingCode,
+                row.HotelId,
+                row.RoomTypeId,
+                row.CheckInDate,
+                row.CheckOutDate,
+                row.RoomCount,
+                1,
+                row.Nights,
+                row.UnitPricePerNight,
+                row.TotalAmount,
+                row.Status,
+                row.CreatedAtUtc,
+                row.PaymentExpiresAtUtc,
+                row.GuestFullName,
+                row.GuestPhone))
+            .ToArray();
+    }
+
     private static string GenerateBookingCode(DateTime utcNow)
     {
         string suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..10].ToUpperInvariant();
@@ -197,4 +246,21 @@ internal sealed class EfBookingRepository : IBookingRepository
         int AdultCapacity,
         int ChildCapacity,
         decimal BasePricePerNight);
+
+    private sealed record BookingReadModel(
+        Guid Id,
+        string BookingCode,
+        Guid HotelId,
+        Guid RoomTypeId,
+        DateOnly CheckInDate,
+        DateOnly CheckOutDate,
+        int RoomCount,
+        int Nights,
+        decimal UnitPricePerNight,
+        decimal TotalAmount,
+        BookingStatus Status,
+        DateTime CreatedAtUtc,
+        DateTime? PaymentExpiresAtUtc,
+        string GuestFullName,
+        string GuestPhone);
 }

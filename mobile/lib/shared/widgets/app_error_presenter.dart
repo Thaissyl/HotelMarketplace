@@ -38,8 +38,12 @@ class AppErrorPresenter {
 
   static Future<void> showBottomSheet(
     BuildContext context,
-    Object error,
-  ) {
+    Object error, {
+    String? title,
+  }) {
+    final effectiveTitle = title ?? friendlyTitle(error);
+    final message = friendlyMessage(error);
+
     return showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -68,15 +72,17 @@ class AppErrorPresenter {
                     color: AppColors.danger,
                   ),
                   const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    'Something went wrong',
-                    style: Theme.of(context).textTheme.titleMedium,
+                  Expanded(
+                    child: Text(
+                      effectiveTitle,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                friendlyMessage(error),
+                message,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: AppSpacing.xl),
@@ -104,7 +110,7 @@ class AppErrorPresenter {
     }
 
     if (error is UnauthorizedApiException) {
-      return 'Your session has expired. Please sign in again.';
+      return 'Please sign in again, or check that your email and password are correct.';
     }
 
     if (error is ForbiddenApiException) {
@@ -140,5 +146,49 @@ class AppErrorPresenter {
     }
 
     return 'The request could not be completed. Please try again.';
+  }
+
+  static String friendlyTitle(Object error) {
+    if (error is String) {
+      return 'Check this information';
+    }
+
+    if (error is DioException && error.error != null) {
+      return friendlyTitle(error.error!);
+    }
+
+    if (error is UnauthorizedApiException) {
+      return 'Sign-in failed';
+    }
+
+    if (error is ForbiddenApiException) {
+      return 'Access denied';
+    }
+
+    if (error is BadRequestApiException || error is ConflictApiException) {
+      return 'Action needed';
+    }
+
+    if (error is LockedApiException) {
+      return 'Please try again';
+    }
+
+    if (error is NotFoundApiException) {
+      return 'Not found';
+    }
+
+    if (error is ServerApiException) {
+      return 'Server unavailable';
+    }
+
+    if (error is NetworkApiException) {
+      return 'Connection problem';
+    }
+
+    if (error is ApiException) {
+      return 'Request failed';
+    }
+
+    return 'Request failed';
   }
 }

@@ -42,6 +42,18 @@ public sealed class MaintenanceRequest : Entity, IHotelScopedEntity
 
     public DateTime CreatedAtUtc { get; private set; }
 
+    public void Assign(Guid assignedToUserAccountId)
+    {
+        Guard.NotEmpty(assignedToUserAccountId, nameof(AssignedToUserAccountId));
+
+        if (Status != MaintenanceStatus.Open)
+        {
+            throw new SharedKernel.Exceptions.DomainException("MaintenanceRequest.InvalidAssignStatus", "Only open maintenance requests can be assigned.");
+        }
+
+        AssignedToUserAccountId = assignedToUserAccountId;
+    }
+
     public void Start(Guid assignedToUserAccountId)
     {
         Guard.NotEmpty(assignedToUserAccountId, nameof(AssignedToUserAccountId));
