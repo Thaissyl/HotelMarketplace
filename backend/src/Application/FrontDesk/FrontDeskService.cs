@@ -3,7 +3,9 @@ using FluentValidation.Results;
 using HotelMarketplace.Application.Common.Validation;
 using HotelMarketplace.Application.FrontDesk.Dtos;
 using HotelMarketplace.Application.FrontDesk.Requests;
+using HotelMarketplace.Application.HotelManagement.Dtos;
 using HotelMarketplace.Application.Security;
+using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
 using HotelMarketplace.SharedKernel.Results;
 
@@ -37,6 +39,53 @@ internal sealed class FrontDeskService : IFrontDeskService
         _checkInValidator = checkInValidator;
         _checkOutValidator = checkOutValidator;
         _walkInValidator = walkInValidator;
+    }
+
+    public async Task<Result<IReadOnlyCollection<PhysicalRoomDto>>> GetPhysicalRoomsAsync(
+        Guid hotelId,
+        Guid? roomTypeId,
+        CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = ValidateAuthorization(hotelId);
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<IReadOnlyCollection<PhysicalRoomDto>>(authorizationFailure.Error);
+        }
+
+        IReadOnlyCollection<PhysicalRoom> rooms = await _frontDeskRepository.GetPhysicalRoomsAsync(
+            hotelId,
+            roomTypeId,
+            cancellationToken);
+
+        return rooms.Select(room => new PhysicalRoomDto(
+            room.Id,
+            room.HotelId,
+            room.RoomTypeId,
+            room.RoomNumber,
+            room.Status)).ToArray();
+    }
+
+    public async Task<Result<IReadOnlyCollection<FrontDeskBookingSummaryDto>>> GetBookingsAsync(
+        Guid hotelId,
+        BookingStatus? status,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = ValidateAuthorization(hotelId);
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<IReadOnlyCollection<FrontDeskBookingSummaryDto>>(authorizationFailure.Error);
+        }
+
+        IReadOnlyCollection<FrontDeskBookingSummaryDto> bookings = await _frontDeskRepository.GetBookingsAsync(
+            hotelId,
+            status,
+            fromDate,
+            toDate,
+            cancellationToken);
+
+        return Result.Success(bookings);
     }
 
     public async Task<Result<FrontDeskBookingDto>> CheckInBookingAsync(

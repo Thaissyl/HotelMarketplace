@@ -6,6 +6,9 @@ namespace HotelMarketplace.Application.Bookings;
 
 public interface IBookingService
 {
+    Task<Result<IReadOnlyCollection<BookingDto>>> GetMyBookingsAsync(
+        CancellationToken cancellationToken);
+
     Task<Result<BookingDto>> CreateBookingAsync(
         CreateBookingRequest request,
         CancellationToken cancellationToken);

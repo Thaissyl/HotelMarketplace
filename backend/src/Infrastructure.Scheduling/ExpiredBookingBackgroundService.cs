@@ -25,12 +25,22 @@ internal sealed class ExpiredBookingBackgroundService : BackgroundService
             new EventId(1004, nameof(LogExpiredBookings)),
             "Expired booking scan completed. ExpiredCount={ExpiredCount}, BookingCodes={BookingCodes}.");
 
-    private static readonly Action<ILogger, Exception?> LogScanFailed =
-        LoggerMessage.Define(LogLevel.Error, new EventId(1005, nameof(LogScanFailed)), "Expired booking background service failed during scan.");
+    private static readonly Action<ILogger, int, Exception?> LogScanRecovered =
+        LoggerMessage.Define<int>(
+            LogLevel.Information,
+            new EventId(1005, nameof(LogScanRecovered)),
+            "Expired booking background service recovered after {ConsecutiveFailureCount} consecutive failed scan(s).");
+
+    private static readonly Action<ILogger, int, Exception> LogScanFailed =
+        LoggerMessage.Define<int>(
+            LogLevel.Error,
+            new EventId(1006, nameof(LogScanFailed)),
+            "Expired booking background service failed during scan. ConsecutiveFailureCount={ConsecutiveFailureCount}.");
 
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly BookingExpirationOptions _options;
     private readonly ILogger<ExpiredBookingBackgroundService> _logger;
+    private int _consecutiveFailureCount;
 
     public ExpiredBookingBackgroundService(
         IServiceScopeFactory serviceScopeFactory,
@@ -73,6 +83,8 @@ internal sealed class ExpiredBookingBackgroundService : BackgroundService
                 _options.NormalizedBatchSize,
                 stoppingToken);
 
+            LogRecoveryIfNeeded();
+
             if (result.ExpiredCount == 0)
             {
                 LogNoExpiredBookings(_logger, null);
@@ -90,7 +102,18 @@ internal sealed class ExpiredBookingBackgroundService : BackgroundService
         }
         catch (Exception exception)
         {
-            LogScanFailed(_logger, exception);
+            int failureCount = Interlocked.Increment(ref _consecutiveFailureCount);
+            LogScanFailed(_logger, failureCount, exception);
+        }
+    }
+
+    private void LogRecoveryIfNeeded()
+    {
+        int failureCount = Interlocked.Exchange(ref _consecutiveFailureCount, 0);
+
+        if (failureCount > 0)
+        {
+            LogScanRecovered(_logger, failureCount, null);
         }
     }
 }

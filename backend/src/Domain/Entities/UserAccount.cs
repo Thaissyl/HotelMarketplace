@@ -41,4 +41,35 @@ public sealed class UserAccount : Entity
     public IReadOnlyCollection<UserAccountRole> Roles => _roles;
 
     public IReadOnlyCollection<HotelStaffAssignment> StaffAssignments => _staffAssignments;
+
+    public void Suspend()
+    {
+        if (Status == AccountStatus.Suspended)
+        {
+            return;
+        }
+
+        Status = AccountStatus.Suspended;
+    }
+
+    public void Reactivate()
+    {
+        if (Status == AccountStatus.Active)
+        {
+            return;
+        }
+
+        Status = AccountStatus.Active;
+    }
+
+    public void UpdateProfile(string fullName, string? phoneNumber)
+    {
+        FullName = Guard.NotBlank(fullName, nameof(FullName), 200);
+        PhoneNumber = Guard.Optional(phoneNumber, nameof(PhoneNumber), 32);
+    }
+
+    public void ChangePasswordHash(string passwordHash)
+    {
+        PasswordHash = Guard.NotBlank(passwordHash, nameof(PasswordHash), 512);
+    }
 }

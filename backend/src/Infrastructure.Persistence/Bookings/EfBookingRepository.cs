@@ -1,10 +1,10 @@
 using System.Data;
-using System.Data.Common;
 using System.Globalization;
 using HotelMarketplace.Application.Bookings;
 using HotelMarketplace.Application.Bookings.Dtos;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.Infrastructure.Persistence.Common;
 using HotelMarketplace.SharedKernel.Time;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -50,8 +50,11 @@ internal sealed class EfBookingRepository : IBookingRepository
                 IsolationLevel.Serializable,
                 cancellationToken);
 
-            int lockResult = await AcquireReservationLockAsync(request, cancellationToken);
-            if (lockResult < 0)
+            bool lockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
+                _dbContext,
+                $"booking:{request.HotelId:N}:{request.RoomTypeId:N}:{request.CheckInDate:yyyyMMdd}:{request.CheckOutDate:yyyyMMdd}",
+                cancellationToken);
+            if (!lockAcquired)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return CreateBookingRepositoryResult.Failure(CreateBookingRepositoryStatus.ReservationLockUnavailable);
@@ -182,37 +185,53 @@ internal sealed class EfBookingRepository : IBookingRepository
         });
     }
 
-    private async Task<int> AcquireReservationLockAsync(
-        CreateBookingRepositoryRequest request,
+    public async Task<IReadOnlyCollection<BookingDto>> GetBookingsForCustomerAsync(
+        Guid customerUserAccountId,
         CancellationToken cancellationToken)
     {
-        DbConnection connection = _dbContext.Database.GetDbConnection();
-        await using DbCommand command = connection.CreateCommand();
-        command.Transaction = _dbContext.Database.CurrentTransaction?.GetDbTransaction();
-        command.CommandText = """
-            DECLARE @lockResult int;
-            EXEC @lockResult = sys.sp_getapplock
-                @Resource = @resource,
-                @LockMode = 'Exclusive',
-                @LockOwner = 'Transaction',
-                @LockTimeout = @lockTimeout;
-            SELECT @lockResult;
-            """;
+        List<BookingReadModel> rows = await (
+            from booking in _dbContext.Bookings.IgnoreQueryFilters().AsNoTracking()
+            join bookingRoom in _dbContext.BookingRooms.IgnoreQueryFilters().AsNoTracking()
+                on booking.Id equals bookingRoom.BookingId
+            where booking.CustomerUserAccountId == customerUserAccountId
+            orderby booking.CreatedAtUtc descending
+            select new BookingReadModel(
+                booking.Id,
+                booking.BookingCode,
+                booking.HotelId,
+                bookingRoom.RoomTypeId,
+                booking.CheckInDate,
+                booking.CheckOutDate,
+                bookingRoom.Quantity,
+                bookingRoom.Nights,
+                bookingRoom.UnitPricePerNight,
+                booking.TotalAmount,
+                booking.Status,
+                booking.CreatedAtUtc,
+                booking.PaymentExpiresAtUtc,
+                booking.GuestFullName,
+                booking.GuestPhone))
+            .ToListAsync(cancellationToken);
 
-        DbParameter resourceParameter = command.CreateParameter();
-        resourceParameter.ParameterName = "@resource";
-        resourceParameter.DbType = DbType.String;
-        resourceParameter.Value = $"booking:{request.HotelId:N}:{request.RoomTypeId:N}:{request.CheckInDate:yyyyMMdd}:{request.CheckOutDate:yyyyMMdd}";
-        command.Parameters.Add(resourceParameter);
-
-        DbParameter timeoutParameter = command.CreateParameter();
-        timeoutParameter.ParameterName = "@lockTimeout";
-        timeoutParameter.DbType = DbType.Int32;
-        timeoutParameter.Value = 10_000;
-        command.Parameters.Add(timeoutParameter);
-
-        object? result = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
+        return rows
+            .Select(row => new BookingDto(
+                row.Id,
+                row.BookingCode,
+                row.HotelId,
+                row.RoomTypeId,
+                row.CheckInDate,
+                row.CheckOutDate,
+                row.RoomCount,
+                1,
+                row.Nights,
+                row.UnitPricePerNight,
+                row.TotalAmount,
+                row.Status,
+                row.CreatedAtUtc,
+                row.PaymentExpiresAtUtc,
+                row.GuestFullName,
+                row.GuestPhone))
+            .ToArray();
     }
 
     private static string GenerateBookingCode(DateTime utcNow)
@@ -227,4 +246,21 @@ internal sealed class EfBookingRepository : IBookingRepository
         int AdultCapacity,
         int ChildCapacity,
         decimal BasePricePerNight);
+
+    private sealed record BookingReadModel(
+        Guid Id,
+        string BookingCode,
+        Guid HotelId,
+        Guid RoomTypeId,
+        DateOnly CheckInDate,
+        DateOnly CheckOutDate,
+        int RoomCount,
+        int Nights,
+        decimal UnitPricePerNight,
+        decimal TotalAmount,
+        BookingStatus Status,
+        DateTime CreatedAtUtc,
+        DateTime? PaymentExpiresAtUtc,
+        string GuestFullName,
+        string GuestPhone);
 }

@@ -8,6 +8,7 @@ dist/
 # .NET
 .vs/
 .vscode/
+.idea/
 *.user
 *.suo
 *.rsuser

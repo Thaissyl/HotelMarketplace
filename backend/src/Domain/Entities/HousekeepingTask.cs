@@ -38,6 +38,18 @@ public sealed class HousekeepingTask : Entity, IHotelScopedEntity
 
     public DateTime CreatedAtUtc { get; private set; }
 
+    public void Assign(Guid assignedToUserAccountId)
+    {
+        Guard.NotEmpty(assignedToUserAccountId, nameof(AssignedToUserAccountId));
+
+        if (Status != HousekeepingTaskStatus.Open)
+        {
+            throw new SharedKernel.Exceptions.DomainException("HousekeepingTask.InvalidAssignStatus", "Only open housekeeping tasks can be assigned.");
+        }
+
+        AssignedToUserAccountId = assignedToUserAccountId;
+    }
+
     public void Start(Guid assignedToUserAccountId)
     {
         Guard.NotEmpty(assignedToUserAccountId, nameof(AssignedToUserAccountId));

@@ -1,11 +1,11 @@
 using System.Data;
-using System.Data.Common;
-using System.Globalization;
 using HotelMarketplace.Application.Maintenance;
+using HotelMarketplace.Application.HotelManagement.Dtos;
 using HotelMarketplace.Application.Maintenance.Dtos;
 using HotelMarketplace.Application.Maintenance.Requests;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.Infrastructure.Persistence.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -18,6 +18,24 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
     public EfMaintenanceRepository(HotelMarketplaceDbContext dbContext)
     {
         _dbContext = dbContext;
+    }
+
+    public async Task<IReadOnlyCollection<PhysicalRoomDto>> GetRoomsAsync(
+        Guid hotelId,
+        CancellationToken cancellationToken)
+    {
+        return await _dbContext.PhysicalRooms
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(room => room.HotelId == hotelId)
+            .OrderBy(room => room.RoomNumber)
+            .Select(room => new PhysicalRoomDto(
+                room.Id,
+                room.HotelId,
+                room.RoomTypeId,
+                room.RoomNumber,
+                room.Status))
+            .ToArrayAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<MaintenanceRequestDto>> GetRequestsAsync(
@@ -74,8 +92,12 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
                 IsolationLevel.Serializable,
                 cancellationToken);
 
-            int lockResult = await AcquireLockAsync($"maintenance:room:{hotelId:N}:{request.PhysicalRoomId:N}", cancellationToken);
-            if (lockResult < 0)
+            bool roomLockAcquired = await SqlApplicationLock.AcquireRoomLocksAsync(
+                _dbContext,
+                hotelId,
+                new[] { request.PhysicalRoomId },
+                cancellationToken);
+            if (!roomLockAcquired)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.LockUnavailable);
@@ -137,8 +159,11 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
                 IsolationLevel.Serializable,
                 cancellationToken);
 
-            int lockResult = await AcquireLockAsync($"maintenance:request:{hotelId:N}:{requestId:N}", cancellationToken);
-            if (lockResult < 0)
+            bool requestLockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
+                _dbContext,
+                $"maintenance:request:{hotelId:N}:{requestId:N}",
+                cancellationToken);
+            if (!requestLockAcquired)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.LockUnavailable);
@@ -152,6 +177,17 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.RequestNotFound);
+            }
+
+            bool roomLockAcquired = await SqlApplicationLock.AcquireRoomLocksAsync(
+                _dbContext,
+                hotelId,
+                new[] { maintenanceRequest.PhysicalRoomId },
+                cancellationToken);
+            if (!roomLockAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.LockUnavailable);
             }
 
             PhysicalRoom? room = await _dbContext.PhysicalRooms
@@ -199,6 +235,74 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
         });
     }
 
+    public async Task<MaintenanceRequestPersistenceResult> AssignRequestAsync(
+        Guid hotelId,
+        Guid requestId,
+        Guid assignedToUserAccountId,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            bool requestLockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
+                _dbContext,
+                $"maintenance:request:{hotelId:N}:{requestId:N}",
+                cancellationToken);
+            if (!requestLockAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.LockUnavailable);
+            }
+
+            bool assigneeExists = await (
+                from assignment in _dbContext.HotelStaffAssignments.IgnoreQueryFilters().AsNoTracking()
+                join role in _dbContext.UserRoles.AsNoTracking()
+                    on assignment.RoleId equals role.Id
+                where assignment.HotelId == hotelId
+                    && assignment.UserAccountId == assignedToUserAccountId
+                    && assignment.IsActive
+                    && role.Code == nameof(UserRoleCode.MaintenanceStaff)
+                select assignment.Id)
+                .AnyAsync(cancellationToken);
+
+            if (!assigneeExists)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.AssigneeNotFound);
+            }
+
+            MaintenanceRequest? maintenanceRequest = await _dbContext.MaintenanceRequests
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(entity => entity.Id == requestId && entity.HotelId == hotelId, cancellationToken);
+
+            if (maintenanceRequest is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.RequestNotFound);
+            }
+
+            try
+            {
+                maintenanceRequest.Assign(assignedToUserAccountId);
+            }
+            catch (SharedKernel.Exceptions.DomainException)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.InvalidTransition);
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return MaintenanceRequestPersistenceResult.Success(await ToDtoAsync(maintenanceRequest.Id, cancellationToken));
+        });
+    }
+
     private async Task<MaintenanceRequestDto> ToDtoAsync(
         Guid requestId,
         CancellationToken cancellationToken)
@@ -223,36 +327,4 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
             .FirstAsync(cancellationToken);
     }
 
-    private async Task<int> AcquireLockAsync(
-        string resource,
-        CancellationToken cancellationToken)
-    {
-        DbConnection connection = _dbContext.Database.GetDbConnection();
-        await using DbCommand command = connection.CreateCommand();
-        command.Transaction = _dbContext.Database.CurrentTransaction?.GetDbTransaction();
-        command.CommandText = """
-            DECLARE @lockResult int;
-            EXEC @lockResult = sys.sp_getapplock
-                @Resource = @resource,
-                @LockMode = 'Exclusive',
-                @LockOwner = 'Transaction',
-                @LockTimeout = @lockTimeout;
-            SELECT @lockResult;
-            """;
-
-        DbParameter resourceParameter = command.CreateParameter();
-        resourceParameter.ParameterName = "@resource";
-        resourceParameter.DbType = DbType.String;
-        resourceParameter.Value = resource;
-        command.Parameters.Add(resourceParameter);
-
-        DbParameter timeoutParameter = command.CreateParameter();
-        timeoutParameter.ParameterName = "@lockTimeout";
-        timeoutParameter.DbType = DbType.Int32;
-        timeoutParameter.Value = 10_000;
-        command.Parameters.Add(timeoutParameter);
-
-        object? result = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
-    }
 }

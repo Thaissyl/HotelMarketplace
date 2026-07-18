@@ -2,7 +2,7 @@
 
 Hotel Marketplace Management System is a multi-tenant hotel booking and operations platform prepared for a Flutter mobile client and an ASP.NET Core Web API backend.
 
-This repository currently contains the initial project structure, dependency configuration, Docker setup, and implementation notes. Business logic has not been implemented yet.
+This repository contains the MVP backend, Flutter mobile client, Docker-based local database setup, integration tests, and development utilities for the Hotel Marketplace Management System.
 
 ## Project Purpose
 
@@ -212,7 +212,7 @@ Restore all backend projects through the solution file:
 dotnet restore backend/HotelMarketplace.slnx
 ```
 
-At this stage the backend does not contain an API entry point or business logic yet, so restore is the expected validation command.
+Use restore as the first backend validation command before building, running migrations, or executing tests.
 
 ## Restore Mobile Dependencies
 
@@ -224,7 +224,7 @@ flutter pub get
 cd ..
 ```
 
-The mobile folder currently contains dependency configuration and folder structure only. App bootstrap code has not been added yet.
+The mobile folder contains the Flutter app bootstrap, routing, auth/session management, marketplace browsing, booking, operations, and platform administration screens.
 
 ## Environment Configuration
 
@@ -297,23 +297,14 @@ Important business concepts from the requirements:
 
 Implemented:
 
-- Folder structure.
-- Backend `.csproj` files.
-- Backend solution file.
-- Central .NET package version file.
-- Flutter `pubspec.yaml`.
-- Docker Compose for SQL Server.
-- `.gitignore`, `.editorconfig`, `.env.example`.
-- Project coding brief.
-
-Not implemented yet:
-
-- Backend API startup code.
-- Domain entities.
-- EF Core DbContext and migrations.
-- Flutter app bootstrap.
-- Screens and business workflows.
-- Tests.
+- ASP.NET Core backend API with Clean Architecture boundaries.
+- Domain entities, EF Core persistence, SQL Server migrations, and multi-tenant hotel scoping.
+- JWT authentication, role-based authorization, and hotel-scoped policies.
+- Marketplace search, booking, expiration, front desk, housekeeping, maintenance, platform admin, finance, refund, and settlement workflows.
+- Flutter mobile app with auth, marketplace, booking, operations, and platform admin screens.
+- Docker Compose for local SQL Server.
+- Integration tests for critical backend flows.
+- Local demo data cleanup script.
 
 ## Useful Commands
 
@@ -347,6 +338,12 @@ Check Git status:
 
 ```powershell
 git status
+```
+
+Reset local demo hotel names after smoke tests:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\reset-local-demo-data.ps1
 ```
 
 ## Source Documents

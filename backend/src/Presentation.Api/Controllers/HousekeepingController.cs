@@ -68,6 +68,32 @@ public sealed class HousekeepingController : ControllerBase
         return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
     }
 
+    [HttpPatch("tasks/{taskId:guid}/assignee")]
+    [Authorize(Roles = nameof(UserRoleCode.HotelManager) + "," +
+        nameof(UserRoleCode.PropertyOwner) + "," +
+        nameof(UserRoleCode.PlatformAdministrator))]
+    [ProducesResponseType(typeof(HousekeepingTaskDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status423Locked)]
+    public async Task<IActionResult> AssignTask(
+        Guid hotelId,
+        Guid taskId,
+        AssignHousekeepingTaskRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<HousekeepingTaskDto> result = await _housekeepingService.AssignTaskAsync(
+            hotelId,
+            taskId,
+            request,
+            cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
     private ObjectResult ToProblem(ResultError error)
     {
         int statusCode = error.Code switch
@@ -75,28 +101,12 @@ public sealed class HousekeepingController : ControllerBase
             "Housekeeping.Forbidden" => StatusCodes.Status403Forbidden,
             "Housekeeping.TaskNotFound" => StatusCodes.Status404NotFound,
             "Housekeeping.RoomNotFound" => StatusCodes.Status404NotFound,
+            "Housekeeping.AssigneeNotFound" => StatusCodes.Status404NotFound,
             "Housekeeping.InvalidTransition" => StatusCodes.Status409Conflict,
             "Housekeeping.LockUnavailable" => StatusCodes.Status423Locked,
             _ => StatusCodes.Status400BadRequest
         };
 
-        ProblemDetails problemDetails = new()
-        {
-            Status = statusCode,
-            Title = statusCode switch
-            {
-                StatusCodes.Status403Forbidden => "Forbidden",
-                StatusCodes.Status404NotFound => "Not Found",
-                StatusCodes.Status409Conflict => "Conflict",
-                StatusCodes.Status423Locked => "Locked",
-                _ => "Bad Request"
-            },
-            Detail = error.Message,
-            Instance = HttpContext.Request.Path
-        };
-
-        problemDetails.Extensions["code"] = error.Code;
-
-        return StatusCode(statusCode, problemDetails);
+        return this.ToProblemResult(error, statusCode);
     }
 }

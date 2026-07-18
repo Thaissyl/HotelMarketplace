@@ -5,6 +5,7 @@ using HotelMarketplace.Application.Payments.Dtos;
 using HotelMarketplace.Application.Payments.Models;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.Infrastructure.Persistence.Common;
 using HotelMarketplace.SharedKernel.Time;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -39,6 +40,16 @@ internal sealed class EfPaymentRepository : IPaymentRepository
             await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable,
                 cancellationToken);
+
+            bool bookingLockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
+                _dbContext,
+                $"payment:booking:{bookingId:N}",
+                cancellationToken);
+            if (!bookingLockAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return CreatePaymentLinkPersistenceResult.Failure(CreatePaymentLinkPersistenceStatus.BookingNotPendingPayment);
+            }
 
             BookingPaymentReadModel? booking = await _dbContext.Bookings
                 .IgnoreQueryFilters()
@@ -225,6 +236,16 @@ internal sealed class EfPaymentRepository : IPaymentRepository
                 return PaymentWebhookPersistenceResult.Failure(PaymentWebhookPersistenceStatus.TransactionNotFound, "Booking was not found.");
             }
 
+            bool bookingLockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
+                _dbContext,
+                $"payment:booking:{booking.Id:N}",
+                cancellationToken);
+            if (!bookingLockAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PaymentWebhookPersistenceResult.Failure(PaymentWebhookPersistenceStatus.TransactionNotFound, "Payment booking lock was not available.");
+            }
+
             if (paymentTransaction.Status == PaymentStatus.Paid && booking.Status == BookingStatus.Confirmed)
             {
                 await transaction.CommitAsync(cancellationToken);
@@ -296,6 +317,16 @@ internal sealed class EfPaymentRepository : IPaymentRepository
             await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable,
                 cancellationToken);
+
+            bool bookingLockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
+                _dbContext,
+                $"payment:booking:{bookingId:N}",
+                cancellationToken);
+            if (!bookingLockAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return SimulatedPaymentPersistenceResult.Failure(SimulatedPaymentPersistenceStatus.BookingNotPendingPayment, "Payment booking lock was not available.");
+            }
 
             Booking? booking = await _dbContext.Bookings
                 .IgnoreQueryFilters()

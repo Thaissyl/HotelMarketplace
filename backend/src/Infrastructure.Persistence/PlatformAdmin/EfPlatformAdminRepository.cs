@@ -27,6 +27,148 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
         _dbContext = dbContext;
     }
 
+    public async Task<IReadOnlyCollection<AdminUserDto>> GetUsersAsync(
+        UserRoleCode? role,
+        string? searchTerm,
+        CancellationToken cancellationToken)
+    {
+        IQueryable<UserAccount> query = _dbContext.UserAccounts
+            .IgnoreQueryFilters()
+            .AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            string normalizedSearchTerm = searchTerm.Trim();
+            query = query.Where(user =>
+                user.Email.Contains(normalizedSearchTerm) ||
+                user.FullName.Contains(normalizedSearchTerm) ||
+                (user.PhoneNumber != null && user.PhoneNumber.Contains(normalizedSearchTerm)));
+        }
+
+        if (role.HasValue)
+        {
+            string roleCode = role.Value.ToString().ToUpperInvariant();
+            query = query.Where(user =>
+                _dbContext.UserAccountRoles.IgnoreQueryFilters().Any(userRole =>
+                    userRole.UserAccountId == user.Id &&
+                    userRole.IsActive &&
+                    _dbContext.UserRoles.IgnoreQueryFilters().Any(roleEntity =>
+                        roleEntity.Id == userRole.RoleId &&
+                        roleEntity.Code == roleCode)));
+        }
+
+        List<UserAccount> users = await query
+            .OrderBy(user => user.Email)
+            .Take(250)
+            .ToListAsync(cancellationToken);
+
+        if (users.Count == 0)
+        {
+            return Array.Empty<AdminUserDto>();
+        }
+
+        List<Guid> userIds = users.Select(user => user.Id).ToList();
+
+        List<UserRoleProjection> roles = await (
+            from userRole in _dbContext.UserAccountRoles.IgnoreQueryFilters().AsNoTracking()
+            join roleEntity in _dbContext.UserRoles.IgnoreQueryFilters().AsNoTracking()
+                on userRole.RoleId equals roleEntity.Id
+            where userIds.Contains(userRole.UserAccountId) && userRole.IsActive
+            select new UserRoleProjection(userRole.UserAccountId, roleEntity.Code))
+            .ToListAsync(cancellationToken);
+
+        List<UserHotelProjection> hotelAssignments = await _dbContext.HotelStaffAssignments
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(assignment => userIds.Contains(assignment.UserAccountId) && assignment.IsActive)
+            .Select(assignment => new UserHotelProjection(assignment.UserAccountId, assignment.HotelId))
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        return users
+            .Select(user => new AdminUserDto(
+                user.Id,
+                user.Email,
+                user.FullName,
+                user.PhoneNumber,
+                user.Status,
+                roles
+                    .Where(item => item.UserAccountId == user.Id)
+                    .Select(item => Enum.TryParse(item.RoleCode, ignoreCase: true, out UserRoleCode roleCode) ? roleCode : (UserRoleCode?)null)
+                    .Where(item => item.HasValue)
+                    .Select(item => item!.Value)
+                    .ToList(),
+                hotelAssignments
+                    .Where(item => item.UserAccountId == user.Id)
+                    .Select(item => item.HotelId)
+                    .Distinct()
+                    .ToList(),
+                user.CreatedAtUtc))
+            .ToList();
+    }
+
+    public Task<PlatformAdminUserResult> SuspendUserAsync(
+        Guid userId,
+        Guid actorUserAccountId,
+        CancellationToken cancellationToken)
+    {
+        return UpdateUserStatusAsync(
+            userId,
+            actorUserAccountId,
+            "SuspendUser",
+            "User account was suspended.",
+            user => user.Suspend(),
+            cancellationToken);
+    }
+
+    public Task<PlatformAdminUserResult> ReactivateUserAsync(
+        Guid userId,
+        Guid actorUserAccountId,
+        CancellationToken cancellationToken)
+    {
+        return UpdateUserStatusAsync(
+            userId,
+            actorUserAccountId,
+            "ReactivateUser",
+            "User account was reactivated.",
+            user => user.Reactivate(),
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<AdminUserActivityDto>> GetUserActivityAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        bool userExists = await _dbContext.UserAccounts
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(user => user.Id == userId, cancellationToken);
+
+        if (!userExists)
+        {
+            return Array.Empty<AdminUserActivityDto>();
+        }
+
+        return await (
+            from audit in _dbContext.AuditRecords.IgnoreQueryFilters().AsNoTracking()
+            join actor in _dbContext.UserAccounts.IgnoreQueryFilters().AsNoTracking()
+                on audit.ActorUserAccountId equals actor.Id
+            where audit.TargetEntityId == userId ||
+                audit.ActorUserAccountId == userId
+            orderby audit.ActionTimestampUtc descending
+            select new AdminUserActivityDto(
+                audit.Id,
+                audit.ActorUserAccountId,
+                actor.Email,
+                audit.ActionType,
+                audit.TargetEntityType,
+                audit.TargetEntityId,
+                audit.Summary,
+                audit.ActionTimestampUtc))
+            .Take(100)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<AdminHotelDto>> GetPendingHotelsAsync(CancellationToken cancellationToken)
     {
         return await _dbContext.HotelProperties
@@ -36,6 +178,58 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
             .OrderBy(hotel => hotel.CreatedAtUtc)
             .Select(hotel => ToHotelDto(hotel))
             .ToListAsync(cancellationToken);
+    }
+
+    private async Task<PlatformAdminUserResult> UpdateUserStatusAsync(
+        Guid userId,
+        Guid actorUserAccountId,
+        string actionType,
+        string summary,
+        Action<UserAccount> updateStatus,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            int lockResult = await AcquireLockAsync($"platform-admin:user:{userId:N}", cancellationToken);
+            if (lockResult < 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PlatformAdminUserResult.Failure(PlatformAdminPersistenceStatus.LockUnavailable);
+            }
+
+            UserAccount? user = await _dbContext.UserAccounts
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(entity => entity.Id == userId, cancellationToken);
+
+            if (user is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PlatformAdminUserResult.Failure(PlatformAdminPersistenceStatus.UserNotFound);
+            }
+
+            updateStatus(user);
+
+            await _dbContext.AuditRecords.AddAsync(
+                new AuditRecord(
+                    Guid.NewGuid(),
+                    actorUserAccountId,
+                    actionType,
+                    nameof(UserAccount),
+                    user.Id,
+                    summary),
+                cancellationToken);
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return PlatformAdminUserResult.Success((await GetUsersAsync(null, user.Email, cancellationToken)).Single());
+        });
     }
 
     public async Task<PlatformAdminHotelResult> ApproveHotelAsync(
@@ -638,6 +832,7 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                 booking.CheckOutDate <= request.ToDate &&
                 payment.Status == PaymentStatus.Paid &&
                 payment.ReconciliationStatus != ReconciliationStatus.Exception &&
+                payment.Amount - commission.CommissionAmount >= 0m &&
                 !_dbContext.SettlementItems.IgnoreQueryFilters().Any(item =>
                     item.BookingId == booking.Id &&
                     item.Status != SettlementStatus.Exception)
@@ -646,7 +841,6 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                 commission.Id,
                 payment.Id,
                 payment.Amount - commission.CommissionAmount))
-            .Where(item => item.Amount >= 0m)
             .ToListAsync(cancellationToken);
     }
 
@@ -663,6 +857,7 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                 SuccessfulBookingStatuses.Contains(booking.Status) &&
                 booking.CheckOutDate >= request.FromDate &&
                 booking.CheckOutDate <= request.ToDate &&
+                commission.CommissionAmount > 0m &&
                 !_dbContext.SettlementItems.IgnoreQueryFilters().Any(item =>
                     item.BookingId == booking.Id &&
                     item.Status != SettlementStatus.Exception)
@@ -671,7 +866,6 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                 commission.Id,
                 null,
                 commission.CommissionAmount))
-            .Where(item => item.Amount > 0m)
             .ToListAsync(cancellationToken);
     }
 
@@ -684,11 +878,12 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
             return Array.Empty<AdminSettlementDto>();
         }
 
-        Guid[] settlementIds = settlements.Select(settlement => settlement.Id).ToArray();
+        List<Guid> settlementIds = settlements.Select(settlement => settlement.Id).ToList();
+        List<Guid> hotelIds = settlements.Select(settlement => settlement.HotelId).Distinct().ToList();
         Dictionary<Guid, string> hotelNames = await _dbContext.HotelProperties
             .IgnoreQueryFilters()
             .AsNoTracking()
-            .Where(hotel => settlements.Select(settlement => settlement.HotelId).Contains(hotel.Id))
+            .Where(hotel => hotelIds.Contains(hotel.Id))
             .ToDictionaryAsync(hotel => hotel.Id, hotel => hotel.Name, cancellationToken);
 
         List<SettlementItem> items = await _dbContext.SettlementItems
@@ -815,4 +1010,8 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
         Guid CommissionRecordId,
         Guid? PaymentTransactionId,
         decimal Amount);
+
+    private sealed record UserRoleProjection(Guid UserAccountId, string RoleCode);
+
+    private sealed record UserHotelProjection(Guid UserAccountId, Guid HotelId);
 }

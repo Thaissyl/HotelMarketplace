@@ -16,4 +16,10 @@ public interface IHousekeepingService
         Guid taskId,
         UpdateHousekeepingTaskStatusRequest request,
         CancellationToken cancellationToken);
+
+    Task<Result<HousekeepingTaskDto>> AssignTaskAsync(
+        Guid hotelId,
+        Guid taskId,
+        AssignHousekeepingTaskRequest request,
+        CancellationToken cancellationToken);
 }

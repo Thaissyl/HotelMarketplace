@@ -151,6 +151,11 @@ static void AddCors(WebApplicationBuilder builder)
                 return;
             }
 
+            if (!builder.Environment.IsDevelopment())
+            {
+                throw new InvalidOperationException("CORS allowed origins must be configured outside Development.");
+            }
+
             policy.AllowAnyOrigin()
                 .AllowAnyHeader()
                 .AllowAnyMethod();

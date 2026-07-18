@@ -53,27 +53,12 @@ public sealed class AuthController : ControllerBase
         int statusCode = error.Code switch
         {
             "Auth.DuplicateEmail" => StatusCodes.Status409Conflict,
+            "Auth.DuplicatePhoneNumber" => StatusCodes.Status409Conflict,
             "Auth.InvalidCredentials" => StatusCodes.Status401Unauthorized,
             "Auth.InactiveAccount" => StatusCodes.Status403Forbidden,
             _ => StatusCodes.Status400BadRequest
         };
 
-        ProblemDetails problemDetails = new()
-        {
-            Status = statusCode,
-            Title = statusCode switch
-            {
-                StatusCodes.Status401Unauthorized => "Unauthorized",
-                StatusCodes.Status403Forbidden => "Forbidden",
-                StatusCodes.Status409Conflict => "Conflict",
-                _ => "Bad Request"
-            },
-            Detail = error.Message,
-            Instance = HttpContext.Request.Path
-        };
-
-        problemDetails.Extensions["code"] = error.Code;
-
-        return StatusCode(statusCode, problemDetails);
+        return this.ToProblemResult(error, statusCode);
     }
 }

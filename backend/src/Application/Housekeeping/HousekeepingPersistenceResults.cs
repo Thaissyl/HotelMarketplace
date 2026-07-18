@@ -8,7 +8,8 @@ public enum HousekeepingPersistenceStatus
     TaskNotFound = 2,
     RoomNotFound = 3,
     InvalidTransition = 4,
-    LockUnavailable = 5
+    LockUnavailable = 5,
+    AssigneeNotFound = 6
 }
 
 public sealed record HousekeepingTaskUpdateResult(

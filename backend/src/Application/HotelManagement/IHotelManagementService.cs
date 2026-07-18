@@ -10,13 +10,23 @@ public interface IHotelManagementService
 
     Task<Result<IReadOnlyCollection<HotelDto>>> GetMyHotelsAsync(CancellationToken cancellationToken);
 
+    Task<Result<IReadOnlyCollection<HotelDto>>> GetAccessibleOperationHotelsAsync(CancellationToken cancellationToken);
+
     Task<Result<HotelDto>> GetHotelAsync(Guid hotelId, CancellationToken cancellationToken);
 
     Task<Result<HotelDto>> UpdateHotelProfileAsync(Guid hotelId, UpdateHotelProfileRequest request, CancellationToken cancellationToken);
 
+    Task<Result<IReadOnlyCollection<HotelStaffMemberDto>>> GetStaffAsync(Guid hotelId, CancellationToken cancellationToken);
+
+    Task<Result<IReadOnlyCollection<HotelStaffMemberDto>>> GetOperationStaffAsync(Guid hotelId, CancellationToken cancellationToken);
+
+    Task<Result<HotelStaffMemberDto>> CreateStaffAsync(Guid hotelId, CreateHotelStaffRequest request, CancellationToken cancellationToken);
+
     Task<Result<RoomTypeDto>> CreateRoomTypeAsync(Guid hotelId, CreateRoomTypeRequest request, CancellationToken cancellationToken);
 
     Task<Result<IReadOnlyCollection<RoomTypeDto>>> GetRoomTypesAsync(Guid hotelId, CancellationToken cancellationToken);
+
+    Task<Result<IReadOnlyCollection<RoomTypeDto>>> GetOperationRoomTypesAsync(Guid hotelId, CancellationToken cancellationToken);
 
     Task<Result<RoomTypeDto>> UpdateRoomTypeAsync(Guid hotelId, Guid roomTypeId, UpdateRoomTypeRequest request, CancellationToken cancellationToken);
 

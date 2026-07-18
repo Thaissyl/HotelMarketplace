@@ -1,6 +1,7 @@
 using HotelMarketplace.Application.FrontDesk;
 using HotelMarketplace.Application.FrontDesk.Dtos;
 using HotelMarketplace.Application.FrontDesk.Requests;
+using HotelMarketplace.Application.HotelManagement.Dtos;
 using HotelMarketplace.Domain.Enums;
 using HotelMarketplace.Presentation.Api.Authorization;
 using HotelMarketplace.SharedKernel.Results;
@@ -24,6 +25,38 @@ public sealed class FrontDeskController : ControllerBase
     public FrontDeskController(IFrontDeskService frontDeskService)
     {
         _frontDeskService = frontDeskService;
+    }
+
+    [HttpGet("physical-rooms")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<PhysicalRoomDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetPhysicalRooms(
+        Guid hotelId,
+        [FromQuery] Guid? roomTypeId,
+        CancellationToken cancellationToken)
+    {
+        Result<IReadOnlyCollection<PhysicalRoomDto>> result =
+            await _frontDeskService.GetPhysicalRoomsAsync(hotelId, roomTypeId, cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
+    [HttpGet("bookings")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<FrontDeskBookingSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetBookings(
+        Guid hotelId,
+        [FromQuery] BookingStatus? status,
+        [FromQuery] DateOnly? fromDate,
+        [FromQuery] DateOnly? toDate,
+        CancellationToken cancellationToken)
+    {
+        Result<IReadOnlyCollection<FrontDeskBookingSummaryDto>> result =
+            await _frontDeskService.GetBookingsAsync(hotelId, status, fromDate, toDate, cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
     }
 
     [HttpPost("bookings/{bookingId:guid}/check-in")]
@@ -112,23 +145,6 @@ public sealed class FrontDeskController : ControllerBase
             _ => StatusCodes.Status400BadRequest
         };
 
-        ProblemDetails problemDetails = new()
-        {
-            Status = statusCode,
-            Title = statusCode switch
-            {
-                StatusCodes.Status403Forbidden => "Forbidden",
-                StatusCodes.Status404NotFound => "Not Found",
-                StatusCodes.Status409Conflict => "Conflict",
-                StatusCodes.Status423Locked => "Locked",
-                _ => "Bad Request"
-            },
-            Detail = error.Message,
-            Instance = HttpContext.Request.Path
-        };
-
-        problemDetails.Extensions["code"] = error.Code;
-
-        return StatusCode(statusCode, problemDetails);
+        return this.ToProblemResult(error, statusCode);
     }
 }

@@ -44,7 +44,7 @@ internal sealed class EfExpiredBookingRepository : IExpiredBookingRepository
                 return Array.Empty<ExpiredBookingDto>();
             }
 
-            Guid[] bookingIds = expiredBookings.Select(booking => booking.Id).ToArray();
+            List<Guid> bookingIds = expiredBookings.Select(booking => booking.Id).ToList();
 
             PaymentTransaction[] openPaymentTransactions = await _dbContext.PaymentTransactions
                 .IgnoreQueryFilters()

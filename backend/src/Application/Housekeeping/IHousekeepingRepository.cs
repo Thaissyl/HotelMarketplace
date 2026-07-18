@@ -17,4 +17,10 @@ public interface IHousekeepingRepository
         Guid actorUserAccountId,
         HousekeepingTaskStatus targetStatus,
         CancellationToken cancellationToken);
+
+    Task<HousekeepingTaskUpdateResult> AssignTaskAsync(
+        Guid hotelId,
+        Guid taskId,
+        Guid assignedToUserAccountId,
+        CancellationToken cancellationToken);
 }

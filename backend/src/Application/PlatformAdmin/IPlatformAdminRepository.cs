@@ -6,6 +6,14 @@ namespace HotelMarketplace.Application.PlatformAdmin;
 
 public interface IPlatformAdminRepository
 {
+    Task<IReadOnlyCollection<AdminUserDto>> GetUsersAsync(UserRoleCode? role, string? searchTerm, CancellationToken cancellationToken);
+
+    Task<PlatformAdminUserResult> SuspendUserAsync(Guid userId, Guid actorUserAccountId, CancellationToken cancellationToken);
+
+    Task<PlatformAdminUserResult> ReactivateUserAsync(Guid userId, Guid actorUserAccountId, CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<AdminUserActivityDto>> GetUserActivityAsync(Guid userId, CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<AdminHotelDto>> GetPendingHotelsAsync(CancellationToken cancellationToken);
 
     Task<PlatformAdminHotelResult> ApproveHotelAsync(Guid hotelId, Guid actorUserAccountId, CancellationToken cancellationToken);

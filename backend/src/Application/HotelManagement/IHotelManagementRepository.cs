@@ -1,4 +1,6 @@
+using HotelMarketplace.Application.HotelManagement.Dtos;
 using HotelMarketplace.Domain.Entities;
+using HotelMarketplace.Domain.Enums;
 
 namespace HotelMarketplace.Application.HotelManagement;
 
@@ -8,9 +10,29 @@ public interface IHotelManagementRepository
 
     Task<IReadOnlyCollection<HotelProperty>> GetHotelsOwnedByAsync(Guid ownerUserAccountId, CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<HotelProperty>> GetHotelsByIdsAsync(
+        IReadOnlyCollection<Guid> hotelIds,
+        CancellationToken cancellationToken);
+
     Task<HotelProperty?> GetHotelByIdAsync(Guid hotelId, CancellationToken cancellationToken);
 
     Task<bool> UserOwnsHotelAsync(Guid userAccountId, Guid hotelId, CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<HotelStaffMemberDto>> GetStaffAsync(Guid hotelId, CancellationToken cancellationToken);
+
+    Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken);
+
+    Task<bool> PhoneNumberExistsAsync(string phoneNumber, CancellationToken cancellationToken);
+
+    Task<UserRole?> GetRoleAsync(UserRoleCode roleCode, CancellationToken cancellationToken);
+
+    Task<HotelStaffMemberDto> CreateStaffAsync(
+        Guid hotelId,
+        UserAccount userAccount,
+        Guid roleId,
+        Guid assignedByUserAccountId,
+        UserRoleCode roleCode,
+        CancellationToken cancellationToken);
 
     Task AddRoomTypeAsync(RoomType roomType, CancellationToken cancellationToken);
 
@@ -22,9 +44,23 @@ public interface IHotelManagementRepository
 
     Task AddPhysicalRoomAsync(PhysicalRoom physicalRoom, CancellationToken cancellationToken);
 
+    Task<PhysicalRoomPersistenceResult> CreatePhysicalRoomAsync(
+        Guid hotelId,
+        Guid roomTypeId,
+        string roomNumber,
+        RoomOperationalStatus initialStatus,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<PhysicalRoom>> GetPhysicalRoomsAsync(Guid hotelId, Guid? roomTypeId, CancellationToken cancellationToken);
 
     Task<PhysicalRoom?> GetPhysicalRoomAsync(Guid hotelId, Guid physicalRoomId, CancellationToken cancellationToken);
+
+    Task<PhysicalRoomPersistenceResult> UpdatePhysicalRoomAsync(
+        Guid hotelId,
+        Guid physicalRoomId,
+        string roomNumber,
+        RoomOperationalStatus status,
+        CancellationToken cancellationToken);
 
     Task<bool> RoomNumberExistsAsync(Guid hotelId, string roomNumber, Guid? excludedPhysicalRoomId, CancellationToken cancellationToken);
 
