@@ -1,13 +1,18 @@
 import 'package:dio/dio.dart';
 
 import '../storage/secure_session_storage.dart';
+import 'session_invalidation_notifier.dart';
 
 class AuthHeaderInterceptor extends Interceptor {
-  AuthHeaderInterceptor(this._sessionStorage);
+  AuthHeaderInterceptor(
+    this._sessionStorage,
+    this._sessionInvalidationNotifier,
+  );
 
   static const String _hotelScopedExtraKey = 'hotelScoped';
 
   final SecureSessionStorage _sessionStorage;
+  final SessionInvalidationNotifier _sessionInvalidationNotifier;
 
   static Options hotelScopedOptions([Options? options]) {
     final currentOptions = options ?? Options();
@@ -43,6 +48,27 @@ class AuthHeaderInterceptor extends Interceptor {
     handler.next(options);
   }
 
+  @override
+  Future<void> onError(
+    DioException err,
+    ErrorInterceptorHandler handler,
+  ) async {
+    final authorizationHeader =
+        err.requestOptions.headers['Authorization']?.toString();
+    final isAuthenticatedRequest = authorizationHeader != null &&
+        authorizationHeader.startsWith('Bearer ') &&
+        authorizationHeader.length > 'Bearer '.length;
+
+    if (err.response?.statusCode == 401 &&
+        isAuthenticatedRequest &&
+        !_isAuthenticationEndpoint(err.requestOptions.path)) {
+      await _sessionStorage.clearSession();
+      _sessionInvalidationNotifier.notifySessionInvalidated();
+    }
+
+    handler.next(err);
+  }
+
   bool _hasHotelRouteParameter(String path) {
     final segments = path.split('/').where((segment) => segment.isNotEmpty);
     final segmentList = segments.toList(growable: false);
@@ -63,5 +89,9 @@ class AuthHeaderInterceptor extends Interceptor {
     );
 
     return guidPattern.hasMatch(value);
+  }
+
+  bool _isAuthenticationEndpoint(String path) {
+    return path == '/api/auth/login' || path == '/api/auth/register';
   }
 }

@@ -128,19 +128,10 @@ class OperationsDashboardScreen extends ConsumerWidget {
                               roles,
                             ),
                           )
-                        : TabBarView(
-                            children: [
-                              for (final section in sections)
-                                KeyedSubtree(
-                                  key: ValueKey(
-                                    '${section.name}-$selectedHotelId',
-                                  ),
-                                  child: section.buildTab(
-                                    selectedHotelId,
-                                    roles,
-                                  ),
-                                ),
-                            ],
+                        : _OperationTabBody(
+                            hotelId: selectedHotelId,
+                            sections: sections,
+                            roles: roles,
                           ),
               ),
             ],
@@ -257,6 +248,70 @@ enum _OperationSection {
       _OperationSection.staff => StaffManagementTab(hotelId: hotelId),
       _OperationSection.property => OwnerPropertyTab(hotelId: hotelId),
     };
+  }
+}
+
+class _OperationTabBody extends StatefulWidget {
+  const _OperationTabBody({
+    required this.hotelId,
+    required this.sections,
+    required this.roles,
+  });
+
+  final String hotelId;
+  final List<_OperationSection> sections;
+  final List<String> roles;
+
+  @override
+  State<_OperationTabBody> createState() => _OperationTabBodyState();
+}
+
+class _OperationTabBodyState extends State<_OperationTabBody> {
+  TabController? _tabController;
+  int _selectedIndex = 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextController = DefaultTabController.of(context);
+    if (identical(_tabController, nextController)) {
+      return;
+    }
+
+    _tabController?.removeListener(_handleTabChanged);
+    _tabController = nextController;
+    _selectedIndex = nextController.index;
+    nextController.addListener(_handleTabChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _OperationTabBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_selectedIndex >= widget.sections.length) {
+      _selectedIndex = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabController?.removeListener(_handleTabChanged);
+    super.dispose();
+  }
+
+  void _handleTabChanged() {
+    final nextIndex = _tabController?.index ?? 0;
+    if (mounted && nextIndex != _selectedIndex) {
+      setState(() => _selectedIndex = nextIndex);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final section = widget.sections[_selectedIndex];
+    return KeyedSubtree(
+      key: ValueKey('${section.name}-${widget.hotelId}'),
+      child: section.buildTab(widget.hotelId, widget.roles),
+    );
   }
 }
 

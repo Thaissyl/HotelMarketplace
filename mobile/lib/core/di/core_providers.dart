@@ -6,6 +6,7 @@ import '../config/app_environment.dart';
 import '../network/api_client.dart';
 import '../network/api_error_interceptor.dart';
 import '../network/auth_header_interceptor.dart';
+import '../network/session_invalidation_notifier.dart';
 import '../storage/secure_session_storage.dart';
 
 final appEnvironmentProvider = Provider<AppEnvironment>((ref) {
@@ -18,9 +19,18 @@ final secureSessionStorageProvider = Provider<SecureSessionStorage>((ref) {
   );
 });
 
+final sessionInvalidationNotifierProvider =
+    Provider<SessionInvalidationNotifier>((ref) {
+  final notifier = SessionInvalidationNotifier();
+  ref.onDispose(notifier.dispose);
+  return notifier;
+});
+
 final dioProvider = Provider<Dio>((ref) {
   final environment = ref.watch(appEnvironmentProvider);
   final sessionStorage = ref.watch(secureSessionStorageProvider);
+  final sessionInvalidationNotifier =
+      ref.watch(sessionInvalidationNotifierProvider);
 
   final dio = Dio(
     BaseOptions(
@@ -37,7 +47,7 @@ final dioProvider = Provider<Dio>((ref) {
   );
 
   dio.interceptors.addAll([
-    AuthHeaderInterceptor(sessionStorage),
+    AuthHeaderInterceptor(sessionStorage, sessionInvalidationNotifier),
     ApiErrorInterceptor(),
     if (kDebugMode)
       LogInterceptor(

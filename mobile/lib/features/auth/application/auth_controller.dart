@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/di/core_providers.dart';
+import '../../../core/network/session_invalidation_notifier.dart';
 import '../../../core/storage/secure_session_storage.dart';
 import '../data/auth_api.dart';
 import '../domain/auth_models.dart';
@@ -18,6 +19,7 @@ final authControllerProvider =
   return AuthController(
     authApi: ref.watch(authApiProvider),
     sessionStorage: ref.watch(secureSessionStorageProvider),
+    sessionInvalidationNotifier: ref.watch(sessionInvalidationNotifierProvider),
   );
 });
 
@@ -25,14 +27,28 @@ class AuthController extends StateNotifier<AuthState> {
   AuthController({
     required AuthApi authApi,
     required SecureSessionStorage sessionStorage,
+    required SessionInvalidationNotifier sessionInvalidationNotifier,
   })  : _authApi = authApi,
         _sessionStorage = sessionStorage,
         super(const AuthState.checking()) {
+    _sessionInvalidationSubscription =
+        sessionInvalidationNotifier.events.listen((_) {
+      if (mounted) {
+        state = const AuthState.unauthenticated();
+      }
+    });
     unawaited(restoreSession());
   }
 
   final AuthApi _authApi;
   final SecureSessionStorage _sessionStorage;
+  late final StreamSubscription<void> _sessionInvalidationSubscription;
+
+  @override
+  void dispose() {
+    unawaited(_sessionInvalidationSubscription.cancel());
+    super.dispose();
+  }
 
   Future<void> restoreSession() async {
     state = const AuthState.checking();

@@ -252,12 +252,19 @@ class _FrontDeskSegmentButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final child = Text(label, maxLines: 1);
+    const style = ButtonStyle(
+      minimumSize: WidgetStatePropertyAll(Size(0, 48)),
+      padding: WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      ),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
 
     return SizedBox(
-      height: 42,
+      height: 48,
       child: selected
-          ? FilledButton(onPressed: onPressed, child: child)
-          : OutlinedButton(onPressed: onPressed, child: child),
+          ? FilledButton(onPressed: onPressed, style: style, child: child)
+          : OutlinedButton(onPressed: onPressed, style: style, child: child),
     );
   }
 }
