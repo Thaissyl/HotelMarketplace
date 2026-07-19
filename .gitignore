@@ -51,6 +51,7 @@ secrets.json
 *.sqlite
 *.bak
 docker-data/
+.local/
 
 # Logs
 logs/

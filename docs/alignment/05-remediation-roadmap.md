@@ -157,6 +157,8 @@ duplicate submission, timer disposal, and API contracts.
 
 ### ALN-015 Toolchain and Operations
 
+Status: Implemented and verified on `fix/aln-015-release-readiness`.
+
 Align `global.json` with .NET 8, remove unnecessary Scheduling-to-Persistence
 dependency, repair compose/documentation drift, document backup/restore, and run
 all builds, static analysis, migrations, integration tests, and mobile tests from

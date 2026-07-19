@@ -197,3 +197,22 @@ Integration assertions verify audit coverage for booking, stay, room assignment,
 invoice, and housekeeping entities, plus checkout and housekeeping outbox events.
 Scheduler expiration is verified with a nullable human actor, a hotel-scoped
 system audit, and a Customer-targeted `BookingExpired` notification.
+
+## ALN-015 Release Readiness Verification
+
+The release-readiness pass aligned the declared SDK baseline, project references,
+Docker Compose behavior, local operations scripts, and run documentation.
+
+| Check | Result |
+| --- | --- |
+| `dotnet --version` with .NET 8 baseline and `latestMajor` roll-forward | Selected installed SDK `10.0.103`; net8.0 build passed |
+| `docker compose config --quiet` | Passed |
+| Scheduling project references | Application and SharedKernel only; unused Persistence reference removed |
+| PowerShell parser | Backup and restore scripts contain no syntax errors |
+| Local SQL Server backup | Passed with checksum and compression; backup copied to ignored `.local/backups` |
+| Local SQL Server restore | Passed against the configured `HotelMarketplace` database |
+| EF database update after restore | Passed; database is on the latest migration |
+
+The final commit is additionally verified from a separate clean Git worktree so
+untracked emulator screenshots, local environment files, and prior build output
+cannot influence build, test, Compose, or Flutter results.

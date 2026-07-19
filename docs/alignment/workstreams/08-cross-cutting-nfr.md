@@ -1,6 +1,6 @@
 # WS-08 Cross-Cutting and Non-Functional Requirements
 
-Status: Transactional audit and notification recording are aligned; transport, broader tests, and operations remain incomplete
+Status: Transactional audit, notification recording, and local operations are aligned; transport and broader requirement tests remain incomplete
 
 ## Aligned Evidence
 
@@ -15,6 +15,8 @@ Status: Transactional audit and notification recording are aligned; transport, b
   including scheduler actions without a human actor.
 - Required business event families create durable Pending notification outbox
   records; external delivery remains mocked under the approved MVP scope.
+- Toolchain selection, Compose behavior, startup, migration, and tested local
+  database backup/restore procedures are documented and reproducible.
 
 ## Verified Gaps
 
@@ -22,8 +24,6 @@ Status: Transactional audit and notification recording are aligned; transport, b
 | --- | --- | --- |
 | NFR-SEC-006 | Android release configuration permits cleartext globally | GAP-028 |
 | NFR-REL/SEC | Existing tests omit principal negative and cross-channel invariants | GAP-030 |
-| NFR-BACK-001 | Backup/restore procedure is not demonstrated | GAP-031 |
-| NFR-MAINT-001 | SDK pin, compose references, and scheduling dependency have drifted | GAP-031 |
 
 ## Required Design
 

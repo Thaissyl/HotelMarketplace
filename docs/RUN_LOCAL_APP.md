@@ -72,7 +72,30 @@ To keep a diagnostic log while reproducing an API problem:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local-backend.ps1 -ForceRestart -LogFile .\.local\backend.log
 ```
 
-## 4. Run The Flutter App From Android Studio
+## 4. Back Up Or Restore Local Data
+
+Create a compressed, checksum-protected SQL Server backup:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\backup-local-database.ps1
+```
+
+Backups are copied to `.local\backups` by default. The `.local` directory is
+ignored by Git and must not be committed.
+
+To restore, first stop the API so it does not hold database connections:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\stop-local-backend.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\restore-local-database.ps1 `
+  -BackupFile .\.local\backups\HotelMarketplace-YYYYMMDD-HHMMSS.bak -Force
+```
+
+The restore operation replaces the local `SQLSERVER_DATABASE` configured in
+`.env`. The script rejects unsafe database names and requires the explicit
+`-Force` switch.
+
+## 5. Run The Flutter App From Android Studio
 
 Open:
 
@@ -122,7 +145,7 @@ flutter build apk --profile --dart-define API_BASE_URL=http://10.0.2.2:5080
 & "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" install -r .\build\app\outputs\flutter-apk\app-profile.apk
 ```
 
-## 5. Test Accounts
+## 6. Test Accounts
 
 Seed or reset local test accounts:
 
@@ -186,7 +209,7 @@ Platform administrator:
 admin@test.com
 ```
 
-## 6. Common Emulator Fixes
+## 7. Common Emulator Fixes
 
 If Android Studio says the Windows desktop target is selected, change the device dropdown to an Android emulator.
 
@@ -218,7 +241,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\fix-android-emulat
 
 If the UI feels slow in Android Studio, run the app in profile mode. Flutter debug mode adds runtime checks and service protocol overhead that can make emulator interactions feel slower than a real build.
 
-## 7. Reset Demo Hotel Names
+## 8. Reset Demo Hotel Names
 
 After running smoke tests or integration tests, reset local demo hotel names:
 
@@ -226,7 +249,7 @@ After running smoke tests or integration tests, reset local demo hotel names:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\reset-local-demo-data.ps1
 ```
 
-## 8. Role Flow Demo Checklist
+## 9. Role Flow Demo Checklist
 
 Use this order when demonstrating the app so every role has useful data on screen.
 
@@ -292,7 +315,7 @@ Use this order when demonstrating the app so every role has useful data on scree
 4. Use Hotels to approve or reject pending hotel submissions.
 5. Use Settlements and Refunds to demonstrate finance operations with available demo data.
 
-## 9. Known MVP Limits Before Demo
+## 10. Known MVP Limits Before Demo
 
 - Saved hotels and notifications are local app state.
 - Customer trips are connected to backend booking history, but the MVP booking table does not persist the original guest count separately.

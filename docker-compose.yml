@@ -13,7 +13,6 @@ services:
       - "${SQLSERVER_PORT:-1433}:1433"
     volumes:
       - sqlserver-data:/var/opt/mssql
-      - ./infra/sqlserver/init:/docker-entrypoint-initdb.d:ro
     networks:
       - hotel-marketplace-local
     healthcheck:

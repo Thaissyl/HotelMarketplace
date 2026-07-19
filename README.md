@@ -139,14 +139,13 @@ Install these tools before working on the project:
 
 - Git
 - Docker Desktop
-- .NET SDK compatible with the repository `global.json`
+- .NET SDK 8 or newer, selected through the repository `global.json`
 - Flutter SDK
 - A code editor such as Visual Studio, Rider, or VS Code
 
-Current local setup used when this skeleton was created:
+Verified toolchain baseline:
 
-- .NET SDK `10.0.103`
-- Backend target framework `net8.0`
+- Backend target framework `net8.0`; `global.json` accepts installed .NET 8 or newer SDKs
 - Flutter `3.41.9`
 - Dart `3.11.5`
 
@@ -200,6 +199,22 @@ Remove local SQL Server volume if you need a clean database:
 ```powershell
 docker compose down -v
 ```
+
+Back up the local database before destructive resets:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\backup-local-database.ps1
+```
+
+Restore a backup after stopping the API:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\restore-local-database.ps1 `
+  -BackupFile .\.local\backups\HotelMarketplace-YYYYMMDD-HHMMSS.bak -Force
+```
+
+Detailed startup, verification, backup, and restore steps are maintained in
+[`docs/RUN_LOCAL_APP.md`](docs/RUN_LOCAL_APP.md).
 
 ## Restore Backend Dependencies
 
