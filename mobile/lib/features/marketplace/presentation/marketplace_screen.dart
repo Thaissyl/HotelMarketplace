@@ -275,10 +275,27 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                     onPageChanged: _goToPage,
                     onCityChanged: _setCityFilter,
                     onSortChanged: _setSortOption,
-                    onToggleSaved: (hotel) {
-                      ref
-                          .read(customerStateProvider.notifier)
-                          .toggleSavedHotel(hotel);
+                    onToggleSaved: (hotel) async {
+                      if (session == null) {
+                        context.push(LoginScreen.routePath);
+                        return;
+                      }
+                      if (!roles.contains(UserRoleCode.customer.apiValue)) {
+                        AppErrorPresenter.showSnackBar(
+                          context,
+                          'Saved hotels are available for customer accounts.',
+                        );
+                        return;
+                      }
+                      try {
+                        await ref
+                            .read(customerStateProvider.notifier)
+                            .toggleSavedHotel(hotel);
+                      } catch (error) {
+                        if (context.mounted) {
+                          AppErrorPresenter.showSnackBar(context, error);
+                        }
+                      }
                     },
                     isSaved: (hotelId) {
                       return ref

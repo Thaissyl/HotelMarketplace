@@ -120,6 +120,7 @@ public sealed class HousekeepingController : ControllerBase
             "Housekeeping.RoomNotFound" => StatusCodes.Status404NotFound,
             "Housekeeping.AssigneeNotFound" => StatusCodes.Status404NotFound,
             "Housekeeping.InvalidTransition" => StatusCodes.Status409Conflict,
+            "Housekeeping.AssigneeOwnershipConflict" => StatusCodes.Status409Conflict,
             "Housekeeping.LockUnavailable" => StatusCodes.Status423Locked,
             _ => StatusCodes.Status400BadRequest
         };

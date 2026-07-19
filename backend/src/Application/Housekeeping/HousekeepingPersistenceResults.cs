@@ -9,7 +9,8 @@ public enum HousekeepingPersistenceStatus
     RoomNotFound = 3,
     InvalidTransition = 4,
     LockUnavailable = 5,
-    AssigneeNotFound = 6
+    AssigneeNotFound = 6,
+    AssigneeOwnershipConflict = 7
 }
 
 public sealed record HousekeepingTaskUpdateResult(

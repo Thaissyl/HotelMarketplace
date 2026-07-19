@@ -15,6 +15,7 @@ public interface IHousekeepingRepository
         Guid hotelId,
         Guid taskId,
         Guid actorUserAccountId,
+        bool canOverrideAssignee,
         HousekeepingTaskStatus targetStatus,
         CancellationToken cancellationToken);
 

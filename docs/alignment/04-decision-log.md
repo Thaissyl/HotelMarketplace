@@ -20,4 +20,4 @@ work. They must be resolved before their corresponding P1 or P2 change begins.
 
 | Decision ID | Topic | Document conflict or ambiguity | Recommended default | Needed before | Status |
 | --- | --- | --- | --- | --- | --- |
-| DEC-AUD-007 | Saved hotels and notifications | Notification records are now server-backed under ALN-009; saved hotels remain device-local | Retain durable notification outbox records; either make saved hotels server-backed or explicitly remove favorites from supported scope | ALN-013 | Partially resolved |
+| DEC-AUD-007 | Saved hotels and notifications | Notification records are server-backed under ALN-009 and saved hotels are retained as an account-synchronized feature | Persist account-owned saved hotels, expose recipient-only notification reads, and synchronize read state without weakening hotel isolation | ALN-013 | Resolved |

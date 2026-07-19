@@ -50,29 +50,46 @@ public sealed class HousekeepingTask : Entity, IHotelScopedEntity
         AssignedToUserAccountId = assignedToUserAccountId;
     }
 
-    public void Start(Guid assignedToUserAccountId)
+    public void Start(Guid actorUserAccountId, bool canOverrideAssignee)
     {
-        Guard.NotEmpty(assignedToUserAccountId, nameof(AssignedToUserAccountId));
+        Guard.NotEmpty(actorUserAccountId, nameof(actorUserAccountId));
 
         if (Status != HousekeepingTaskStatus.Open)
         {
             throw new SharedKernel.Exceptions.DomainException("HousekeepingTask.InvalidStartStatus", "Only open housekeeping tasks can be started.");
         }
 
-        AssignedToUserAccountId = assignedToUserAccountId;
+        EnsureAssigneeAccess(actorUserAccountId, canOverrideAssignee);
+        AssignedToUserAccountId ??= actorUserAccountId;
         Status = HousekeepingTaskStatus.InProgress;
     }
 
-    public void CompleteCleaning(bool requiresInspection)
+    public void CompleteCleaning(Guid actorUserAccountId, bool canOverrideAssignee, bool requiresInspection)
     {
+        Guard.NotEmpty(actorUserAccountId, nameof(actorUserAccountId));
+
         if (Status != HousekeepingTaskStatus.InProgress)
         {
             throw new SharedKernel.Exceptions.DomainException("HousekeepingTask.InvalidCompleteStatus", "Only in-progress housekeeping tasks can be completed.");
         }
 
+        EnsureAssigneeAccess(actorUserAccountId, canOverrideAssignee);
+
         Status = requiresInspection
             ? HousekeepingTaskStatus.InspectionRequired
             : HousekeepingTaskStatus.Completed;
+    }
+
+    private void EnsureAssigneeAccess(Guid actorUserAccountId, bool canOverrideAssignee)
+    {
+        if (AssignedToUserAccountId.HasValue &&
+            AssignedToUserAccountId.Value != actorUserAccountId &&
+            !canOverrideAssignee)
+        {
+            throw new SharedKernel.Exceptions.DomainException(
+                "HousekeepingTask.AssigneeOwnershipConflict",
+                "Only the assigned housekeeper or a hotel manager can update this task.");
+        }
     }
 
     public void CompleteInspection()

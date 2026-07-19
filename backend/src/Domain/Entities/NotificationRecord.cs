@@ -41,4 +41,20 @@ public sealed class NotificationRecord : Entity
     public NotificationStatus Status { get; private set; }
 
     public DateTime CreatedAtUtc { get; private set; }
+
+    public DateTime? ReadAtUtc { get; private set; }
+
+    public void MarkRead(DateTime readAtUtc)
+    {
+        if (ReadAtUtc.HasValue)
+        {
+            return;
+        }
+
+        ReadAtUtc = readAtUtc.Kind == DateTimeKind.Local
+            ? throw new SharedKernel.Exceptions.DomainException(
+                "NotificationRecord.InvalidReadTime",
+                "Notification read time must be expressed in UTC.")
+            : DateTime.SpecifyKind(readAtUtc, DateTimeKind.Utc);
+    }
 }

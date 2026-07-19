@@ -14,10 +14,25 @@ internal sealed class NotificationRecordConfiguration : IEntityTypeConfiguration
         builder.Property(entity => entity.Message).HasMaxLength(1000).IsRequired();
         builder.Property(entity => entity.Status).HasEnumConversion();
         builder.Property(entity => entity.CreatedAtUtc).HasPrecision(3);
+        builder.Property(entity => entity.ReadAtUtc).HasPrecision(3);
         builder.HasIndex(entity => new { entity.RelatedEntityType, entity.RelatedEntityId });
         builder.HasIndex(entity => new { entity.HotelId, entity.Status });
+        builder.HasIndex(entity => new { entity.RecipientUserAccountId, entity.ReadAtUtc, entity.CreatedAtUtc });
         builder.HasOne<HotelProperty>().WithMany().HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<UserAccount>().WithMany().HasForeignKey(entity => entity.RecipientUserAccountId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+internal sealed class SavedHotelConfiguration : IEntityTypeConfiguration<SavedHotel>
+{
+    public void Configure(EntityTypeBuilder<SavedHotel> builder)
+    {
+        builder.ConfigureEntity("SavedHotels");
+        builder.Property(entity => entity.CreatedAtUtc).HasPrecision(3);
+        builder.HasIndex(entity => new { entity.UserAccountId, entity.HotelId }).IsUnique();
+        builder.HasIndex(entity => new { entity.UserAccountId, entity.CreatedAtUtc });
+        builder.HasOne<UserAccount>().WithMany().HasForeignKey(entity => entity.UserAccountId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<HotelProperty>().WithMany().HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 

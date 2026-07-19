@@ -17,9 +17,9 @@ public sealed class OperationalLifecycleTests
         HousekeepingTask task = new(Guid.NewGuid(), room.HotelId, room.Id, "CheckoutCleaning");
         Guid housekeeperId = Guid.NewGuid();
 
-        task.Start(housekeeperId);
+        task.Start(housekeeperId, canOverrideAssignee: false);
         room.StartHousekeeping();
-        task.CompleteCleaning(requiresInspection: true);
+        task.CompleteCleaning(housekeeperId, canOverrideAssignee: false, requiresInspection: true);
         room.CompleteHousekeeping(requiresInspection: true);
 
         task.Status.Should().Be(HousekeepingTaskStatus.InspectionRequired);
@@ -46,8 +46,12 @@ public sealed class OperationalLifecycleTests
         Guid technicianId = Guid.NewGuid();
 
         room.BlockForMaintenance(RoomOperationalStatus.Maintenance);
-        request.Start(technicianId);
-        request.Resolve("Replaced the failed compressor.", new DateTime(2026, 7, 19, 12, 0, 0, DateTimeKind.Utc));
+        request.Start(technicianId, canOverrideAssignee: false);
+        request.Resolve(
+            technicianId,
+            canOverrideAssignee: false,
+            "Replaced the failed compressor.",
+            new DateTime(2026, 7, 19, 12, 0, 0, DateTimeKind.Utc));
         room.CompleteMaintenance(requiresInspection: true);
 
         request.Status.Should().Be(MaintenanceStatus.Resolved);
@@ -70,5 +74,66 @@ public sealed class OperationalLifecycleTests
 
         action.Should().Throw<DomainException>()
             .Where(exception => exception.Code == "PhysicalRoom.OperationalStatusCannotBeOverridden");
+    }
+
+    [Fact]
+    public void HousekeeperCannotTakeOverAnotherAssigneesTask()
+    {
+        Guid assignedHousekeeperId = Guid.NewGuid();
+        HousekeepingTask task = new(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "CheckoutCleaning",
+            assignedToUserAccountId: assignedHousekeeperId);
+
+        Action action = () => task.Start(Guid.NewGuid(), canOverrideAssignee: false);
+
+        action.Should().Throw<DomainException>()
+            .Where(exception => exception.Code == "HousekeepingTask.AssigneeOwnershipConflict");
+        task.Status.Should().Be(HousekeepingTaskStatus.Open);
+        task.AssignedToUserAccountId.Should().Be(assignedHousekeeperId);
+    }
+
+    [Fact]
+    public void ManagerCanProgressAnotherHousekeepersTaskWithoutChangingAssignee()
+    {
+        Guid assignedHousekeeperId = Guid.NewGuid();
+        HousekeepingTask task = new(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "CheckoutCleaning",
+            assignedToUserAccountId: assignedHousekeeperId);
+
+        task.Start(Guid.NewGuid(), canOverrideAssignee: true);
+
+        task.Status.Should().Be(HousekeepingTaskStatus.InProgress);
+        task.AssignedToUserAccountId.Should().Be(assignedHousekeeperId);
+    }
+
+    [Fact]
+    public void TechnicianCannotResolveAnotherAssigneesRequest()
+    {
+        Guid assignedTechnicianId = Guid.NewGuid();
+        MaintenanceRequest request = new(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "Electrical fault",
+            MaintenanceSeverity.High);
+        request.Assign(assignedTechnicianId);
+        request.Start(assignedTechnicianId, canOverrideAssignee: false);
+
+        Action action = () => request.Resolve(
+            Guid.NewGuid(),
+            canOverrideAssignee: false,
+            "Repaired wiring.",
+            new DateTime(2026, 7, 19, 12, 0, 0, DateTimeKind.Utc));
+
+        action.Should().Throw<DomainException>()
+            .Where(exception => exception.Code == "MaintenanceRequest.AssigneeOwnershipConflict");
+        request.Status.Should().Be(MaintenanceStatus.InProgress);
     }
 }

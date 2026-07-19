@@ -8,6 +8,7 @@ final customerAccountApiProvider = Provider<CustomerAccountApi>((ref) {
   return CustomerAccountApi(ref.watch(apiClientProvider));
 });
 
-final customerProfileProvider = FutureProvider.autoDispose<CustomerProfile>((ref) {
+final customerProfileProvider =
+    FutureProvider.autoDispose<CustomerProfile>((ref) {
   return ref.watch(customerAccountApiProvider).getProfile();
 });

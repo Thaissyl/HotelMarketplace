@@ -174,10 +174,15 @@ internal sealed class MaintenanceService : IMaintenanceService
                 ValidationErrorFormatter.ToResultError("Maintenance.InvalidStatusUpdate", validationResult));
         }
 
+        bool canOverrideAssignee = await _hotelAccessAuthorizer.HasAccessAsync(
+            hotelId,
+            new[] { UserRoleCode.HotelManager, UserRoleCode.PropertyOwner },
+            cancellationToken);
         MaintenanceRequestPersistenceResult result = await _maintenanceRepository.UpdateRequestStatusAsync(
             hotelId,
             requestId,
             _currentUserService.UserId!.Value,
+            canOverrideAssignee,
             request,
             cancellationToken);
 
@@ -210,6 +215,7 @@ internal sealed class MaintenanceService : IMaintenanceService
             MaintenancePersistenceStatus.InvalidRoomStatus => Result.Failure<MaintenanceRequestDto>(MaintenanceErrors.InvalidRoomStatus),
             MaintenancePersistenceStatus.LockUnavailable => Result.Failure<MaintenanceRequestDto>(MaintenanceErrors.LockUnavailable),
             MaintenancePersistenceStatus.AssigneeNotFound => Result.Failure<MaintenanceRequestDto>(MaintenanceErrors.AssigneeNotFound),
+            MaintenancePersistenceStatus.AssigneeOwnershipConflict => Result.Failure<MaintenanceRequestDto>(MaintenanceErrors.AssigneeOwnershipConflict),
             _ => Result.Failure<MaintenanceRequestDto>(MaintenanceErrors.InvalidTransition)
         };
     }

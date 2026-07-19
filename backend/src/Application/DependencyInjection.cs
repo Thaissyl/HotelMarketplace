@@ -4,6 +4,7 @@ using HotelMarketplace.Application.Availability;
 using HotelMarketplace.Application.Bookings;
 using HotelMarketplace.Application.Bookings.Expiration;
 using HotelMarketplace.Application.CustomerAccount;
+using HotelMarketplace.Application.CustomerEngagement;
 using HotelMarketplace.Application.FrontDesk;
 using HotelMarketplace.Application.Housekeeping;
 using HotelMarketplace.Application.HotelManagement;
@@ -27,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<IAvailabilityService, AvailabilityService>();
         services.AddScoped<IBookingService, BookingService>();
         services.AddScoped<ICustomerAccountService, CustomerAccountService>();
+        services.AddScoped<ICustomerEngagementService, CustomerEngagementService>();
         services.AddScoped<IExpiredBookingService, ExpiredBookingService>();
         services.AddScoped<IFrontDeskService, FrontDeskService>();
         services.AddScoped<IHousekeepingService, HousekeepingService>();

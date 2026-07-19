@@ -8,6 +8,7 @@ using HotelMarketplace.Application.Availability.Dtos;
 using HotelMarketplace.Application.Bookings.Dtos;
 using HotelMarketplace.Application.Bookings.Expiration;
 using HotelMarketplace.Application.CustomerAccount.Dtos;
+using HotelMarketplace.Application.CustomerEngagement.Dtos;
 using HotelMarketplace.Application.FrontDesk.Dtos;
 using HotelMarketplace.Application.HotelManagement.Dtos;
 using HotelMarketplace.Application.Housekeeping.Dtos;
@@ -2690,6 +2691,150 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             HttpStatusCode.OK,
             customer.AccessToken);
         trips.Should().ContainSingle(item => item.Id == booking.Id && item.GuestCount == 3);
+    }
+
+    [Fact]
+    public async Task SavedHotelsAndNotificationsAreIsolatedByAccount()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse firstCustomer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "engagement-first");
+        TestAuthResponse secondCustomer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "engagement-second");
+
+        using HttpRequestMessage saveRequest = new(HttpMethod.Put, $"/api/account/saved-hotels/{hotel.HotelId}");
+        saveRequest.Headers.Authorization = Bearer(firstCustomer.AccessToken);
+        using HttpResponseMessage saveResponse = await client.SendAsync(saveRequest);
+        string saveBody = await saveResponse.Content.ReadAsStringAsync();
+        saveResponse.StatusCode.Should().Be(HttpStatusCode.OK, saveBody);
+
+        SavedHotelDto[] firstSavedHotels = await GetJsonAsync<SavedHotelDto[]>(
+            client,
+            "/api/account/saved-hotels",
+            HttpStatusCode.OK,
+            firstCustomer.AccessToken);
+        SavedHotelDto[] secondSavedHotels = await GetJsonAsync<SavedHotelDto[]>(
+            client,
+            "/api/account/saved-hotels",
+            HttpStatusCode.OK,
+            secondCustomer.AccessToken);
+        firstSavedHotels.Should().ContainSingle(item => item.HotelId == hotel.HotelId);
+        secondSavedHotels.Should().BeEmpty();
+
+        AccountNotificationDto[] firstNotifications = await GetJsonAsync<AccountNotificationDto[]>(
+            client,
+            "/api/account/notifications",
+            HttpStatusCode.OK,
+            firstCustomer.AccessToken);
+        firstNotifications.Should().NotBeEmpty();
+
+        await SendNoContentAsync(
+            client,
+            HttpMethod.Patch,
+            $"/api/account/notifications/{firstNotifications[0].Id}/read",
+            HttpStatusCode.NotFound,
+            secondCustomer.AccessToken);
+
+        AccountNotificationDto[] unchangedNotifications = await GetJsonAsync<AccountNotificationDto[]>(
+            client,
+            "/api/account/notifications",
+            HttpStatusCode.OK,
+            firstCustomer.AccessToken);
+        unchangedNotifications.Single(item => item.Id == firstNotifications[0].Id).ReadAtUtc.Should().BeNull();
+
+        await SendNoContentAsync(
+            client,
+            HttpMethod.Patch,
+            $"/api/account/notifications/{firstNotifications[0].Id}/read",
+            HttpStatusCode.NoContent,
+            firstCustomer.AccessToken);
+        AccountNotificationDto[] readNotifications = await GetJsonAsync<AccountNotificationDto[]>(
+            client,
+            "/api/account/notifications",
+            HttpStatusCode.OK,
+            firstCustomer.AccessToken);
+        readNotifications.Single(item => item.Id == firstNotifications[0].Id).ReadAtUtc.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task SavedHotelEndpointsRequireCustomerAuthentication()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse receptionist = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Receptionist,
+            "saved-hotel-receptionist",
+            hotel.HotelId);
+
+        using HttpRequestMessage unauthenticatedRequest = new(HttpMethod.Put, $"/api/account/saved-hotels/{hotel.HotelId}");
+        using HttpResponseMessage unauthenticatedResponse = await client.SendAsync(unauthenticatedRequest);
+        unauthenticatedResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        using HttpRequestMessage staffRequest = new(HttpMethod.Put, $"/api/account/saved-hotels/{hotel.HotelId}");
+        staffRequest.Headers.Authorization = Bearer(receptionist.AccessToken);
+        using HttpResponseMessage staffResponse = await client.SendAsync(staffRequest);
+        staffResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task HousekeepingAssigneeOwnershipRejectsPeerTakeoverAndAllowsManagerOverride()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse assignedHousekeeper = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.HousekeepingStaff,
+            "assigned-housekeeper",
+            hotel.HotelId);
+        TestAuthResponse peerHousekeeper = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.HousekeepingStaff,
+            "peer-housekeeper",
+            hotel.HotelId);
+        TestAuthResponse manager = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.HotelManager,
+            "housekeeping-manager",
+            hotel.HotelId);
+        Guid taskId;
+
+        using (IServiceScope scope = _factory.Services.CreateScope())
+        {
+            HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+            PhysicalRoom room = await dbContext.PhysicalRooms
+                .IgnoreQueryFilters()
+                .SingleAsync(item => item.Id == hotel.PhysicalRoomIds.Single());
+            room.MarkOccupiedForCheckIn();
+            room.ReleaseToHousekeeping();
+            HousekeepingTask task = new(
+                Guid.NewGuid(),
+                hotel.HotelId,
+                room.Id,
+                "CheckoutCleaning",
+                assignedToUserAccountId: assignedHousekeeper.UserId);
+            dbContext.HousekeepingTasks.Add(task);
+            await dbContext.SaveChangesAsync();
+            taskId = task.Id;
+        }
+
+        using HttpResponseMessage peerResponse = await SendJsonWithoutReadingAsync(
+            client,
+            HttpMethod.Patch,
+            $"/api/hotels/{hotel.HotelId}/housekeeping/tasks/{taskId}/status",
+            new { status = HousekeepingTaskStatus.InProgress },
+            peerHousekeeper.AccessToken);
+        peerResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await peerResponse.Content.ReadAsStringAsync()).Should().Contain("Housekeeping.AssigneeOwnershipConflict");
+
+        HousekeepingTaskDto updatedTask = await SendJsonAsync<HousekeepingTaskDto>(
+            client,
+            HttpMethod.Patch,
+            $"/api/hotels/{hotel.HotelId}/housekeeping/tasks/{taskId}/status",
+            new { status = HousekeepingTaskStatus.InProgress },
+            HttpStatusCode.OK,
+            manager.AccessToken);
+        updatedTask.Status.Should().Be(HousekeepingTaskStatus.InProgress);
+        updatedTask.AssignedToUserAccountId.Should().Be(assignedHousekeeper.UserId);
     }
 
     private static async Task<BookingDto> CreateBookingAsync(

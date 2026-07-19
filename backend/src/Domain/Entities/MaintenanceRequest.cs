@@ -58,31 +58,52 @@ public sealed class MaintenanceRequest : Entity, IHotelScopedEntity
         AssignedToUserAccountId = assignedToUserAccountId;
     }
 
-    public void Start(Guid assignedToUserAccountId)
+    public void Start(Guid actorUserAccountId, bool canOverrideAssignee)
     {
-        Guard.NotEmpty(assignedToUserAccountId, nameof(AssignedToUserAccountId));
+        Guard.NotEmpty(actorUserAccountId, nameof(actorUserAccountId));
 
         if (Status != MaintenanceStatus.Open)
         {
             throw new SharedKernel.Exceptions.DomainException("MaintenanceRequest.InvalidStartStatus", "Only open maintenance requests can be started.");
         }
 
-        AssignedToUserAccountId = assignedToUserAccountId;
+        EnsureAssigneeAccess(actorUserAccountId, canOverrideAssignee);
+        AssignedToUserAccountId ??= actorUserAccountId;
         Status = MaintenanceStatus.InProgress;
     }
 
-    public void Resolve(string resolutionNote, DateTime resolvedAtUtc)
+    public void Resolve(
+        Guid actorUserAccountId,
+        bool canOverrideAssignee,
+        string resolutionNote,
+        DateTime resolvedAtUtc)
     {
+        Guard.NotEmpty(actorUserAccountId, nameof(actorUserAccountId));
+
         if (Status != MaintenanceStatus.InProgress)
         {
             throw new SharedKernel.Exceptions.DomainException("MaintenanceRequest.InvalidResolveStatus", "Only in-progress maintenance requests can be resolved.");
         }
+
+        EnsureAssigneeAccess(actorUserAccountId, canOverrideAssignee);
 
         ResolutionNote = Guard.NotBlank(resolutionNote, nameof(ResolutionNote), 1000);
         ResolvedAtUtc = resolvedAtUtc.Kind == DateTimeKind.Local
             ? throw new SharedKernel.Exceptions.DomainException("MaintenanceRequest.InvalidResolvedTime", "Resolved time must be expressed in UTC.")
             : DateTime.SpecifyKind(resolvedAtUtc, DateTimeKind.Utc);
         Status = MaintenanceStatus.Resolved;
+    }
+
+    private void EnsureAssigneeAccess(Guid actorUserAccountId, bool canOverrideAssignee)
+    {
+        if (AssignedToUserAccountId.HasValue &&
+            AssignedToUserAccountId.Value != actorUserAccountId &&
+            !canOverrideAssignee)
+        {
+            throw new SharedKernel.Exceptions.DomainException(
+                "MaintenanceRequest.AssigneeOwnershipConflict",
+                "Only the assigned technician or a hotel manager can update this request.");
+        }
     }
 
     public void Release()

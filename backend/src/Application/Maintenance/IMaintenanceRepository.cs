@@ -26,6 +26,7 @@ public interface IMaintenanceRepository
         Guid hotelId,
         Guid requestId,
         Guid actorUserAccountId,
+        bool canOverrideAssignee,
         UpdateMaintenanceRequestStatusRequest request,
         CancellationToken cancellationToken);
 

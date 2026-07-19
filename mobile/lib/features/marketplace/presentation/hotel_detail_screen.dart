@@ -9,6 +9,9 @@ import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../features/bookings/domain/booking_draft.dart';
 import '../../../features/bookings/presentation/booking_confirmation_screen.dart';
+import '../../../features/auth/application/auth_controller.dart';
+import '../../../features/auth/domain/auth_models.dart';
+import '../../../features/auth/presentation/login_screen.dart';
 import '../../../features/customer/application/customer_state.dart';
 import '../../../shared/utils/app_formatters.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
@@ -409,6 +412,7 @@ class _HotelHeaderCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final textTheme = Theme.of(context).textTheme;
+    final session = ref.watch(authControllerProvider).userSession;
     final saved = ref.watch(customerStateProvider).savedHotels.any(
           (savedHotel) => savedHotel.id == hotel.id,
         );
@@ -460,10 +464,27 @@ class _HotelHeaderCard extends ConsumerWidget {
                 foregroundColor: Colors.white,
                 side: BorderSide(color: Colors.white.withValues(alpha: 0.72)),
               ),
-              onPressed: () {
-                ref
-                    .read(customerStateProvider.notifier)
-                    .toggleSavedHotelDetail(hotel);
+              onPressed: () async {
+                if (session == null) {
+                  context.push(LoginScreen.routePath);
+                  return;
+                }
+                if (!session.roles.contains(UserRoleCode.customer.apiValue)) {
+                  AppErrorPresenter.showSnackBar(
+                    context,
+                    'Saved hotels are available for customer accounts.',
+                  );
+                  return;
+                }
+                try {
+                  await ref
+                      .read(customerStateProvider.notifier)
+                      .toggleSavedHotelDetail(hotel);
+                } catch (error) {
+                  if (context.mounted) {
+                    AppErrorPresenter.showSnackBar(context, error);
+                  }
+                }
               },
               icon: Icon(
                 saved ? Icons.favorite_rounded : Icons.favorite_border_rounded,

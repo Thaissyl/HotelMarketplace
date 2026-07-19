@@ -10,5 +10,6 @@ public static class MaintenanceErrors
     public static readonly ResultError InvalidTransition = new("Maintenance.InvalidTransition", "The selected maintenance status transition is not allowed.");
     public static readonly ResultError InvalidRoomStatus = new("Maintenance.InvalidRoomStatus", "The selected room status transition is not allowed.");
     public static readonly ResultError AssigneeNotFound = new("Maintenance.AssigneeNotFound", "The selected user is not an active maintenance staff member for this hotel.");
+    public static readonly ResultError AssigneeOwnershipConflict = new("Maintenance.AssigneeOwnershipConflict", "This request is assigned to another technician. Ask a hotel manager to reassign or override it.");
     public static readonly ResultError LockUnavailable = new("Maintenance.LockUnavailable", "The maintenance request is busy. Please try again.");
 }

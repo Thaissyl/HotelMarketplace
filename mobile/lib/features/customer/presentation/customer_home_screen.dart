@@ -34,6 +34,20 @@ class _CustomerHomeScreenState extends ConsumerState<CustomerHomeScreen> {
   int _selectedIndex = 0;
 
   @override
+  void initState() {
+    super.initState();
+    Future<void>.microtask(() async {
+      try {
+        await ref.read(customerStateProvider.notifier).loadEngagement();
+      } catch (error) {
+        if (mounted) {
+          AppErrorPresenter.showSnackBar(context, error);
+        }
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final unreadCount = ref
         .watch(customerStateProvider)
@@ -68,10 +82,19 @@ class _CustomerHomeScreenState extends ConsumerState<CustomerHomeScreen> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) {
+        onDestinationSelected: (index) async {
           setState(() => _selectedIndex = index);
           if (index == 3) {
-            ref.read(customerStateProvider.notifier).markNotificationsRead();
+            try {
+              await ref.read(customerStateProvider.notifier).loadEngagement();
+              await ref
+                  .read(customerStateProvider.notifier)
+                  .markNotificationsRead();
+            } catch (error) {
+              if (context.mounted) {
+                AppErrorPresenter.showSnackBar(context, error);
+              }
+            }
           }
         },
         destinations: [

@@ -2,24 +2,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../bookings/domain/booking_models.dart';
 import '../../marketplace/domain/marketplace_models.dart';
+import '../data/customer_account_api.dart';
+import 'customer_account_providers.dart';
 
 final customerStateProvider =
     StateNotifierProvider<CustomerStateController, CustomerState>((ref) {
-  return CustomerStateController();
+  return CustomerStateController(ref.watch(customerAccountApiProvider));
 });
 
 class CustomerState {
   const CustomerState({
     this.savedHotels = const <SavedHotel>[],
     this.bookings = const <Booking>[],
-    this.notifications = const <CustomerNotification>[
-      CustomerNotification(
-        title: 'Welcome to Hotel Marketplace',
-        body: 'Search hotels, save favorites, and manage upcoming stays here.',
-        createdLabel: 'Today',
-        unread: true,
-      ),
-    ],
+    this.notifications = const <CustomerNotification>[],
     this.displayName = '',
     this.phoneNumber = '',
   });
@@ -48,19 +43,43 @@ class CustomerState {
 }
 
 class CustomerStateController extends StateNotifier<CustomerState> {
-  CustomerStateController() : super(const CustomerState());
+  CustomerStateController(this._api) : super(const CustomerState());
+
+  final CustomerAccountApi _api;
+
+  Future<void> loadEngagement() async {
+    final results = await Future.wait<Object>([
+      _api.getSavedHotels(),
+      _api.getNotifications(),
+    ]);
+    state = state.copyWith(
+      savedHotels: results[0] as List<SavedHotel>,
+      notifications: results[1] as List<CustomerNotification>,
+    );
+  }
 
   bool isSaved(String hotelId) {
     return state.savedHotels.any((hotel) => hotel.id == hotelId);
   }
 
-  void toggleSavedHotel(HotelSearchResult hotel) {
+  Future<void> toggleSavedHotel(HotelSearchResult hotel) async {
     final exists = isSaved(hotel.id);
     if (exists) {
       state = state.copyWith(
         savedHotels:
             state.savedHotels.where((saved) => saved.id != hotel.id).toList(),
       );
+      try {
+        await _api.removeSavedHotel(hotel.id);
+      } catch (_) {
+        state = state.copyWith(
+          savedHotels: [
+            SavedHotel.fromSearchResult(hotel),
+            ...state.savedHotels,
+          ],
+        );
+        rethrow;
+      }
       return;
     }
 
@@ -69,25 +88,42 @@ class CustomerStateController extends StateNotifier<CustomerState> {
         SavedHotel.fromSearchResult(hotel),
         ...state.savedHotels,
       ],
-      notifications: [
-        CustomerNotification(
-          title: 'Hotel saved',
-          body: '${hotel.name} was added to your saved hotels.',
-          createdLabel: 'Now',
-          unread: true,
-        ),
-        ...state.notifications,
-      ],
     );
+    try {
+      final saved = await _api.saveHotel(hotel.id);
+      state = state.copyWith(
+        savedHotels: [
+          saved,
+          ...state.savedHotels.where((item) => item.id != hotel.id),
+        ],
+      );
+    } catch (_) {
+      state = state.copyWith(
+        savedHotels:
+            state.savedHotels.where((item) => item.id != hotel.id).toList(),
+      );
+      rethrow;
+    }
   }
 
-  void toggleSavedHotelDetail(HotelDetail hotel) {
+  Future<void> toggleSavedHotelDetail(HotelDetail hotel) async {
     final exists = isSaved(hotel.id);
     if (exists) {
       state = state.copyWith(
         savedHotels:
             state.savedHotels.where((saved) => saved.id != hotel.id).toList(),
       );
+      try {
+        await _api.removeSavedHotel(hotel.id);
+      } catch (_) {
+        state = state.copyWith(
+          savedHotels: [
+            SavedHotel.fromDetail(hotel),
+            ...state.savedHotels,
+          ],
+        );
+        rethrow;
+      }
       return;
     }
 
@@ -96,16 +132,22 @@ class CustomerStateController extends StateNotifier<CustomerState> {
         SavedHotel.fromDetail(hotel),
         ...state.savedHotels,
       ],
-      notifications: [
-        CustomerNotification(
-          title: 'Hotel saved',
-          body: '${hotel.name} was added to your saved hotels.',
-          createdLabel: 'Now',
-          unread: true,
-        ),
-        ...state.notifications,
-      ],
     );
+    try {
+      final saved = await _api.saveHotel(hotel.id);
+      state = state.copyWith(
+        savedHotels: [
+          saved,
+          ...state.savedHotels.where((item) => item.id != hotel.id),
+        ],
+      );
+    } catch (_) {
+      state = state.copyWith(
+        savedHotels:
+            state.savedHotels.where((item) => item.id != hotel.id).toList(),
+      );
+      rethrow;
+    }
   }
 
   void addBooking(Booking booking) {
@@ -113,15 +155,6 @@ class CustomerStateController extends StateNotifier<CustomerState> {
         state.bookings.where((item) => item.id != booking.id).toList();
     state = state.copyWith(
       bookings: [booking, ...withoutDuplicate],
-      notifications: [
-        CustomerNotification(
-          title: 'Reservation created',
-          body: 'Booking ${booking.bookingCode} is being held for payment.',
-          createdLabel: 'Now',
-          unread: true,
-        ),
-        ...state.notifications,
-      ],
     );
   }
 
@@ -134,15 +167,6 @@ class CustomerStateController extends StateNotifier<CustomerState> {
 
         return booking.copyWith(status: 'Confirmed');
       }).toList(growable: false),
-      notifications: [
-        const CustomerNotification(
-          title: 'Demo payment completed',
-          body: 'Your booking has been confirmed in demo mode.',
-          createdLabel: 'Now',
-          unread: true,
-        ),
-        ...state.notifications,
-      ],
     );
   }
 
@@ -153,24 +177,22 @@ class CustomerStateController extends StateNotifier<CustomerState> {
             ? booking.copyWith(status: 'Cancelled')
             : booking;
       }).toList(growable: false),
-      notifications: [
-        const CustomerNotification(
-          title: 'Booking cancelled',
-          body: 'Your cancellation was recorded. Check Trips for details.',
-          createdLabel: 'Now',
-          unread: true,
-        ),
-        ...state.notifications,
-      ],
     );
   }
 
-  void markNotificationsRead() {
+  Future<void> markNotificationsRead() async {
+    final previous = state.notifications;
     state = state.copyWith(
       notifications: state.notifications
           .map((item) => item.copyWith(unread: false))
           .toList(growable: false),
     );
+    try {
+      await _api.markAllNotificationsRead();
+    } catch (_) {
+      state = state.copyWith(notifications: previous);
+      rethrow;
+    }
   }
 
   void updateProfile({
@@ -180,15 +202,6 @@ class CustomerStateController extends StateNotifier<CustomerState> {
     state = state.copyWith(
       displayName: displayName.trim(),
       phoneNumber: phoneNumber.trim(),
-      notifications: [
-        const CustomerNotification(
-          title: 'Profile updated',
-          body: 'Your local customer profile information was updated.',
-          createdLabel: 'Now',
-          unread: true,
-        ),
-        ...state.notifications,
-      ],
     );
   }
 }
@@ -233,6 +246,18 @@ class SavedHotel {
       minimumPricePerNight: minimumPrice,
     );
   }
+
+  factory SavedHotel.fromJson(Object? data) {
+    final json = _asMap(data);
+    return SavedHotel(
+      id: json['hotelId']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      city: json['city']?.toString() ?? '',
+      addressLine: json['addressLine']?.toString() ?? '',
+      minimumPricePerNight:
+          (json['minimumPricePerNight'] as num?)?.toDouble() ?? 0,
+    );
+  }
 }
 
 class CustomerNotification {
@@ -256,4 +281,35 @@ class CustomerNotification {
       unread: unread ?? this.unread,
     );
   }
+
+  factory CustomerNotification.fromJson(Object? data) {
+    final json = _asMap(data);
+    final createdAt =
+        DateTime.tryParse(json['createdAtUtc']?.toString() ?? '')?.toLocal();
+    final createdLabel = createdAt == null
+        ? ''
+        : '${createdAt.day.toString().padLeft(2, '0')}/${createdAt.month.toString().padLeft(2, '0')} ${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}';
+    return CustomerNotification(
+      title: _notificationTitle(json['eventType']?.toString() ?? ''),
+      body: json['message']?.toString() ?? '',
+      createdLabel: createdLabel,
+      unread: json['readAtUtc'] == null,
+    );
+  }
+}
+
+Map<String, dynamic> _asMap(Object? data) {
+  if (data is Map<String, dynamic>) {
+    return data;
+  }
+  if (data is Map) {
+    return data.map((key, value) => MapEntry(key.toString(), value));
+  }
+  return const <String, dynamic>{};
+}
+
+String _notificationTitle(String eventType) {
+  return eventType
+      .replaceAllMapped(RegExp(r'(?<=[a-z])(?=[A-Z])'), (_) => ' ')
+      .trim();
 }

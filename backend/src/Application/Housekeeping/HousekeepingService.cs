@@ -86,10 +86,15 @@ internal sealed class HousekeepingService : IHousekeepingService
                 ValidationErrorFormatter.ToResultError("Housekeeping.InvalidTaskStatusUpdate", validationResult));
         }
 
+        bool canOverrideAssignee = await _hotelAccessAuthorizer.HasAccessAsync(
+            hotelId,
+            new[] { UserRoleCode.HotelManager, UserRoleCode.PropertyOwner },
+            cancellationToken);
         HousekeepingTaskUpdateResult result = await _housekeepingRepository.UpdateTaskStatusAsync(
             hotelId,
             taskId,
             _currentUserService.UserId!.Value,
+            canOverrideAssignee,
             request.Status,
             cancellationToken);
 
@@ -101,6 +106,7 @@ internal sealed class HousekeepingService : IHousekeepingService
             HousekeepingPersistenceStatus.InvalidTransition => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.InvalidTransition),
             HousekeepingPersistenceStatus.LockUnavailable => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.LockUnavailable),
             HousekeepingPersistenceStatus.AssigneeNotFound => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.AssigneeNotFound),
+            HousekeepingPersistenceStatus.AssigneeOwnershipConflict => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.AssigneeOwnershipConflict),
             _ => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.InvalidTransition)
         };
     }

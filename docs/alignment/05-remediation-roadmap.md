@@ -155,15 +155,22 @@ implemented by ALN-007 and was retained as the canonical financial model.
 
 ### ALN-013 Durable User Features and Reporting
 
-Decide whether saved hotels and notifications are retained; if retained, make
-them server-backed. Complete documented dashboard metrics and filters.
+Status: Implemented and verified on `feat/aln-013-014-durable-features-tests`.
+
+Saved hotels and account notifications are retained as server-backed features.
+Account-isolated APIs synchronize favorites and notification read state across
+devices. Front Desk now exposes a filterable physical-room status overview in
+addition to the existing operational and finance dashboard metrics.
 
 ### ALN-014 Requirement-Level Test Suite
 
-Add Domain and Application tests for every lifecycle transition; API tests for
-tenant boundaries, concurrency, cancellation, refund, settlement, collection,
-audit, and scheduler behavior; Flutter tests for guards, role landing, forms,
-duplicate submission, timer disposal, and API contracts.
+Status: Implemented and verified on `feat/aln-013-014-durable-features-tests`.
+
+The executable requirement suite covers Domain lifecycle invariants,
+Application orchestration, tenant boundaries, concurrency, cancellation,
+refund, settlement, collection, audit, scheduler behavior, Flutter contracts,
+form validation, and countdown disposal. New behavior is expected to extend the
+same layers of coverage rather than relying on manual smoke testing alone.
 
 ### ALN-015 Toolchain and Operations
 

@@ -33,7 +33,7 @@ class _FrontDeskTabState extends State<FrontDeskTab> {
           emptyMessage: 'No confirmed arrivals are waiting for check-in.',
           status: FrontDeskBookingListStatus.confirmed,
           mode: _QueueMode.checkIn,
-          onCreateWalkIn: () => setState(() => _selectedIndex = 4),
+          onCreateWalkIn: () => setState(() => _selectedIndex = 5),
         ),
       1 => _BookingQueuePanel(
           hotelId: widget.hotelId,
@@ -59,6 +59,7 @@ class _FrontDeskTabState extends State<FrontDeskTab> {
           status: FrontDeskBookingListStatus.checkedOut,
           mode: _QueueMode.history,
         ),
+      4 => _RoomOverviewPanel(hotelId: widget.hotelId),
       _ => _WalkInPanel(hotelId: widget.hotelId),
     };
   }
@@ -107,6 +108,12 @@ class _FrontDeskTabState extends State<FrontDeskTab> {
                     const SizedBox(width: AppSpacing.sm),
                     _FrontDeskSegmentButton(
                       label: 'Walk-in',
+                      selected: _selectedIndex == 5,
+                      onPressed: () => setState(() => _selectedIndex = 5),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    _FrontDeskSegmentButton(
+                      label: 'Rooms',
                       selected: _selectedIndex == 4,
                       onPressed: () => setState(() => _selectedIndex = 4),
                     ),
@@ -119,6 +126,115 @@ class _FrontDeskTabState extends State<FrontDeskTab> {
         ],
       ),
     );
+  }
+}
+
+class _RoomOverviewPanel extends ConsumerStatefulWidget {
+  const _RoomOverviewPanel({required this.hotelId});
+
+  final String hotelId;
+
+  @override
+  ConsumerState<_RoomOverviewPanel> createState() => _RoomOverviewPanelState();
+}
+
+class _RoomOverviewPanelState extends ConsumerState<_RoomOverviewPanel> {
+  String _status = 'All';
+
+  @override
+  Widget build(BuildContext context) {
+    final request = PhysicalRoomsRequest(hotelId: widget.hotelId);
+    final rooms = ref.watch(physicalRoomsProvider(request));
+
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(physicalRoomsProvider(request)),
+      child: rooms.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, stackTrace) => ListView(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          children: [
+            const _PanelHeader(
+              icon: Icons.meeting_room_outlined,
+              title: 'Room overview',
+              subtitle: 'Unable to load room status.',
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Text(AppErrorPresenter.friendlyMessage(error)),
+          ],
+        ),
+        data: (items) {
+          final statuses = <String>{'All', ...items.map((item) => item.status)}
+              .toList(growable: false);
+          final visible = _status == 'All'
+              ? items
+              : items.where((item) => item.status == _status).toList();
+
+          return ListView.separated(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            itemCount: visible.length + 2,
+            separatorBuilder: (context, index) =>
+                const SizedBox(height: AppSpacing.sm),
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return const _PanelHeader(
+                  icon: Icons.meeting_room_outlined,
+                  title: 'Room overview',
+                  subtitle: 'Live operational status for every physical room.',
+                );
+              }
+              if (index == 1) {
+                return DropdownButtonFormField<String>(
+                  initialValue: statuses.contains(_status) ? _status : 'All',
+                  decoration: const InputDecoration(
+                    labelText: 'Room status',
+                    prefixIcon: Icon(Icons.filter_list_rounded),
+                  ),
+                  items: statuses
+                      .map(
+                        (status) => DropdownMenuItem(
+                          value: status,
+                          child: Text(
+                            '$status (${_roomCountForStatus(items, status)})',
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) =>
+                      setState(() => _status = value ?? 'All'),
+                );
+              }
+
+              final room = visible[index - 2];
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: room.isAvailable
+                        ? AppColors.success
+                        : AppColors.warning,
+                    foregroundColor: Colors.white,
+                    child: const Icon(Icons.bed_rounded),
+                  ),
+                  title: Text('Room ${room.roomNumber}'),
+                  subtitle: Text(
+                    [
+                      if ((room.floor ?? '').isNotEmpty) 'Floor ${room.floor}',
+                      if ((room.notes ?? '').isNotEmpty) room.notes!,
+                    ].join(' - '),
+                  ),
+                  trailing: Chip(label: Text(room.status)),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  int _roomCountForStatus(List<RoomInventoryItem> rooms, String status) {
+    return status == 'All'
+        ? rooms.length
+        : rooms.where((room) => room.status == status).length;
   }
 }
 

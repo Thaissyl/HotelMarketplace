@@ -62,6 +62,7 @@ internal sealed class EfHousekeepingRepository : IHousekeepingRepository
         Guid hotelId,
         Guid taskId,
         Guid actorUserAccountId,
+        bool canOverrideAssignee,
         HousekeepingTaskStatus targetStatus,
         CancellationToken cancellationToken)
     {
@@ -127,12 +128,12 @@ internal sealed class EfHousekeepingRepository : IHousekeepingRepository
 
                 if (targetStatus == HousekeepingTaskStatus.InProgress)
                 {
-                    task.Start(actorUserAccountId);
+                    task.Start(actorUserAccountId, canOverrideAssignee);
                     room.StartHousekeeping();
                 }
                 else if (targetStatus == HousekeepingTaskStatus.Completed)
                 {
-                    task.CompleteCleaning(requiresRoomInspection);
+                    task.CompleteCleaning(actorUserAccountId, canOverrideAssignee, requiresRoomInspection);
                     room.CompleteHousekeeping(requiresRoomInspection);
                 }
                 else
@@ -148,10 +149,13 @@ internal sealed class EfHousekeepingRepository : IHousekeepingRepository
                         cancellationToken);
                 }
             }
-            catch (SharedKernel.Exceptions.DomainException)
+            catch (SharedKernel.Exceptions.DomainException exception)
             {
                 await transaction.RollbackAsync(cancellationToken);
-                return HousekeepingTaskUpdateResult.Failure(HousekeepingPersistenceStatus.InvalidTransition);
+                return HousekeepingTaskUpdateResult.Failure(
+                    exception.Code == "HousekeepingTask.AssigneeOwnershipConflict"
+                        ? HousekeepingPersistenceStatus.AssigneeOwnershipConflict
+                        : HousekeepingPersistenceStatus.InvalidTransition);
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);

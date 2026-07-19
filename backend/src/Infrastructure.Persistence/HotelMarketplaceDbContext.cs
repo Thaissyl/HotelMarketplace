@@ -97,6 +97,8 @@ public sealed class HotelMarketplaceDbContext : DbContext
 
     public DbSet<NotificationRecord> NotificationRecords => Set<NotificationRecord>();
 
+    public DbSet<SavedHotel> SavedHotels => Set<SavedHotel>();
+
     public DbSet<AuditRecord> AuditRecords => Set<AuditRecord>();
 
     public DbSet<HousekeepingTask> HousekeepingTasks => Set<HousekeepingTask>();

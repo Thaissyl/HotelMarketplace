@@ -150,6 +150,7 @@ public sealed class MaintenanceController : ControllerBase
             "Maintenance.RoomNotFound" => StatusCodes.Status404NotFound,
             "Maintenance.AssigneeNotFound" => StatusCodes.Status404NotFound,
             "Maintenance.InvalidTransition" => StatusCodes.Status409Conflict,
+            "Maintenance.AssigneeOwnershipConflict" => StatusCodes.Status409Conflict,
             "Maintenance.InvalidRoomStatus" => StatusCodes.Status409Conflict,
             "Maintenance.LockUnavailable" => StatusCodes.Status423Locked,
             _ => StatusCodes.Status400BadRequest

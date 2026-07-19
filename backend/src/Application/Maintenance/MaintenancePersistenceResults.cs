@@ -10,7 +10,8 @@ public enum MaintenancePersistenceStatus
     InvalidTransition = 4,
     InvalidRoomStatus = 5,
     LockUnavailable = 6,
-    AssigneeNotFound = 7
+    AssigneeNotFound = 7,
+    AssigneeOwnershipConflict = 8
 }
 
 public sealed record MaintenanceRequestPersistenceResult(

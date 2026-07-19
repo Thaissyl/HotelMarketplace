@@ -155,6 +155,7 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
         Guid hotelId,
         Guid requestId,
         Guid actorUserAccountId,
+        bool canOverrideAssignee,
         UpdateMaintenanceRequestStatusRequest request,
         CancellationToken cancellationToken)
     {
@@ -211,7 +212,7 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
             {
                 if (request.Status == MaintenanceStatus.InProgress)
                 {
-                    maintenanceRequest.Start(actorUserAccountId);
+                    maintenanceRequest.Start(actorUserAccountId, canOverrideAssignee);
                 }
                 else if (request.Status == MaintenanceStatus.Resolved)
                 {
@@ -222,7 +223,11 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
                         .Where(hotel => hotel.Id == hotelId)
                         .Select(hotel => hotel.RequiresRoomInspection)
                         .SingleAsync(cancellationToken);
-                    maintenanceRequest.Resolve(request.ResolutionNote!, _dateTimeProvider.UtcNow);
+                    maintenanceRequest.Resolve(
+                        actorUserAccountId,
+                        canOverrideAssignee,
+                        request.ResolutionNote!,
+                        _dateTimeProvider.UtcNow);
                     room.CompleteMaintenance(requiresRoomInspection);
 
                     await _dbContext.RoomStatusHistories.AddAsync(
@@ -270,10 +275,13 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
                     return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.InvalidTransition);
                 }
             }
-            catch (SharedKernel.Exceptions.DomainException)
+            catch (SharedKernel.Exceptions.DomainException exception)
             {
                 await transaction.RollbackAsync(cancellationToken);
-                return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.InvalidTransition);
+                return MaintenanceRequestPersistenceResult.Failure(
+                    exception.Code == "MaintenanceRequest.AssigneeOwnershipConflict"
+                        ? MaintenancePersistenceStatus.AssigneeOwnershipConflict
+                        : MaintenancePersistenceStatus.InvalidTransition);
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
