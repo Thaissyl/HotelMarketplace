@@ -13,4 +13,5 @@ public sealed record HotelDto(
     string? Description,
     HotelApprovalStatus ApprovalStatus,
     PublicationStatus PublicationStatus,
+    bool RequiresRoomInspection,
     DateTime CreatedAtUtc);

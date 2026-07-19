@@ -144,3 +144,29 @@ Residual work is intentionally recorded rather than hidden: Front Desk Mobile
 does not yet expose independent pre-checkout partial collection, dedicated Mobile
 commission-rate management remains pending, and Application.UnitTests still has
 no authored tests.
+
+## ALN-008 Verification
+
+The stay and room lifecycle was verified across Domain transitions, SQL Server
+integration flows, migration consistency, Mobile static analysis, and Android
+build output.
+
+| Command | Result |
+| --- | --- |
+| `dotnet build .\backend\HotelMarketplace.slnx --no-restore` | Passed; 0 warnings and 0 errors |
+| Domain unit tests | Passed; 15 tests |
+| API integration tests | Passed; 35 tests |
+| `dotnet ef migrations has-pending-model-changes` | Passed; model matches the latest migration |
+| `flutter analyze` | Passed; no issues found |
+| `flutter test` | Passed; 4 tests |
+| `flutter build apk --debug` | Passed; debug APK built successfully |
+
+ALN-008 coverage verifies required identity evidence, arrival-date-only check-in,
+atomic room pre-assignment and replacement, early check-in rejection, cleaning
+inspection, maintenance resolution and release evidence, and rejection of setup
+status bypass. The integration test database applies the additive migration,
+including legacy identity backfill, before exercising the API suite.
+
+Residual work remains explicit: hotel-local timezone policy is not modeled,
+task assignee ownership belongs to GAP-025, complete mutation audit/outbox belongs
+to ALN-009, and Application.UnitTests still has no authored tests.

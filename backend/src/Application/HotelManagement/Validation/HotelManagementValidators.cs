@@ -85,8 +85,8 @@ internal sealed class CreatePhysicalRoomRequestValidator : AbstractValidator<Cre
         RuleFor(request => request.RoomTypeId).NotEmpty();
         RuleFor(request => request.RoomNumber).SafeRequiredText(32, "Room number");
         RuleFor(request => request.InitialStatus)
-            .Must(status => status is RoomOperationalStatus.Available or RoomOperationalStatus.Dirty or RoomOperationalStatus.Maintenance or RoomOperationalStatus.OutOfService)
-            .WithMessage("Initial status must be Available, Dirty, Maintenance, or OutOfService.");
+            .Must(status => status is RoomOperationalStatus.Available or RoomOperationalStatus.Inactive)
+            .WithMessage("Initial status must be Available or Inactive.");
     }
 }
 
@@ -96,7 +96,7 @@ internal sealed class UpdatePhysicalRoomRequestValidator : AbstractValidator<Upd
     {
         RuleFor(request => request.RoomNumber).SafeRequiredText(32, "Room number");
         RuleFor(request => request.Status)
-            .Must(status => status is RoomOperationalStatus.Available or RoomOperationalStatus.Dirty or RoomOperationalStatus.Maintenance or RoomOperationalStatus.OutOfService or RoomOperationalStatus.Inactive)
-            .WithMessage("Status must be Available, Dirty, Maintenance, OutOfService, or Inactive.");
+            .Must(status => status is RoomOperationalStatus.Available or RoomOperationalStatus.Inactive)
+            .WithMessage("Setup status must be Available or Inactive.");
     }
 }

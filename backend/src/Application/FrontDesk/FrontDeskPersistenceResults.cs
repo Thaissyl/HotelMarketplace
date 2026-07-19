@@ -17,7 +17,8 @@ public enum FrontDeskPersistenceStatus
     InsufficientAvailability = 11,
     IncorrectCashAmount = 12,
     InvalidBookingStatusForNoShow = 13,
-    NoShowWindowNotReached = 14
+    NoShowWindowNotReached = 14,
+    CheckInDateNotReached = 15
 }
 
 public enum PaymentCollectionPersistenceStatus

@@ -198,7 +198,10 @@ class OperationsApi {
     required String bookingId,
     required List<String> physicalRoomIds,
     required String guestFullName,
+    required String identityDocumentType,
     required String identityDocumentNumber,
+    String? identityIssuingCountry,
+    DateTime? identityExpiryDate,
   }) {
     return _apiClient.post<FrontDeskBookingResult>(
       '/api/hotels/$hotelId/front-desk/bookings/$bookingId/check-in',
@@ -206,10 +209,28 @@ class OperationsApi {
       data: {
         'physicalRoomIds': physicalRoomIds,
         'guestFullName': guestFullName.trim(),
-        'identityDocumentNumber': identityDocumentNumber.trim().isEmpty
+        'identityDocumentType': identityDocumentType.trim(),
+        'identityDocumentNumber': identityDocumentNumber.trim(),
+        'identityIssuingCountry': identityIssuingCountry?.trim().isEmpty == true
             ? null
-            : identityDocumentNumber.trim(),
+            : identityIssuingCountry?.trim().toUpperCase(),
+        'identityExpiryDate': identityExpiryDate == null
+            ? null
+            : AppFormatters.apiDate(identityExpiryDate),
       },
+      decoder: FrontDeskBookingResult.fromJson,
+    );
+  }
+
+  Future<FrontDeskBookingResult> assignBookingRooms({
+    required String hotelId,
+    required String bookingId,
+    required List<String> physicalRoomIds,
+  }) {
+    return _apiClient.put<FrontDeskBookingResult>(
+      '/api/hotels/$hotelId/front-desk/bookings/$bookingId/room-assignments',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: {'physicalRoomIds': physicalRoomIds},
       decoder: FrontDeskBookingResult.fromJson,
     );
   }
@@ -263,6 +284,7 @@ class OperationsApi {
     required int guestCount,
     required String guestFullName,
     required String guestPhone,
+    required String identityDocumentType,
     required String identityDocumentNumber,
     required double cashCollectedAmount,
   }) {
@@ -278,6 +300,9 @@ class OperationsApi {
         'guestCount': guestCount,
         'guestFullName': guestFullName.trim(),
         'guestPhone': guestPhone.trim(),
+        'identityDocumentType': identityDocumentType.trim().isEmpty
+            ? null
+            : identityDocumentType.trim(),
         'identityDocumentNumber': identityDocumentNumber.trim().isEmpty
             ? null
             : identityDocumentNumber.trim(),
@@ -329,6 +354,18 @@ class OperationsApi {
       '/api/hotels/$hotelId/housekeeping/tasks/$taskId/assignee',
       options: AuthHeaderInterceptor.hotelScopedOptions(),
       data: {'assignedToUserAccountId': assignedToUserAccountId},
+      decoder: HousekeepingTask.fromJson,
+    );
+  }
+
+  Future<HousekeepingTask> completeHousekeepingInspection({
+    required String hotelId,
+    required String taskId,
+  }) {
+    return _apiClient.post<HousekeepingTask>(
+      '/api/hotels/$hotelId/housekeeping/tasks/$taskId/inspection',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: const <String, dynamic>{},
       decoder: HousekeepingTask.fromJson,
     );
   }
@@ -395,11 +432,17 @@ class OperationsApi {
     required String hotelId,
     required String requestId,
     required MaintenanceStatus status,
+    String? resolutionNote,
   }) {
     return _apiClient.patch<MaintenanceRequestItem>(
       '/api/hotels/$hotelId/maintenance/requests/$requestId/status',
       options: AuthHeaderInterceptor.hotelScopedOptions(),
-      data: {'status': status.apiValue},
+      data: {
+        'status': status.apiValue,
+        'resolutionNote': resolutionNote?.trim().isEmpty == true
+            ? null
+            : resolutionNote?.trim(),
+      },
       decoder: MaintenanceRequestItem.fromJson,
     );
   }

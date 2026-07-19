@@ -25,5 +25,6 @@ public enum PhysicalRoomPersistenceStatus
     DuplicateRoomNumber = 4,
     RoomIsOccupied = 5,
     InvalidRoomStatus = 6,
-    LockUnavailable = 7
+    LockUnavailable = 7,
+    OperationalLifecycleActive = 8
 }

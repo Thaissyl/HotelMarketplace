@@ -456,7 +456,11 @@ class _MaintenancePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final openItems = items
-        .where((item) => item.status != MaintenanceStatus.resolved.apiValue)
+        .where(
+          (item) =>
+              item.status != MaintenanceStatus.resolved.apiValue &&
+              item.status != MaintenanceStatus.released.apiValue,
+        )
         .take(3)
         .toList(growable: false);
 

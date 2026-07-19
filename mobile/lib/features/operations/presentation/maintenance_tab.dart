@@ -5,6 +5,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
+import '../../auth/application/auth_controller.dart';
 import '../application/operations_providers.dart';
 import '../domain/operations_models.dart';
 
@@ -506,6 +507,7 @@ class _MaintenanceStatusFilter extends StatelessWidget {
             MaintenanceStatus.open,
             MaintenanceStatus.inProgress,
             MaintenanceStatus.resolved,
+            MaintenanceStatus.released,
           ])
             Padding(
               padding: const EdgeInsets.only(right: AppSpacing.sm),
@@ -694,13 +696,17 @@ class _MaintenanceCard extends ConsumerStatefulWidget {
 class _MaintenanceCardState extends ConsumerState<_MaintenanceCard> {
   bool _loading = false;
 
-  Future<void> _setStatus(MaintenanceStatus status) async {
+  Future<void> _setStatus(
+    MaintenanceStatus status, {
+    String? resolutionNote,
+  }) async {
     setState(() => _loading = true);
     try {
       await ref.read(operationsApiProvider).updateMaintenanceRequestStatus(
             hotelId: widget.hotelId,
             requestId: widget.item.id,
             status: status,
+            resolutionNote: resolutionNote,
           );
       widget.onUpdated();
     } catch (error) {
@@ -714,9 +720,51 @@ class _MaintenanceCardState extends ConsumerState<_MaintenanceCard> {
     }
   }
 
+  Future<void> _resolve() async {
+    final controller = TextEditingController();
+    final note = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Complete repair'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'Resolution note',
+            hintText: 'Describe the repair and verification performed.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = controller.text.trim();
+              if (value.isNotEmpty) {
+                Navigator.of(context).pop(value);
+              }
+            },
+            child: const Text('Resolve'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (note != null && mounted) {
+      await _setStatus(MaintenanceStatus.resolved, resolutionNote: note);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
+    final roles = ref.watch(authControllerProvider).userSession?.roles ??
+        const <String>[];
+    final canRelease =
+        roles.contains('HotelManager') || roles.contains('PropertyOwner');
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -761,6 +809,13 @@ class _MaintenanceCardState extends ConsumerState<_MaintenanceCard> {
             ),
             const SizedBox(height: AppSpacing.md),
             Text(item.description),
+            if (item.resolutionNote?.isNotEmpty == true) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Resolution: ${item.resolutionNote}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             const SizedBox(height: AppSpacing.md),
             Wrap(
               spacing: AppSpacing.sm,
@@ -799,10 +854,22 @@ class _MaintenanceCardState extends ConsumerState<_MaintenanceCard> {
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: item.status == 'InProgress'
-                          ? () => _setStatus(MaintenanceStatus.resolved)
-                          : null,
-                      icon: const Icon(Icons.check_circle_outline_rounded),
-                      label: const Text('Resolve'),
+                          ? _resolve
+                          : item.status == 'Resolved' && canRelease
+                              ? () => _setStatus(MaintenanceStatus.released)
+                              : null,
+                      icon: Icon(
+                        item.status == 'Resolved'
+                            ? Icons.meeting_room_outlined
+                            : Icons.check_circle_outline_rounded,
+                      ),
+                      label: Text(
+                        item.status == 'Resolved'
+                            ? canRelease
+                                ? 'Inspect & release room'
+                                : 'Awaiting manager release'
+                            : 'Resolve repair',
+                      ),
                     ),
                   ),
                 ],

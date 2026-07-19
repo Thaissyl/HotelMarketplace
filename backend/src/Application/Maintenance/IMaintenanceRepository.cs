@@ -26,7 +26,7 @@ public interface IMaintenanceRepository
         Guid hotelId,
         Guid requestId,
         Guid actorUserAccountId,
-        MaintenanceStatus targetStatus,
+        UpdateMaintenanceRequestStatusRequest request,
         CancellationToken cancellationToken);
 
     Task<MaintenanceRequestPersistenceResult> AssignRequestAsync(

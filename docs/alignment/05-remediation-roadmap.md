@@ -103,6 +103,9 @@ complete invoice/folio balance facts.
 
 ### ALN-008 Stay and Room Lifecycle
 
+Status: Implemented and verified on `fix/aln-008-stay-room-lifecycle`.
+See [16-aln-008-stay-room-lifecycle.md](16-aln-008-stay-room-lifecycle.md).
+
 Enforce check-in date/identity rules, pre-assignment/change-room, checkout balance,
 Dirty to Cleaning to InspectionRequired/Available policy, maintenance completion
 versus room release, and protection from direct setup-status bypass.

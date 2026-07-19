@@ -9,5 +9,8 @@ public sealed record CreateWalkInBookingRequest(
     int GuestCount,
     string GuestFullName,
     string GuestPhone,
+    string? IdentityDocumentType,
     string? IdentityDocumentNumber,
+    string? IdentityIssuingCountry,
+    DateOnly? IdentityExpiryDate,
     decimal CashCollectedAmount);

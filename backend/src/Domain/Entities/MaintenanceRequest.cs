@@ -42,6 +42,10 @@ public sealed class MaintenanceRequest : Entity, IHotelScopedEntity
 
     public DateTime CreatedAtUtc { get; private set; }
 
+    public DateTime? ResolvedAtUtc { get; private set; }
+
+    public string? ResolutionNote { get; private set; }
+
     public void Assign(Guid assignedToUserAccountId)
     {
         Guard.NotEmpty(assignedToUserAccountId, nameof(AssignedToUserAccountId));
@@ -67,13 +71,27 @@ public sealed class MaintenanceRequest : Entity, IHotelScopedEntity
         Status = MaintenanceStatus.InProgress;
     }
 
-    public void Resolve()
+    public void Resolve(string resolutionNote, DateTime resolvedAtUtc)
     {
         if (Status != MaintenanceStatus.InProgress)
         {
             throw new SharedKernel.Exceptions.DomainException("MaintenanceRequest.InvalidResolveStatus", "Only in-progress maintenance requests can be resolved.");
         }
 
+        ResolutionNote = Guard.NotBlank(resolutionNote, nameof(ResolutionNote), 1000);
+        ResolvedAtUtc = resolvedAtUtc.Kind == DateTimeKind.Local
+            ? throw new SharedKernel.Exceptions.DomainException("MaintenanceRequest.InvalidResolvedTime", "Resolved time must be expressed in UTC.")
+            : DateTime.SpecifyKind(resolvedAtUtc, DateTimeKind.Utc);
         Status = MaintenanceStatus.Resolved;
+    }
+
+    public void Release()
+    {
+        if (Status != MaintenanceStatus.Resolved)
+        {
+            throw new SharedKernel.Exceptions.DomainException("MaintenanceRequest.InvalidReleaseStatus", "Only a resolved maintenance request can be released.");
+        }
+
+        Status = MaintenanceStatus.Released;
     }
 }

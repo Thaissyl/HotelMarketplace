@@ -158,7 +158,10 @@ internal sealed class MaintenanceService : IMaintenanceService
         UpdateMaintenanceRequestStatusRequest request,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, ViewAndUpdateRoles, cancellationToken);
+        IReadOnlyCollection<UserRoleCode> allowedRoles = request.Status == MaintenanceStatus.Released
+            ? new[] { UserRoleCode.HotelManager, UserRoleCode.PropertyOwner }
+            : ViewAndUpdateRoles;
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, allowedRoles, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<MaintenanceRequestDto>(authorizationFailure.Error);
@@ -175,7 +178,7 @@ internal sealed class MaintenanceService : IMaintenanceService
             hotelId,
             requestId,
             _currentUserService.UserId!.Value,
-            request.Status,
+            request,
             cancellationToken);
 
         return ToResult(result);

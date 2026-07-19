@@ -63,11 +63,23 @@ public sealed class HousekeepingTask : Entity, IHotelScopedEntity
         Status = HousekeepingTaskStatus.InProgress;
     }
 
-    public void Complete()
+    public void CompleteCleaning(bool requiresInspection)
     {
         if (Status != HousekeepingTaskStatus.InProgress)
         {
             throw new SharedKernel.Exceptions.DomainException("HousekeepingTask.InvalidCompleteStatus", "Only in-progress housekeeping tasks can be completed.");
+        }
+
+        Status = requiresInspection
+            ? HousekeepingTaskStatus.InspectionRequired
+            : HousekeepingTaskStatus.Completed;
+    }
+
+    public void CompleteInspection()
+    {
+        if (Status != HousekeepingTaskStatus.InspectionRequired)
+        {
+            throw new SharedKernel.Exceptions.DomainException("HousekeepingTask.InvalidInspectionStatus", "Only a task awaiting inspection can be completed.");
         }
 
         Status = HousekeepingTaskStatus.Completed;

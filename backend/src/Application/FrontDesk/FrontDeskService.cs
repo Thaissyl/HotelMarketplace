@@ -24,6 +24,7 @@ internal sealed class FrontDeskService : IFrontDeskService
     private readonly IHotelAccessAuthorizer _hotelAccessAuthorizer;
     private readonly IFrontDeskRepository _frontDeskRepository;
     private readonly IValidator<CheckInBookingRequest> _checkInValidator;
+    private readonly IValidator<AssignBookingRoomsRequest> _assignmentValidator;
     private readonly IValidator<CheckOutBookingRequest> _checkOutValidator;
     private readonly IValidator<CreateWalkInBookingRequest> _walkInValidator;
     private readonly IValidator<MarkBookingNoShowRequest> _noShowValidator;
@@ -34,6 +35,7 @@ internal sealed class FrontDeskService : IFrontDeskService
         IHotelAccessAuthorizer hotelAccessAuthorizer,
         IFrontDeskRepository frontDeskRepository,
         IValidator<CheckInBookingRequest> checkInValidator,
+        IValidator<AssignBookingRoomsRequest> assignmentValidator,
         IValidator<CheckOutBookingRequest> checkOutValidator,
         IValidator<CreateWalkInBookingRequest> walkInValidator,
         IValidator<MarkBookingNoShowRequest> noShowValidator,
@@ -43,6 +45,7 @@ internal sealed class FrontDeskService : IFrontDeskService
         _hotelAccessAuthorizer = hotelAccessAuthorizer;
         _frontDeskRepository = frontDeskRepository;
         _checkInValidator = checkInValidator;
+        _assignmentValidator = assignmentValidator;
         _checkOutValidator = checkOutValidator;
         _walkInValidator = walkInValidator;
         _noShowValidator = noShowValidator;
@@ -181,6 +184,33 @@ internal sealed class FrontDeskService : IFrontDeskService
         return ToResult(result);
     }
 
+    public async Task<Result<FrontDeskBookingDto>> AssignBookingRoomsAsync(
+        Guid hotelId,
+        Guid bookingId,
+        AssignBookingRoomsRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, cancellationToken);
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<FrontDeskBookingDto>(authorizationFailure.Error);
+        }
+
+        ValidationResult validationResult = await _assignmentValidator.ValidateAsync(request, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return Result.Failure<FrontDeskBookingDto>(
+                ValidationErrorFormatter.ToResultError("FrontDesk.InvalidRoomAssignmentRequest", validationResult));
+        }
+
+        return ToResult(await _frontDeskRepository.AssignBookingRoomsAsync(
+            hotelId,
+            bookingId,
+            _currentUserService.UserId!.Value,
+            request,
+            cancellationToken));
+    }
+
     public async Task<Result<PaymentCollectionSummaryDto>> GetPaymentCollectionSummaryAsync(
         Guid hotelId,
         Guid bookingId,
@@ -284,6 +314,7 @@ internal sealed class FrontDeskService : IFrontDeskService
             FrontDeskPersistenceStatus.LockUnavailable => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.LockUnavailable),
             FrontDeskPersistenceStatus.InvalidBookingStatusForNoShow => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.InvalidBookingStatusForNoShow),
             FrontDeskPersistenceStatus.NoShowWindowNotReached => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.NoShowWindowNotReached),
+            FrontDeskPersistenceStatus.CheckInDateNotReached => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.CheckInDateNotReached),
             _ => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.InvalidRoomAssignment)
         };
     }

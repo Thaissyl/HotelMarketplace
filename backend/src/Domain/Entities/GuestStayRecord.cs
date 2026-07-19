@@ -9,7 +9,16 @@ public sealed class GuestStayRecord : Entity, IHotelScopedEntity
         GuestFullName = string.Empty;
     }
 
-    public GuestStayRecord(Guid id, Guid hotelId, Guid bookingId, Guid checkedInByUserAccountId, string guestFullName, string? identityDocumentNumber = null)
+    public GuestStayRecord(
+        Guid id,
+        Guid hotelId,
+        Guid bookingId,
+        Guid checkedInByUserAccountId,
+        string guestFullName,
+        string identityDocumentType,
+        string identityDocumentNumber,
+        string? identityIssuingCountry = null,
+        DateOnly? identityExpiryDate = null)
         : base(id)
     {
         Guard.NotEmpty(hotelId, nameof(HotelId));
@@ -19,7 +28,10 @@ public sealed class GuestStayRecord : Entity, IHotelScopedEntity
         BookingId = bookingId;
         CheckedInByUserAccountId = checkedInByUserAccountId;
         GuestFullName = Guard.NotBlank(guestFullName, nameof(GuestFullName), 200);
-        IdentityDocumentNumber = Guard.Optional(identityDocumentNumber, nameof(IdentityDocumentNumber), 64);
+        IdentityDocumentType = Guard.NotBlank(identityDocumentType, nameof(IdentityDocumentType), 32);
+        IdentityDocumentNumber = Guard.NotBlank(identityDocumentNumber, nameof(IdentityDocumentNumber), 64);
+        IdentityIssuingCountry = Guard.Optional(identityIssuingCountry, nameof(IdentityIssuingCountry), 2)?.ToUpperInvariant();
+        IdentityExpiryDate = identityExpiryDate;
         CheckedInAtUtc = DateTime.UtcNow;
     }
 
@@ -33,7 +45,13 @@ public sealed class GuestStayRecord : Entity, IHotelScopedEntity
 
     public string GuestFullName { get; private set; }
 
-    public string? IdentityDocumentNumber { get; private set; }
+    public string IdentityDocumentType { get; private set; } = string.Empty;
+
+    public string IdentityDocumentNumber { get; private set; } = string.Empty;
+
+    public string? IdentityIssuingCountry { get; private set; }
+
+    public DateOnly? IdentityExpiryDate { get; private set; }
 
     public DateTime CheckedInAtUtc { get; private set; }
 

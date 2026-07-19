@@ -168,6 +168,10 @@ internal sealed class HotelManagementService : IHotelManagementService
         }
 
         hotel.UpdateProfile(request.Name, request.City, request.AddressLine, request.ContactEmail, request.ContactPhone, request.Description);
+        if (request.RequiresRoomInspection.HasValue)
+        {
+            hotel.ConfigureRoomInspection(request.RequiresRoomInspection.Value);
+        }
         await _repository.SaveChangesAsync(cancellationToken);
 
         return ToHotelDto(hotel);
@@ -468,6 +472,7 @@ internal sealed class HotelManagementService : IHotelManagementService
             hotel.Description,
             hotel.ApprovalStatus,
             hotel.PublicationStatus,
+            hotel.RequiresRoomInspection,
             hotel.CreatedAtUtc);
     }
 
@@ -503,6 +508,8 @@ internal sealed class HotelManagementService : IHotelManagementService
             PhysicalRoomPersistenceStatus.PhysicalRoomNotFound => Result.Failure<PhysicalRoomDto>(HotelManagementErrors.PhysicalRoomNotFound),
             PhysicalRoomPersistenceStatus.DuplicateRoomNumber => Result.Failure<PhysicalRoomDto>(HotelManagementErrors.DuplicateRoomNumber),
             PhysicalRoomPersistenceStatus.RoomIsOccupied => Result.Failure<PhysicalRoomDto>(HotelManagementErrors.RoomIsOccupied),
+            PhysicalRoomPersistenceStatus.InvalidRoomStatus => Result.Failure<PhysicalRoomDto>(HotelManagementErrors.OperationalLifecycleActive),
+            PhysicalRoomPersistenceStatus.OperationalLifecycleActive => Result.Failure<PhysicalRoomDto>(HotelManagementErrors.OperationalLifecycleActive),
             PhysicalRoomPersistenceStatus.LockUnavailable => Result.Failure<PhysicalRoomDto>(HotelManagementErrors.LockUnavailable),
             _ => Result.Failure<PhysicalRoomDto>(HotelManagementErrors.PhysicalRoomNotFound)
         };

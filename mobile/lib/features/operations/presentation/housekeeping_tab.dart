@@ -5,6 +5,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
+import '../../auth/application/auth_controller.dart';
 import '../application/operations_providers.dart';
 import '../domain/operations_models.dart';
 
@@ -204,6 +205,7 @@ class _HousekeepingStatusFilter extends StatelessWidget {
           for (final status in const [
             HousekeepingTaskStatus.open,
             HousekeepingTaskStatus.inProgress,
+            HousekeepingTaskStatus.inspectionRequired,
             HousekeepingTaskStatus.completed,
           ])
             Padding(
@@ -259,10 +261,33 @@ class _HousekeepingTaskCardState extends ConsumerState<_HousekeepingTaskCard> {
     }
   }
 
+  Future<void> _completeInspection() async {
+    setState(() => _loading = true);
+    try {
+      await ref.read(operationsApiProvider).completeHousekeepingInspection(
+            hotelId: widget.hotelId,
+            taskId: widget.task.id,
+          );
+      widget.onUpdated();
+    } catch (error) {
+      if (mounted) {
+        await AppErrorPresenter.showBottomSheet(context, error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final task = widget.task;
     final statusColor = _statusColor(task.status);
+    final roles = ref.watch(authControllerProvider).userSession?.roles ??
+        const <String>[];
+    final canInspect =
+        roles.contains('HotelManager') || roles.contains('PropertyOwner');
 
     return Card(
       child: Padding(
@@ -353,9 +378,21 @@ class _HousekeepingTaskCardState extends ConsumerState<_HousekeepingTaskCard> {
                     child: FilledButton.icon(
                       onPressed: task.status == 'InProgress'
                           ? () => _setStatus(HousekeepingTaskStatus.completed)
-                          : null,
-                      icon: const Icon(Icons.check_rounded),
-                      label: const Text('Mark clean'),
+                          : task.status == 'InspectionRequired' && canInspect
+                              ? _completeInspection
+                              : null,
+                      icon: Icon(
+                        task.status == 'InspectionRequired'
+                            ? Icons.fact_check_outlined
+                            : Icons.check_rounded,
+                      ),
+                      label: Text(
+                        task.status == 'InspectionRequired'
+                            ? canInspect
+                                ? 'Inspect & release'
+                                : 'Awaiting inspection'
+                            : 'Mark clean',
+                      ),
                     ),
                   ),
                 ],
@@ -370,6 +407,7 @@ class _HousekeepingTaskCardState extends ConsumerState<_HousekeepingTaskCard> {
     return switch (status) {
       'Open' => AppColors.warning,
       'InProgress' => AppColors.brand,
+      'InspectionRequired' => AppColors.warning,
       'Completed' => AppColors.success,
       _ => AppColors.subtleInk,
     };

@@ -6,4 +6,5 @@ public sealed record UpdateHotelProfileRequest(
     string AddressLine,
     string ContactEmail,
     string ContactPhone,
-    string? Description);
+    string? Description,
+    bool? RequiresRoomInspection);

@@ -22,4 +22,9 @@ public interface IHousekeepingService
         Guid taskId,
         AssignHousekeepingTaskRequest request,
         CancellationToken cancellationToken);
+
+    Task<Result<HousekeepingTaskDto>> CompleteInspectionAsync(
+        Guid hotelId,
+        Guid taskId,
+        CancellationToken cancellationToken);
 }

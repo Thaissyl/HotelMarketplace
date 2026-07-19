@@ -109,6 +109,7 @@ class _HotelProfileCardState extends ConsumerState<_HotelProfileCard> {
   late final TextEditingController _phone;
   late final TextEditingController _description;
   bool _saving = false;
+  late bool _requiresRoomInspection;
 
   @override
   void initState() {
@@ -119,6 +120,7 @@ class _HotelProfileCardState extends ConsumerState<_HotelProfileCard> {
     _email = TextEditingController(text: widget.hotel.contactEmail);
     _phone = TextEditingController(text: widget.hotel.contactPhone);
     _description = TextEditingController(text: widget.hotel.description);
+    _requiresRoomInspection = widget.hotel.requiresRoomInspection;
   }
 
   @override
@@ -148,6 +150,7 @@ class _HotelProfileCardState extends ConsumerState<_HotelProfileCard> {
               contactEmail: _email.text,
               contactPhone: _phone.text,
               description: _description.text,
+              requiresRoomInspection: _requiresRoomInspection,
             ),
           );
       ref.invalidate(ownerHotelProvider(widget.hotelId));
@@ -181,6 +184,18 @@ class _HotelProfileCardState extends ConsumerState<_HotelProfileCard> {
                 title: 'Hotel profile',
                 subtitle:
                     'This information is visible to guests after approval.',
+              ),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: _requiresRoomInspection,
+                onChanged: _saving
+                    ? null
+                    : (value) =>
+                        setState(() => _requiresRoomInspection = value),
+                title: const Text('Require room inspection'),
+                subtitle: const Text(
+                  'Cleaned and repaired rooms stay unavailable until a manager or owner releases them.',
+                ),
               ),
               const SizedBox(height: AppSpacing.md),
               AppTextFormField(
@@ -529,14 +544,9 @@ class _PhysicalRoomSectionState extends ConsumerState<_PhysicalRoomSection> {
               decoration: const InputDecoration(labelText: 'Initial status'),
               items: const [
                 DropdownMenuItem(value: 'Available', child: Text('Available')),
-                DropdownMenuItem(value: 'Dirty', child: Text('Dirty')),
                 DropdownMenuItem(
-                  value: 'Maintenance',
-                  child: Text('Maintenance'),
-                ),
-                DropdownMenuItem(
-                  value: 'OutOfService',
-                  child: Text('Out of service'),
+                  value: 'Inactive',
+                  child: Text('Inactive'),
                 ),
               ],
               onChanged: (value) {

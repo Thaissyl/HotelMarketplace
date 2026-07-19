@@ -215,6 +215,12 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
                 return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InvalidBookingStatusForCheckIn);
             }
 
+            if (booking.CheckInDate != _dateTimeProvider.Today)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.CheckInDateNotReached);
+            }
+
             if (booking.Rooms.Count != 1)
             {
                 await transaction.RollbackAsync(cancellationToken);
@@ -222,7 +228,19 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
             }
 
             BookingRoom bookingRoom = booking.Rooms.First();
-            List<Guid> requestedRoomIds = request.PhysicalRoomIds.Distinct().ToList();
+            List<BookingRoomAssignment> existingAssignments = await _dbContext.BookingRoomAssignments
+                .IgnoreQueryFilters()
+                .Where(assignment => assignment.BookingId == booking.Id && assignment.Status == RecordStatus.Active)
+                .ToListAsync(cancellationToken);
+            List<Guid> requestedRoomIds = request.PhysicalRoomIds.Count > 0
+                ? request.PhysicalRoomIds.Distinct().ToList()
+                : existingAssignments.Select(assignment => assignment.PhysicalRoomId).Distinct().ToList();
+            if (existingAssignments.Count > 0 &&
+                !requestedRoomIds.ToHashSet().SetEquals(existingAssignments.Select(assignment => assignment.PhysicalRoomId)))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InvalidRoomAssignment);
+            }
             if (requestedRoomIds.Count != bookingRoom.Quantity)
             {
                 await transaction.RollbackAsync(cancellationToken);
@@ -255,7 +273,10 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
                 .Where(room => requestedRoomIds.Contains(room.Id))
                 .ToListAsync(cancellationToken);
 
-            if (!RoomsMatchBooking(hotelId, bookingRoom.RoomTypeId, requestedRoomIds, rooms))
+            HashSet<Guid> preAssignedRoomIds = existingAssignments
+                .Select(assignment => assignment.PhysicalRoomId)
+                .ToHashSet();
+            if (!RoomsMatchBooking(hotelId, bookingRoom.RoomTypeId, requestedRoomIds, rooms, preAssignedRoomIds))
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InvalidRoomAssignment);
@@ -282,17 +303,20 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
                     new RoomStatusHistory(Guid.NewGuid(), hotelId, room.Id, oldStatus, room.Status, actorUserAccountId),
                     cancellationToken);
 
-                await _dbContext.BookingRoomAssignments.AddAsync(
-                    new BookingRoomAssignment(
-                        Guid.NewGuid(),
-                        hotelId,
-                        booking.Id,
-                        bookingRoom.Id,
-                        room.Id,
-                        booking.CheckInDate,
-                        booking.CheckOutDate,
-                        actorUserAccountId),
-                    cancellationToken);
+                if (!preAssignedRoomIds.Contains(room.Id))
+                {
+                    await _dbContext.BookingRoomAssignments.AddAsync(
+                        new BookingRoomAssignment(
+                            Guid.NewGuid(),
+                            hotelId,
+                            booking.Id,
+                            bookingRoom.Id,
+                            room.Id,
+                            booking.CheckInDate,
+                            booking.CheckOutDate,
+                            actorUserAccountId),
+                        cancellationToken);
+                }
             }
 
             booking.CheckIn();
@@ -303,13 +327,135 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
                 booking.Id,
                 actorUserAccountId,
                 request.GuestFullName,
-                request.IdentityDocumentNumber);
+                request.IdentityDocumentType,
+                request.IdentityDocumentNumber,
+                request.IdentityIssuingCountry,
+                request.IdentityExpiryDate);
 
             await _dbContext.GuestStayRecords.AddAsync(stayRecord, cancellationToken);
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
             return FrontDeskPersistenceResult.Success(await ToFrontDeskBookingDtoAsync(booking.Id, stayRecord.Id, null, cancellationToken));
+        });
+    }
+
+    public async Task<FrontDeskPersistenceResult> AssignBookingRoomsAsync(
+        Guid hotelId,
+        Guid bookingId,
+        Guid actorUserAccountId,
+        AssignBookingRoomsRequest request,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            if (!await SqlApplicationLock.AcquireBookingLockAsync(_dbContext, bookingId, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.LockUnavailable);
+            }
+
+            Booking? booking = await _dbContext.Bookings
+                .IgnoreQueryFilters()
+                .Include(entity => entity.Rooms)
+                .FirstOrDefaultAsync(entity => entity.Id == bookingId && entity.HotelId == hotelId, cancellationToken);
+            if (booking is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.BookingNotFound);
+            }
+
+            if (booking.Status != BookingStatus.Confirmed || booking.Rooms.Count != 1)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InvalidBookingStatusForCheckIn);
+            }
+
+            BookingRoom bookingRoom = booking.Rooms.Single();
+            List<Guid> requestedRoomIds = request.PhysicalRoomIds.Distinct().ToList();
+            if (requestedRoomIds.Count != bookingRoom.Quantity)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InvalidRoomAssignment);
+            }
+
+            if (!await _inventoryCommitmentCoordinator.AcquireRoomTypeLockAsync(hotelId, bookingRoom.RoomTypeId, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.LockUnavailable);
+            }
+
+            List<BookingRoomAssignment> currentAssignments = await _dbContext.BookingRoomAssignments
+                .IgnoreQueryFilters()
+                .Where(assignment => assignment.BookingId == bookingId && assignment.Status == RecordStatus.Active)
+                .ToListAsync(cancellationToken);
+            List<Guid> currentRoomIds = currentAssignments.Select(assignment => assignment.PhysicalRoomId).ToList();
+            List<Guid> allRoomIds = requestedRoomIds.Concat(currentRoomIds).Distinct().ToList();
+            if (!await SqlApplicationLock.AcquireRoomLocksAsync(_dbContext, hotelId, allRoomIds, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.LockUnavailable);
+            }
+
+            List<PhysicalRoom> rooms = await _dbContext.PhysicalRooms
+                .IgnoreQueryFilters()
+                .Where(room => allRoomIds.Contains(room.Id))
+                .ToListAsync(cancellationToken);
+            Dictionary<Guid, PhysicalRoom> roomsById = rooms.ToDictionary(room => room.Id);
+            HashSet<Guid> currentRoomIdSet = currentRoomIds.ToHashSet();
+            if (!RoomsMatchBooking(hotelId, bookingRoom.RoomTypeId, requestedRoomIds, rooms.Where(room => requestedRoomIds.Contains(room.Id)).ToList(), currentRoomIdSet))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InvalidRoomAssignment);
+            }
+
+            if (await HasActiveAssignmentOverlapAsync(requestedRoomIds, booking.CheckInDate, booking.CheckOutDate, booking.Id, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.RoomAssignmentOverlap);
+            }
+
+            try
+            {
+                foreach (BookingRoomAssignment assignment in currentAssignments.Where(assignment => !requestedRoomIds.Contains(assignment.PhysicalRoomId)))
+                {
+                    PhysicalRoom room = roomsById[assignment.PhysicalRoomId];
+                    RoomOperationalStatus oldStatus = room.Status;
+                    assignment.Deactivate();
+                    room.ReleaseAssignment();
+                    await _dbContext.RoomStatusHistories.AddAsync(
+                        new RoomStatusHistory(Guid.NewGuid(), hotelId, room.Id, oldStatus, room.Status, actorUserAccountId),
+                        cancellationToken);
+                }
+
+                foreach (Guid roomId in requestedRoomIds.Where(roomId => !currentRoomIdSet.Contains(roomId)))
+                {
+                    PhysicalRoom room = roomsById[roomId];
+                    RoomOperationalStatus oldStatus = room.Status;
+                    room.AssignForStay();
+                    await _dbContext.BookingRoomAssignments.AddAsync(
+                        new BookingRoomAssignment(Guid.NewGuid(), hotelId, booking.Id, bookingRoom.Id, room.Id, booking.CheckInDate, booking.CheckOutDate, actorUserAccountId),
+                        cancellationToken);
+                    await _dbContext.RoomStatusHistories.AddAsync(
+                        new RoomStatusHistory(Guid.NewGuid(), hotelId, room.Id, oldStatus, room.Status, actorUserAccountId),
+                        cancellationToken);
+                }
+            }
+            catch (SharedKernel.Exceptions.DomainException)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InvalidRoomAssignment);
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return FrontDeskPersistenceResult.Success(await ToFrontDeskBookingDtoAsync(booking.Id, null, null, cancellationToken));
         });
     }
 
@@ -668,7 +814,10 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
                     booking.Id,
                     actorUserAccountId,
                     request.GuestFullName,
-                    request.IdentityDocumentNumber);
+                    request.IdentityDocumentType!,
+                    request.IdentityDocumentNumber!,
+                    request.IdentityIssuingCountry,
+                    request.IdentityExpiryDate);
                 await _dbContext.GuestStayRecords.AddAsync(stayRecord, cancellationToken);
             }
 
@@ -994,13 +1143,15 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
         Guid hotelId,
         Guid roomTypeId,
         List<Guid> requestedRoomIds,
-        List<PhysicalRoom> rooms)
+        List<PhysicalRoom> rooms,
+        HashSet<Guid>? existingAssignmentRoomIds = null)
     {
         return rooms.Count == requestedRoomIds.Count &&
             rooms.All(room => room.HotelId == hotelId &&
                 room.RoomTypeId == roomTypeId &&
                 requestedRoomIds.Contains(room.Id) &&
-                room.Status == RoomOperationalStatus.Available);
+                (room.Status == RoomOperationalStatus.Available ||
+                    (room.Status == RoomOperationalStatus.Assigned && existingAssignmentRoomIds?.Contains(room.Id) == true)));
     }
 
     private async Task<FrontDeskBookingDto> ToFrontDeskBookingDtoAsync(
@@ -1018,7 +1169,7 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
             from assignment in _dbContext.BookingRoomAssignments.IgnoreQueryFilters().AsNoTracking()
             join room in _dbContext.PhysicalRooms.IgnoreQueryFilters().AsNoTracking()
                 on assignment.PhysicalRoomId equals room.Id
-            where assignment.BookingId == bookingId
+            where assignment.BookingId == bookingId && assignment.Status == RecordStatus.Active
             orderby room.RoomNumber
             select new AssignedPhysicalRoomDto(room.Id, room.RoomNumber, room.RoomTypeId, room.Status))
             .ToListAsync(cancellationToken);

@@ -22,4 +22,5 @@ public static class FrontDeskErrors
     public static readonly ResultError InvalidNoShowRequest = new("FrontDesk.InvalidNoShowRequest", "The no-show request is invalid.");
     public static readonly ResultError InvalidBookingStatusForNoShow = new("FrontDesk.InvalidBookingStatusForNoShow", "Only confirmed bookings can be marked as no-show.");
     public static readonly ResultError NoShowWindowNotReached = new("FrontDesk.NoShowWindowNotReached", "The booking cannot be marked as no-show before the configured operational window has elapsed.");
+    public static readonly ResultError CheckInDateNotReached = new("FrontDesk.CheckInDateNotReached", "Check-in is allowed only on the booking arrival date.");
 }

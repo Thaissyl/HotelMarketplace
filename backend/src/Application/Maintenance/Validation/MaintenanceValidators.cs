@@ -33,8 +33,11 @@ internal sealed class UpdateMaintenanceRequestStatusRequestValidator : AbstractV
     public UpdateMaintenanceRequestStatusRequestValidator()
     {
         RuleFor(request => request.Status)
-            .Must(status => status is MaintenanceStatus.InProgress or MaintenanceStatus.Resolved)
-            .WithMessage("Maintenance requests can only be moved to InProgress or Resolved through this workflow.");
+            .Must(status => status is MaintenanceStatus.InProgress or MaintenanceStatus.Resolved or MaintenanceStatus.Released)
+            .WithMessage("Maintenance requests can only be moved to InProgress, Resolved, or Released through this workflow.");
+        RuleFor(request => request.ResolutionNote!)
+            .SafeRequiredText(1000, "Resolution note")
+            .When(request => request.Status == MaintenanceStatus.Resolved);
     }
 }
 

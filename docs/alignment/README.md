@@ -47,6 +47,7 @@ to the canonical SRS and SDD.
 | [13-aln-005-cancellation-refund-no-show.md](13-aln-005-cancellation-refund-no-show.md) | ALN-005 cancellation, refund initiation, no-show, and lock-order evidence |
 | [14-aln-006-availability-calendar.md](14-aln-006-availability-calendar.md) | ALN-006 availability calendar, permissions, interval, marketplace, and concurrency evidence |
 | [15-aln-007-dual-collection-finance.md](15-aln-007-dual-collection-finance.md) | ALN-007 dual collection, reconciliation, settlement, and invoice invariants |
+| [16-aln-008-stay-room-lifecycle.md](16-aln-008-stay-room-lifecycle.md) | ALN-008 check-in identity, room assignment, inspection, maintenance release, and setup safeguards |
 | [workstreams](workstreams/README.md) | Detailed reviews by business capability |
 
 ## Completion Criteria

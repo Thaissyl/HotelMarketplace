@@ -18,9 +18,9 @@ public sealed class PhysicalRoom : Entity, IHotelScopedEntity
         HotelId = hotelId;
         RoomTypeId = roomTypeId;
         RoomNumber = Guard.NotBlank(roomNumber, nameof(RoomNumber), 32);
-        Status = initialStatus is RoomOperationalStatus.Available or RoomOperationalStatus.Dirty or RoomOperationalStatus.Maintenance or RoomOperationalStatus.OutOfService
+        Status = initialStatus is RoomOperationalStatus.Available or RoomOperationalStatus.Inactive
             ? initialStatus
-            : throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.InvalidInitialStatus", "Initial room status must be Available, Dirty, Maintenance, or OutOfService.");
+            : throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.InvalidInitialStatus", "Initial room status must be Available or Inactive.");
     }
 
     public Guid HotelId { get; private set; }
@@ -38,14 +38,14 @@ public sealed class PhysicalRoom : Entity, IHotelScopedEntity
 
     public void ChangeSetupStatus(RoomOperationalStatus status)
     {
-        if (status is not (RoomOperationalStatus.Available or RoomOperationalStatus.Dirty or RoomOperationalStatus.Maintenance or RoomOperationalStatus.OutOfService or RoomOperationalStatus.Inactive))
+        if (status is not (RoomOperationalStatus.Available or RoomOperationalStatus.Inactive))
         {
-            throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.InvalidSetupStatus", "Setup status must be Available, Dirty, Maintenance, OutOfService, or Inactive.");
+            throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.InvalidSetupStatus", "Setup may only activate or deactivate a room.");
         }
 
-        if (Status == RoomOperationalStatus.Occupied && status == RoomOperationalStatus.Inactive)
+        if (Status != status && Status is not (RoomOperationalStatus.Available or RoomOperationalStatus.Inactive))
         {
-            throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.OccupiedRoomCannotBeInactive", "An occupied room cannot be inactivated.");
+            throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.OperationalStatusCannotBeOverridden", "An operational room status cannot be changed through hotel setup.");
         }
 
         Status = status;
@@ -103,11 +103,23 @@ public sealed class PhysicalRoom : Entity, IHotelScopedEntity
         Status = RoomOperationalStatus.Cleaning;
     }
 
-    public void CompleteHousekeeping()
+    public void CompleteHousekeeping(bool requiresInspection)
     {
         if (Status != RoomOperationalStatus.Cleaning)
         {
             throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.InvalidHousekeepingCompleteStatus", "Only rooms in cleaning can become available.");
+        }
+
+        Status = requiresInspection
+            ? RoomOperationalStatus.InspectionRequired
+            : RoomOperationalStatus.Available;
+    }
+
+    public void CompleteInspection()
+    {
+        if (Status != RoomOperationalStatus.InspectionRequired)
+        {
+            throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.InvalidInspectionStatus", "Only a room awaiting inspection can be released as available.");
         }
 
         Status = RoomOperationalStatus.Available;
@@ -128,13 +140,15 @@ public sealed class PhysicalRoom : Entity, IHotelScopedEntity
         Status = blockedStatus;
     }
 
-    public void ReleaseFromMaintenance()
+    public void CompleteMaintenance(bool requiresInspection)
     {
         if (Status is not (RoomOperationalStatus.Maintenance or RoomOperationalStatus.OutOfService))
         {
             throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.InvalidMaintenanceReleaseStatus", "Only rooms under maintenance or out of service can be released.");
         }
 
-        Status = RoomOperationalStatus.Available;
+        Status = requiresInspection
+            ? RoomOperationalStatus.InspectionRequired
+            : RoomOperationalStatus.Dirty;
     }
 }

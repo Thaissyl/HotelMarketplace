@@ -231,6 +231,7 @@ public sealed class OwnerHotelsController : ControllerBase
             "HotelManagement.DuplicateRoomNumber" => StatusCodes.Status409Conflict,
             "HotelManagement.RoomTypeHasFutureBookings" => StatusCodes.Status409Conflict,
             "HotelManagement.RoomIsOccupied" => StatusCodes.Status409Conflict,
+            "HotelManagement.OperationalLifecycleActive" => StatusCodes.Status409Conflict,
             "HotelManagement.LockUnavailable" => StatusCodes.Status423Locked,
             "HotelManagement.DuplicateStaffEmail" => StatusCodes.Status409Conflict,
             "HotelManagement.DuplicateStaffPhoneNumber" => StatusCodes.Status409Conflict,

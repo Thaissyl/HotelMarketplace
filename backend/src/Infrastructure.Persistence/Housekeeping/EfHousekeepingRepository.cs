@@ -114,6 +114,13 @@ internal sealed class EfHousekeepingRepository : IHousekeepingRepository
                 return HousekeepingTaskUpdateResult.Failure(HousekeepingPersistenceStatus.RoomNotFound);
             }
 
+            bool requiresRoomInspection = await _dbContext.HotelProperties
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(hotel => hotel.Id == hotelId)
+                .Select(hotel => hotel.RequiresRoomInspection)
+                .SingleAsync(cancellationToken);
+
             try
             {
                 RoomOperationalStatus oldStatus = room.Status;
@@ -125,8 +132,8 @@ internal sealed class EfHousekeepingRepository : IHousekeepingRepository
                 }
                 else if (targetStatus == HousekeepingTaskStatus.Completed)
                 {
-                    task.Complete();
-                    room.CompleteHousekeeping();
+                    task.CompleteCleaning(requiresRoomInspection);
+                    room.CompleteHousekeeping(requiresRoomInspection);
                 }
                 else
                 {
@@ -150,6 +157,71 @@ internal sealed class EfHousekeepingRepository : IHousekeepingRepository
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
+            return HousekeepingTaskUpdateResult.Success(await ToDtoAsync(task.Id, cancellationToken));
+        });
+    }
+
+    public async Task<HousekeepingTaskUpdateResult> CompleteInspectionAsync(
+        Guid hotelId,
+        Guid taskId,
+        Guid actorUserAccountId,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            if (!await SqlApplicationLock.AcquireExclusiveAsync(_dbContext, $"housekeeping:{hotelId:N}:{taskId:N}", cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return HousekeepingTaskUpdateResult.Failure(HousekeepingPersistenceStatus.LockUnavailable);
+            }
+
+            HousekeepingTask? task = await _dbContext.HousekeepingTasks
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(entity => entity.Id == taskId && entity.HotelId == hotelId, cancellationToken);
+            if (task is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return HousekeepingTaskUpdateResult.Failure(HousekeepingPersistenceStatus.TaskNotFound);
+            }
+
+            if (!await SqlApplicationLock.AcquireRoomLocksAsync(_dbContext, hotelId, new[] { task.PhysicalRoomId }, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return HousekeepingTaskUpdateResult.Failure(HousekeepingPersistenceStatus.LockUnavailable);
+            }
+
+            PhysicalRoom? room = await _dbContext.PhysicalRooms
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(entity => entity.Id == task.PhysicalRoomId && entity.HotelId == hotelId, cancellationToken);
+            if (room is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return HousekeepingTaskUpdateResult.Failure(HousekeepingPersistenceStatus.RoomNotFound);
+            }
+
+            try
+            {
+                RoomOperationalStatus oldStatus = room.Status;
+                task.CompleteInspection();
+                room.CompleteInspection();
+                await _dbContext.RoomStatusHistories.AddAsync(
+                    new RoomStatusHistory(Guid.NewGuid(), hotelId, room.Id, oldStatus, room.Status, actorUserAccountId),
+                    cancellationToken);
+            }
+            catch (SharedKernel.Exceptions.DomainException)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return HousekeepingTaskUpdateResult.Failure(HousekeepingPersistenceStatus.InvalidTransition);
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return HousekeepingTaskUpdateResult.Success(await ToDtoAsync(task.Id, cancellationToken));
         });
     }

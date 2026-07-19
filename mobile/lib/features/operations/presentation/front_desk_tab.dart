@@ -257,6 +257,10 @@ class _BookingQueuePanel extends ConsumerWidget {
       await _showCheckInSheet(context, ref, booking);
     }
 
+    if (action == _BookingDetailAction.assignRoom && context.mounted) {
+      await _showRoomAssignmentSheet(context, ref, booking);
+    }
+
     if (action == _BookingDetailAction.checkOut && context.mounted) {
       await _showCheckOutSheet(context, ref, booking);
     }
@@ -295,6 +299,36 @@ class _BookingQueuePanel extends ConsumerWidget {
           FrontDeskBookingsRequest(
             hotelId: hotelId,
             status: FrontDeskBookingListStatus.checkedIn,
+          ),
+        ),
+      );
+      if (context.mounted) {
+        _showResult(context, result);
+      }
+    }
+  }
+
+  Future<void> _showRoomAssignmentSheet(
+    BuildContext context,
+    WidgetRef ref,
+    FrontDeskBookingSummary booking,
+  ) async {
+    final result = await showModalBottomSheet<FrontDeskBookingResult>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _RoomAssignmentSheet(
+        hotelId: hotelId,
+        booking: booking,
+      ),
+    );
+
+    if (result != null) {
+      ref.invalidate(
+        frontDeskBookingsProvider(
+          FrontDeskBookingsRequest(
+            hotelId: hotelId,
+            status: FrontDeskBookingListStatus.confirmed,
           ),
         ),
       );
@@ -440,6 +474,7 @@ class _FrontDeskBookingCard extends StatelessWidget {
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: _BookingActionButton(
+                      booking: booking,
                       mode: mode,
                       onCheckIn: onCheckIn,
                       onCheckOut: onCheckOut,
@@ -457,22 +492,28 @@ class _FrontDeskBookingCard extends StatelessWidget {
 
 class _BookingActionButton extends StatelessWidget {
   const _BookingActionButton({
+    required this.booking,
     required this.mode,
     required this.onCheckIn,
     required this.onCheckOut,
   });
 
+  final FrontDeskBookingSummary booking;
   final _QueueMode mode;
   final VoidCallback onCheckIn;
   final VoidCallback onCheckOut;
 
   @override
   Widget build(BuildContext context) {
+    final isArrivalToday = DateUtils.isSameDay(
+      booking.checkInDate,
+      DateTime.now(),
+    );
     return switch (mode) {
       _QueueMode.checkIn => FilledButton.icon(
-          onPressed: onCheckIn,
+          onPressed: isArrivalToday ? onCheckIn : null,
           icon: const Icon(Icons.key_rounded),
-          label: const Text('Check in'),
+          label: Text(isArrivalToday ? 'Check in' : 'Upcoming arrival'),
         ),
       _QueueMode.checkOut => FilledButton.icon(
           onPressed: onCheckOut,
@@ -530,7 +571,7 @@ class _BookingDetailGrid extends StatelessWidget {
   }
 }
 
-enum _BookingDetailAction { checkIn, checkOut, noShow }
+enum _BookingDetailAction { assignRoom, checkIn, checkOut, noShow }
 
 class _BookingDetailsSheet extends StatelessWidget {
   const _BookingDetailsSheet({
@@ -593,11 +634,26 @@ class _BookingDetailsSheet extends StatelessWidget {
           ],
         ),
         if (mode == _QueueMode.checkIn) ...[
-          FilledButton.icon(
+          OutlinedButton.icon(
             onPressed: () =>
-                Navigator.of(context).pop(_BookingDetailAction.checkIn),
+                Navigator.of(context).pop(_BookingDetailAction.assignRoom),
+            icon: const Icon(Icons.meeting_room_outlined),
+            label: Text(
+              booking.assignedRooms.isEmpty
+                  ? 'Pre-assign room'
+                  : 'Change assigned room',
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          FilledButton.icon(
+            onPressed: DateUtils.isSameDay(
+              booking.checkInDate,
+              DateTime.now(),
+            )
+                ? () => Navigator.of(context).pop(_BookingDetailAction.checkIn)
+                : null,
             icon: const Icon(Icons.key_rounded),
-            label: const Text('Assign room & check in'),
+            label: const Text('Verify identity & check in'),
           ),
           const SizedBox(height: AppSpacing.sm),
           OutlinedButton.icon(
@@ -677,6 +733,90 @@ class _DetailsRow extends StatelessWidget {
   }
 }
 
+class _RoomAssignmentSheet extends ConsumerStatefulWidget {
+  const _RoomAssignmentSheet({required this.hotelId, required this.booking});
+
+  final String hotelId;
+  final FrontDeskBookingSummary booking;
+
+  @override
+  ConsumerState<_RoomAssignmentSheet> createState() =>
+      _RoomAssignmentSheetState();
+}
+
+class _RoomAssignmentSheetState extends ConsumerState<_RoomAssignmentSheet> {
+  late final Set<String> _selectedRoomIds;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedRoomIds =
+        widget.booking.assignedRooms.map((room) => room.physicalRoomId).toSet();
+  }
+
+  Future<void> _submit() async {
+    if (_selectedRoomIds.length != widget.booking.roomQuantity) {
+      AppErrorPresenter.showSnackBar(
+        context,
+        'Select exactly ${widget.booking.roomQuantity} room(s).',
+      );
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final result = await ref.read(operationsApiProvider).assignBookingRooms(
+            hotelId: widget.hotelId,
+            bookingId: widget.booking.bookingId,
+            physicalRoomIds: _selectedRoomIds.toList(growable: false),
+          );
+      if (mounted) {
+        Navigator.of(context).pop(result);
+      }
+    } catch (error) {
+      if (mounted) {
+        await AppErrorPresenter.showBottomSheet(context, error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SheetScaffold(
+      title: 'Room assignment',
+      children: [
+        _BookingDetailGrid(booking: widget.booking),
+        Text(
+          'Reserve the physical room before arrival. Changing this selection releases the previous assignment atomically.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        _RoomPicker(
+          hotelId: widget.hotelId,
+          roomTypeId: widget.booking.roomTypeId,
+          selectedRoomIds: _selectedRoomIds,
+          maximumSelections: widget.booking.roomQuantity,
+          onChanged: () => setState(() {}),
+        ),
+        FilledButton.icon(
+          onPressed: _loading ? null : _submit,
+          icon: _loading
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.meeting_room_rounded),
+          label: const Text('Save room assignment'),
+        ),
+      ],
+    );
+  }
+}
+
 class _CheckInSheet extends ConsumerStatefulWidget {
   const _CheckInSheet({
     required this.hotelId,
@@ -693,28 +833,35 @@ class _CheckInSheet extends ConsumerStatefulWidget {
 class _CheckInSheetState extends ConsumerState<_CheckInSheet> {
   late final TextEditingController _guestName;
   final _identity = TextEditingController();
-  final Set<String> _selectedRoomIds = {};
+  final _issuingCountry = TextEditingController();
+  late final Set<String> _selectedRoomIds;
+  String _identityType = 'NationalId';
+  DateTime? _identityExpiryDate;
   bool _loading = false;
 
   @override
   void initState() {
     super.initState();
     _guestName = TextEditingController(text: widget.booking.guestFullName);
+    _selectedRoomIds =
+        widget.booking.assignedRooms.map((room) => room.physicalRoomId).toSet();
   }
 
   @override
   void dispose() {
     _guestName.dispose();
     _identity.dispose();
+    _issuingCountry.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     if (_guestName.text.trim().isEmpty ||
+        _identity.text.trim().isEmpty ||
         _selectedRoomIds.length != widget.booking.roomQuantity) {
       AppErrorPresenter.showSnackBar(
         context,
-        'Select ${widget.booking.roomQuantity} available room(s) and confirm guest name.',
+        'Select ${widget.booking.roomQuantity} room(s), confirm the guest name, and enter the identity document number.',
       );
       return;
     }
@@ -726,7 +873,10 @@ class _CheckInSheetState extends ConsumerState<_CheckInSheet> {
             bookingId: widget.booking.bookingId,
             physicalRoomIds: _selectedRoomIds.toList(growable: false),
             guestFullName: _guestName.text,
+            identityDocumentType: _identityType,
             identityDocumentNumber: _identity.text,
+            identityIssuingCountry: _issuingCountry.text,
+            identityExpiryDate: _identityExpiryDate,
           );
 
       if (mounted) {
@@ -756,6 +906,50 @@ class _CheckInSheetState extends ConsumerState<_CheckInSheet> {
         AppTextFormField(
           controller: _identity,
           labelText: 'Identity document number',
+        ),
+        DropdownButtonFormField<String>(
+          initialValue: _identityType,
+          decoration: const InputDecoration(
+            labelText: 'Identity document type',
+            prefixIcon: Icon(Icons.badge_outlined),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'NationalId', child: Text('National ID')),
+            DropdownMenuItem(value: 'Passport', child: Text('Passport')),
+            DropdownMenuItem(
+              value: 'DriverLicense',
+              child: Text('Driver license'),
+            ),
+          ],
+          onChanged: _loading
+              ? null
+              : (value) => setState(() => _identityType = value!),
+        ),
+        AppTextFormField(
+          controller: _issuingCountry,
+          labelText: 'Issuing country code (optional)',
+        ),
+        OutlinedButton.icon(
+          onPressed: _loading
+              ? null
+              : () async {
+                  final date = await showDatePicker(
+                    context: context,
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 7300)),
+                    initialDate: _identityExpiryDate ??
+                        DateTime.now().add(const Duration(days: 365)),
+                  );
+                  if (date != null && mounted) {
+                    setState(() => _identityExpiryDate = date);
+                  }
+                },
+          icon: const Icon(Icons.event_available_outlined),
+          label: Text(
+            _identityExpiryDate == null
+                ? 'Add expiry date (optional)'
+                : 'Expires ${AppFormatters.displayDate(_identityExpiryDate!)}',
+          ),
         ),
         _RoomPicker(
           hotelId: widget.hotelId,
@@ -1028,6 +1222,7 @@ class _WalkInPanel extends ConsumerStatefulWidget {
 class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
   final _guestName = TextEditingController();
   final _guestPhone = TextEditingController();
+  final _identityDocumentNumber = TextEditingController();
   final _cash = TextEditingController(text: '0');
   final Set<String> _selectedRoomIds = {};
   String? _selectedRoomTypeId;
@@ -1042,6 +1237,7 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
   void dispose() {
     _guestName.dispose();
     _guestPhone.dispose();
+    _identityDocumentNumber.dispose();
     _cash.dispose();
     super.dispose();
   }
@@ -1050,11 +1246,12 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
     if (_guestName.text.trim().isEmpty ||
         _guestPhone.text.trim().length != 10 ||
         _selectedRoomTypeId == null ||
+        (_assignRoomsNow && _identityDocumentNumber.text.trim().isEmpty) ||
         (_assignRoomsNow && _selectedRoomIds.length != _roomCount)) {
       AppErrorPresenter.showSnackBar(
         context,
         _assignRoomsNow
-            ? 'Select exactly $_roomCount rooms, and enter the guest name and 10-digit phone.'
+            ? 'Select exactly $_roomCount rooms, and enter the guest name, phone, and identity document.'
             : 'Room type, guest name, and 10-digit phone are required.',
       );
       return;
@@ -1074,7 +1271,9 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
             guestCount: _guestCount,
             guestFullName: _guestName.text,
             guestPhone: _guestPhone.text,
-            identityDocumentNumber: '',
+            identityDocumentType: _assignRoomsNow ? 'NationalId' : '',
+            identityDocumentNumber:
+                _assignRoomsNow ? _identityDocumentNumber.text : '',
             cashCollectedAmount: double.tryParse(_cash.text) ?? 0,
           );
       if (mounted) {
@@ -1206,6 +1405,11 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
             LengthLimitingTextInputFormatter(10),
           ],
         ),
+        if (_assignRoomsNow)
+          AppTextFormField(
+            controller: _identityDocumentNumber,
+            labelText: 'Guest identity document number',
+          ),
         TextField(
           controller: _cash,
           readOnly: true,
@@ -1371,8 +1575,12 @@ class _RoomPicker extends ConsumerWidget {
             const SizedBox(height: AppSpacing.sm),
             rooms.when(
               data: (items) {
-                final available =
-                    items.where((room) => room.isAvailable).toList();
+                final available = items
+                    .where(
+                      (room) =>
+                          room.isAvailable || selectedRoomIds.contains(room.id),
+                    )
+                    .toList();
                 if (available.isEmpty) {
                   return const Text('No available room can be loaded.');
                 }

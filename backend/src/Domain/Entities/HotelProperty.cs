@@ -42,6 +42,7 @@ public sealed class HotelProperty : Entity, IHotelScopedEntity
         PublicationStatus = PublicationStatus.Unpublished;
         DefaultCommissionRate = 0.10m;
         IsWalkInEnabled = true;
+        RequiresRoomInspection = true;
         CreatedAtUtc = DateTime.UtcNow;
     }
 
@@ -68,6 +69,8 @@ public sealed class HotelProperty : Entity, IHotelScopedEntity
     public decimal DefaultCommissionRate { get; private set; }
 
     public bool IsWalkInEnabled { get; private set; }
+
+    public bool RequiresRoomInspection { get; private set; }
 
     public DateTime CreatedAtUtc { get; private set; }
 
@@ -127,5 +130,10 @@ public sealed class HotelProperty : Entity, IHotelScopedEntity
     {
         Guard.Rate(commissionRate, nameof(DefaultCommissionRate), 0.30m);
         DefaultCommissionRate = commissionRate;
+    }
+
+    public void ConfigureRoomInspection(bool requiresRoomInspection)
+    {
+        RequiresRoomInspection = requiresRoomInspection;
     }
 }

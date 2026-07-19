@@ -134,7 +134,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             "receptionist",
             seededHotel.HotelId);
 
-        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, seededHotel);
+        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, seededHotel, daysUntilCheckIn: 0);
 
         DemoPaymentResultDto demoPayment = await PostJsonAsync<DemoPaymentResultDto>(
             client,
@@ -153,6 +153,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             {
                 physicalRoomIds = new[] { seededHotel.PhysicalRoomIds.Single() },
                 guestFullName = "Booking Guest",
+                identityDocumentType = "NationalId",
                 identityDocumentNumber = "ID123456"
             },
             HttpStatusCode.OK,
@@ -228,6 +229,117 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             .CountAsync();
 
         activeReservations.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PreAssignmentCanChangeRoomButFutureCheckInIsRejected()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 2);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "assignment-customer");
+        TestAuthResponse receptionist = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Receptionist,
+            "assignment-receptionist",
+            hotel.HotelId);
+        Guid[] roomIds = hotel.PhysicalRoomIds.ToArray();
+
+        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, hotel, daysUntilCheckIn: 2);
+        await PostJsonAsync<DemoPaymentResultDto>(
+            client,
+            $"/api/bookings/{booking.Id}/demo-payment",
+            new { amount = booking.TotalAmount },
+            HttpStatusCode.OK,
+            customer.AccessToken);
+
+        FrontDeskBookingDto firstAssignment = await SendJsonAsync<FrontDeskBookingDto>(
+            client,
+            HttpMethod.Put,
+            $"/api/hotels/{hotel.HotelId}/front-desk/bookings/{booking.Id}/room-assignments",
+            new { physicalRoomIds = new[] { roomIds[0] } },
+            HttpStatusCode.OK,
+            receptionist.AccessToken);
+        firstAssignment.AssignedRooms.Should().ContainSingle(room => room.PhysicalRoomId == roomIds[0]);
+
+        FrontDeskBookingDto changedAssignment = await SendJsonAsync<FrontDeskBookingDto>(
+            client,
+            HttpMethod.Put,
+            $"/api/hotels/{hotel.HotelId}/front-desk/bookings/{booking.Id}/room-assignments",
+            new { physicalRoomIds = new[] { roomIds[1] } },
+            HttpStatusCode.OK,
+            receptionist.AccessToken);
+        changedAssignment.AssignedRooms.Should().ContainSingle(room => room.PhysicalRoomId == roomIds[1]);
+
+        using HttpResponseMessage earlyCheckIn = await SendJsonWithoutReadingAsync(
+            client,
+            HttpMethod.Post,
+            $"/api/hotels/{hotel.HotelId}/front-desk/bookings/{booking.Id}/check-in",
+            new
+            {
+                physicalRoomIds = Array.Empty<Guid>(),
+                guestFullName = "Future Arrival",
+                identityDocumentType = "Passport",
+                identityDocumentNumber = "P1234567"
+            },
+            receptionist.AccessToken);
+        earlyCheckIn.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+        PhysicalRoom[] rooms = await dbContext.PhysicalRooms
+            .IgnoreQueryFilters()
+            .Where(room => hotel.PhysicalRoomIds.Contains(room.Id))
+            .OrderBy(room => room.Id)
+            .ToArrayAsync();
+        rooms.Single(room => room.Id == roomIds[0]).Status.Should().Be(RoomOperationalStatus.Available);
+        rooms.Single(room => room.Id == roomIds[1]).Status.Should().Be(RoomOperationalStatus.Assigned);
+    }
+
+    [Fact]
+    public async Task HotelSetupCannotOverrideOperationalRoomStatus()
+    {
+        using HttpClient client = _factory.CreateClient();
+        TestAuthResponse owner = await SeedUserAndLoginAsync(client, UserRoleCode.PropertyOwner, "setup-owner");
+        Guid hotelId;
+        Guid physicalRoomId;
+        using (IServiceScope seedScope = _factory.Services.CreateScope())
+        {
+            HotelMarketplaceDbContext seedContext = seedScope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+            HotelProperty hotel = CreateApprovedHotel(owner.UserId, "Setup Lifecycle Hotel");
+            RoomType roomType = new(Guid.NewGuid(), hotel.Id, "Standard", 2, 0, 100m);
+            PhysicalRoom seededRoom = new(Guid.NewGuid(), hotel.Id, roomType.Id, "301");
+            seedContext.HotelProperties.Add(hotel);
+            seedContext.RoomTypes.Add(roomType);
+            seedContext.PhysicalRooms.Add(seededRoom);
+            seedContext.HotelStaffAssignments.Add(new HotelStaffAssignment(
+                Guid.NewGuid(),
+                owner.UserId,
+                hotel.Id,
+                SeededRoleIds.PropertyOwner,
+                owner.UserId));
+            await seedContext.SaveChangesAsync();
+            hotelId = hotel.Id;
+            physicalRoomId = seededRoom.Id;
+        }
+        owner = await LoginAsync(client, owner.Email, "IntegrationPassword123!");
+
+        using HttpResponseMessage response = await SendJsonWithoutReadingAsync(
+            client,
+            HttpMethod.Put,
+            $"/api/owner/hotels/{hotelId}/physical-rooms/{physicalRoomId}",
+            new
+            {
+                roomNumber = "RENAME-ONLY",
+                status = RoomOperationalStatus.Maintenance
+            },
+            owner.AccessToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+        PhysicalRoom persistedRoom = await dbContext.PhysicalRooms.IgnoreQueryFilters().SingleAsync(entity => entity.Id == physicalRoomId);
+        persistedRoom.Status.Should().Be(RoomOperationalStatus.Available);
     }
 
     [Fact]
@@ -822,6 +934,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
                 guestCount = 2,
                 guestFullName = "Future Walk In Guest",
                 guestPhone = "0987654321",
+                identityDocumentType = "NationalId",
                 identityDocumentNumber = "WALKIN-FUTURE",
                 cashCollectedAmount = 200m
             },
@@ -948,7 +1061,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
         using HttpClient client = _factory.CreateClient();
         SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
         TestAuthResponse customer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "blocked-room-customer");
-        DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(30);
+        DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date);
         DateOnly checkOutDate = checkInDate.AddDays(2);
 
         using (IServiceScope scope = _factory.Services.CreateScope())
@@ -1260,7 +1373,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             "expired-booking-receptionist",
             seededHotel.HotelId);
 
-        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, seededHotel);
+        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, seededHotel, daysUntilCheckIn: 0);
 
         using (IServiceScope scope = _factory.Services.CreateScope())
         {
@@ -1282,6 +1395,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             {
                 physicalRoomIds = new[] { seededHotel.PhysicalRoomIds.Single() },
                 guestFullName = "Expired Booking Guest",
+                identityDocumentType = "NationalId",
                 identityDocumentNumber = "EXPIRED123"
             },
             options: JsonOptions);
@@ -1440,7 +1554,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             "double-checkin-receptionist",
             seededHotel.HotelId);
 
-        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, seededHotel);
+        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, seededHotel, daysUntilCheckIn: 0);
 
         await PostJsonAsync<DemoPaymentResultDto>(
             client,
@@ -1667,7 +1781,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             admin.AccessToken);
         commissionHotel.DefaultCommissionRate.Should().Be(0.12m);
 
-        DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(30);
+        DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date);
         DateOnly checkOutDate = checkInDate.AddDays(2);
         string availabilityQuery = $"checkInDate={checkInDate:yyyy-MM-dd}&checkOutDate={checkOutDate:yyyy-MM-dd}&guestCount=2&roomCount=1";
 
@@ -1757,6 +1871,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             {
                 physicalRoomIds = new[] { firstRoom.Id },
                 guestFullName = "Smoke Booking Guest",
+                identityDocumentType = "NationalId",
                 identityDocumentNumber = "IDSMOKE"
             },
             HttpStatusCode.OK,
@@ -1815,7 +1930,17 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             new { status = HousekeepingTaskStatus.Completed },
             HttpStatusCode.OK,
             housekeeper.AccessToken);
-        completedTask.RoomStatus.Should().Be(RoomOperationalStatus.Available);
+        completedTask.Status.Should().Be(HousekeepingTaskStatus.InspectionRequired);
+        completedTask.RoomStatus.Should().Be(RoomOperationalStatus.InspectionRequired);
+
+        HousekeepingTaskDto inspectedTask = await PostJsonAsync<HousekeepingTaskDto>(
+            client,
+            $"/api/hotels/{hotel.Id}/housekeeping/tasks/{housekeepingTask.Id}/inspection",
+            new { },
+            HttpStatusCode.OK,
+            owner.AccessToken);
+        inspectedTask.Status.Should().Be(HousekeepingTaskStatus.Completed);
+        inspectedTask.RoomStatus.Should().Be(RoomOperationalStatus.Available);
 
         MaintenanceRequestDto maintenanceRequest = await PostJsonAsync<MaintenanceRequestDto>(
             client,
@@ -1861,10 +1986,22 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             client,
             HttpMethod.Patch,
             $"/api/hotels/{hotel.Id}/maintenance/requests/{maintenanceRequest.Id}/status",
-            new { status = MaintenanceStatus.Resolved },
+            new { status = MaintenanceStatus.Resolved, resolutionNote = "Replaced the faulty fixture and verified operation." },
             HttpStatusCode.OK,
             maintenance.AccessToken);
-        repairResolved.RoomStatus.Should().Be(RoomOperationalStatus.Available);
+        repairResolved.Status.Should().Be(MaintenanceStatus.Resolved);
+        repairResolved.RoomStatus.Should().Be(RoomOperationalStatus.InspectionRequired);
+        repairResolved.ResolutionNote.Should().NotBeNullOrWhiteSpace();
+
+        MaintenanceRequestDto repairReleased = await SendJsonAsync<MaintenanceRequestDto>(
+            client,
+            HttpMethod.Patch,
+            $"/api/hotels/{hotel.Id}/maintenance/requests/{maintenanceRequest.Id}/status",
+            new { status = MaintenanceStatus.Released },
+            HttpStatusCode.OK,
+            owner.AccessToken);
+        repairReleased.Status.Should().Be(MaintenanceStatus.Released);
+        repairReleased.RoomStatus.Should().Be(RoomOperationalStatus.Available);
 
         FrontDeskBookingDto walkInBooking = await PostJsonAsync<FrontDeskBookingDto>(
             client,
@@ -1879,6 +2016,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
                 guestCount = 1,
                 guestFullName = "Walk In Guest",
                 guestPhone = "0987654321",
+                identityDocumentType = "NationalId",
                 identityDocumentNumber = "WALKIN",
                 cashCollectedAmount = 130m
             },
@@ -2010,9 +2148,10 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
     private static async Task<BookingDto> CreateBookingAsync(
         HttpClient client,
         string accessToken,
-        SeededHotel seededHotel)
+        SeededHotel seededHotel,
+        int daysUntilCheckIn = 10)
     {
-        DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(10);
+        DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(daysUntilCheckIn);
         DateOnly checkOutDate = checkInDate.AddDays(2);
 
         return await PostJsonAsync<BookingDto>(
@@ -2182,6 +2321,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
                 guestCount = 1,
                 guestFullName = "Concurrent Walk In Guest",
                 guestPhone = "0987654321",
+                identityDocumentType = "NationalId",
                 identityDocumentNumber = "CROSSCHANNEL",
                 cashCollectedAmount = 200m
             },
@@ -2208,6 +2348,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             {
                 physicalRoomIds = new[] { physicalRoomId },
                 guestFullName,
+                identityDocumentType = "NationalId",
                 identityDocumentNumber = "CONCURRENT"
             },
             options: JsonOptions);
@@ -2417,6 +2558,23 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
         TResponse? body = JsonSerializer.Deserialize<TResponse>(responseBody, JsonOptions);
         body.Should().NotBeNull();
         return body!;
+    }
+
+    private static async Task<HttpResponseMessage> SendJsonWithoutReadingAsync(
+        HttpClient client,
+        HttpMethod method,
+        string requestUri,
+        object payload,
+        string? accessToken = null)
+    {
+        using HttpRequestMessage request = new(method, requestUri);
+        if (!string.IsNullOrWhiteSpace(accessToken))
+        {
+            request.Headers.Authorization = Bearer(accessToken);
+        }
+
+        request.Content = JsonContent.Create(payload, options: JsonOptions);
+        return await client.SendAsync(request);
     }
 
     private static async Task SendNoContentAsync(

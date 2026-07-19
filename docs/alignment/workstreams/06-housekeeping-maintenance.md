@@ -1,6 +1,6 @@
 # WS-06 Housekeeping and Maintenance
 
-Status: Basic task execution exists; release lifecycle and assignment controls deviate
+Status: Room release lifecycle aligned; assignment ownership remains tracked
 
 ## Aligned Evidence
 
@@ -8,6 +8,9 @@ Status: Basic task execution exists; release lifecycle and assignment controls d
 - Task and request queries use DTO projections and hotel filtering.
 - Maintenance creation blocks a room and state updates use application locks.
 - Mobile provides role-oriented lists and primary actions.
+- Cleaning completion follows the hotel inspection policy and a separate
+  Owner/Manager inspection action releases the room.
+- Maintenance resolution records evidence and remains distinct from room release.
 
 ## Verified Gaps
 
@@ -15,9 +18,9 @@ Status: Basic task execution exists; release lifecycle and assignment controls d
 | --- | --- | --- |
 | Approved role decision | Platform Administrator appears in operational controllers and services | GAP-001 |
 | UC-032/033 | Domain enum omits Assigned and IssueReported and task start overwrites assignee | GAP-015, GAP-025 |
-| BR-HK-003 | Cleaning completes directly to Available without inspection policy | GAP-015 |
+| BR-HK-003 | Remediated through configurable inspection and explicit release | ALN-008 |
 | UC-036 | Maintenance lacks Assigned, OnHold, Completed, diagnosis, work note, and completion result | GAP-015, GAP-024 |
-| UC-037 | Resolve immediately releases room to Available | GAP-015 |
+| UC-037 | Remediated: Resolved and Released are separate states | ALN-008 |
 | BR-STAFF-005/006 | Same-hotel workers can take over another assignee's work | GAP-025 |
 | BR-AUDIT-001 | Operational transitions do not create audit records | GAP-017 |
 

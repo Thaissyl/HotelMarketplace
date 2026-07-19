@@ -63,6 +63,8 @@ internal sealed class MaintenanceRequestConfiguration : IEntityTypeConfiguration
         builder.Property(entity => entity.Severity).HasEnumConversion();
         builder.Property(entity => entity.Status).HasEnumConversion();
         builder.Property(entity => entity.CreatedAtUtc).HasPrecision(3);
+        builder.Property(entity => entity.ResolvedAtUtc).HasPrecision(3);
+        builder.Property(entity => entity.ResolutionNote).HasMaxLength(1000);
         builder.HasIndex(entity => new { entity.HotelId, entity.Status, entity.AssignedToUserAccountId });
         builder.HasIndex(entity => entity.PhysicalRoomId);
         builder.HasOne<HotelProperty>().WithMany().HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Restrict);
@@ -93,7 +95,9 @@ internal sealed class GuestStayRecordConfiguration : IEntityTypeConfiguration<Gu
     {
         builder.ConfigureEntity("GuestStayRecords");
         builder.Property(entity => entity.GuestFullName).HasMaxLength(200).IsRequired();
-        builder.Property(entity => entity.IdentityDocumentNumber).HasMaxLength(64);
+        builder.Property(entity => entity.IdentityDocumentType).HasMaxLength(32).IsRequired();
+        builder.Property(entity => entity.IdentityDocumentNumber).HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.IdentityIssuingCountry).HasMaxLength(2);
         builder.Property(entity => entity.CheckedInAtUtc).HasPrecision(3);
         builder.Property(entity => entity.CheckedOutAtUtc).HasPrecision(3);
         builder.HasIndex(entity => entity.BookingId).IsUnique();

@@ -11,6 +11,7 @@ class WorkingHotel {
     required this.description,
     required this.approvalStatus,
     required this.publicationStatus,
+    required this.requiresRoomInspection,
   });
 
   final String id;
@@ -22,6 +23,7 @@ class WorkingHotel {
   final String description;
   final String approvalStatus;
   final String publicationStatus;
+  final bool requiresRoomInspection;
 
   String get displayName => name.trim().isEmpty ? shortCode : name;
 
@@ -53,6 +55,7 @@ class WorkingHotel {
       description: '',
       approvalStatus: '',
       publicationStatus: '',
+      requiresRoomInspection: true,
     );
   }
 
@@ -68,6 +71,7 @@ class WorkingHotel {
       description: json['description']?.toString() ?? '',
       approvalStatus: json['approvalStatus']?.toString() ?? '',
       publicationStatus: json['publicationStatus']?.toString() ?? '',
+      requiresRoomInspection: json['requiresRoomInspection'] as bool? ?? true,
     );
   }
 }
@@ -80,6 +84,7 @@ class UpdateHotelProfileRequest {
     required this.contactEmail,
     required this.contactPhone,
     required this.description,
+    required this.requiresRoomInspection,
   });
 
   final String name;
@@ -88,6 +93,7 @@ class UpdateHotelProfileRequest {
   final String contactEmail;
   final String contactPhone;
   final String description;
+  final bool requiresRoomInspection;
 
   Map<String, dynamic> toJson() {
     return {
@@ -97,6 +103,7 @@ class UpdateHotelProfileRequest {
       'contactEmail': contactEmail.trim(),
       'contactPhone': contactPhone.trim(),
       'description': description.trim().isEmpty ? null : description.trim(),
+      'requiresRoomInspection': requiresRoomInspection,
     };
   }
 }
@@ -526,6 +533,8 @@ class MaintenanceRequestItem {
     required this.status,
     required this.roomStatus,
     required this.createdAtUtc,
+    required this.resolvedAtUtc,
+    required this.resolutionNote,
   });
 
   final String id;
@@ -537,6 +546,8 @@ class MaintenanceRequestItem {
   final String status;
   final String roomStatus;
   final DateTime createdAtUtc;
+  final DateTime? resolvedAtUtc;
+  final String? resolutionNote;
 
   String get displayCreatedAt => AppFormatters.displayDate(createdAtUtc);
 
@@ -554,6 +565,9 @@ class MaintenanceRequestItem {
       createdAtUtc:
           DateTime.tryParse(json['createdAtUtc']?.toString() ?? '')?.toUtc() ??
               DateTime.now().toUtc(),
+      resolvedAtUtc:
+          DateTime.tryParse(json['resolvedAtUtc']?.toString() ?? '')?.toUtc(),
+      resolutionNote: json['resolutionNote']?.toString(),
     );
   }
 }

@@ -92,6 +92,25 @@ public sealed class HousekeepingController : ControllerBase
         return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
     }
 
+    [HttpPost("tasks/{taskId:guid}/inspection")]
+    [Authorize(Roles = nameof(UserRoleCode.HotelManager) + "," + nameof(UserRoleCode.PropertyOwner))]
+    [ProducesResponseType(typeof(HousekeepingTaskDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CompleteInspection(
+        Guid hotelId,
+        Guid taskId,
+        CancellationToken cancellationToken)
+    {
+        Result<HousekeepingTaskDto> result = await _housekeepingService.CompleteInspectionAsync(
+            hotelId,
+            taskId,
+            cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
     private ObjectResult ToProblem(ResultError error)
     {
         int statusCode = error.Code switch

@@ -93,6 +93,7 @@ internal sealed class HotelPropertyConfiguration : IEntityTypeConfiguration<Hote
         builder.Property(entity => entity.ApprovalStatus).HasEnumConversion();
         builder.Property(entity => entity.PublicationStatus).HasEnumConversion();
         builder.Property(entity => entity.DefaultCommissionRate).HasPrecision(5, 4);
+        builder.Property(entity => entity.RequiresRoomInspection).HasDefaultValue(true);
         builder.Property(entity => entity.CreatedAtUtc).HasPrecision(3);
         builder.HasIndex(entity => new { entity.City, entity.ApprovalStatus, entity.PublicationStatus });
         builder.HasOne<UserAccount>().WithMany().HasForeignKey(entity => entity.OwnerUserAccountId).OnDelete(DeleteBehavior.Restrict);

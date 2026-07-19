@@ -338,6 +338,33 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
                 return PhysicalRoomPersistenceResult.Failure(PhysicalRoomPersistenceStatus.RoomIsOccupied);
             }
 
+            if (status != physicalRoom.Status)
+            {
+                bool hasActiveLifecycle = await _dbContext.BookingRoomAssignments
+                    .IgnoreQueryFilters()
+                    .AsNoTracking()
+                    .AnyAsync(assignment => assignment.PhysicalRoomId == physicalRoomId && assignment.Status == RecordStatus.Active, cancellationToken)
+                    || await _dbContext.HousekeepingTasks
+                        .IgnoreQueryFilters()
+                        .AsNoTracking()
+                        .AnyAsync(task => task.PhysicalRoomId == physicalRoomId &&
+                            task.Status != HousekeepingTaskStatus.Completed &&
+                            task.Status != HousekeepingTaskStatus.Cancelled,
+                            cancellationToken)
+                    || await _dbContext.MaintenanceRequests
+                        .IgnoreQueryFilters()
+                        .AsNoTracking()
+                        .AnyAsync(request => request.PhysicalRoomId == physicalRoomId &&
+                            request.Status != MaintenanceStatus.Released &&
+                            request.Status != MaintenanceStatus.Cancelled,
+                            cancellationToken);
+                if (hasActiveLifecycle)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return PhysicalRoomPersistenceResult.Failure(PhysicalRoomPersistenceStatus.OperationalLifecycleActive);
+                }
+            }
+
             bool duplicateRoomNumber = await _dbContext.PhysicalRooms
                 .AsNoTracking()
                 .AnyAsync(room => room.HotelId == hotelId &&

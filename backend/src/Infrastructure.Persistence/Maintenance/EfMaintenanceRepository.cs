@@ -6,6 +6,7 @@ using HotelMarketplace.Application.Maintenance.Requests;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
 using HotelMarketplace.Infrastructure.Persistence.Common;
+using HotelMarketplace.SharedKernel.Time;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -14,10 +15,12 @@ namespace HotelMarketplace.Infrastructure.Persistence.Maintenance;
 internal sealed class EfMaintenanceRepository : IMaintenanceRepository
 {
     private readonly HotelMarketplaceDbContext _dbContext;
+    private readonly IDateTimeProvider _dateTimeProvider;
 
-    public EfMaintenanceRepository(HotelMarketplaceDbContext dbContext)
+    public EfMaintenanceRepository(HotelMarketplaceDbContext dbContext, IDateTimeProvider dateTimeProvider)
     {
         _dbContext = dbContext;
+        _dateTimeProvider = dateTimeProvider;
     }
 
     public async Task<IReadOnlyCollection<PhysicalRoomDto>> GetRoomsAsync(
@@ -74,7 +77,9 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
                 maintenanceRequest.Severity,
                 maintenanceRequest.Status,
                 room.Status,
-                maintenanceRequest.CreatedAtUtc))
+                maintenanceRequest.CreatedAtUtc,
+                maintenanceRequest.ResolvedAtUtc,
+                maintenanceRequest.ResolutionNote))
             .ToListAsync(cancellationToken);
     }
 
@@ -148,7 +153,7 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
         Guid hotelId,
         Guid requestId,
         Guid actorUserAccountId,
-        MaintenanceStatus targetStatus,
+        UpdateMaintenanceRequestStatusRequest request,
         CancellationToken cancellationToken)
     {
         IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
@@ -202,19 +207,60 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
 
             try
             {
-                if (targetStatus == MaintenanceStatus.InProgress)
+                if (request.Status == MaintenanceStatus.InProgress)
                 {
                     maintenanceRequest.Start(actorUserAccountId);
                 }
-                else if (targetStatus == MaintenanceStatus.Resolved)
+                else if (request.Status == MaintenanceStatus.Resolved)
                 {
                     RoomOperationalStatus oldStatus = room.Status;
-                    maintenanceRequest.Resolve();
-                    room.ReleaseFromMaintenance();
+                    bool requiresRoomInspection = await _dbContext.HotelProperties
+                        .IgnoreQueryFilters()
+                        .AsNoTracking()
+                        .Where(hotel => hotel.Id == hotelId)
+                        .Select(hotel => hotel.RequiresRoomInspection)
+                        .SingleAsync(cancellationToken);
+                    maintenanceRequest.Resolve(request.ResolutionNote!, _dateTimeProvider.UtcNow);
+                    room.CompleteMaintenance(requiresRoomInspection);
 
                     await _dbContext.RoomStatusHistories.AddAsync(
                         new RoomStatusHistory(Guid.NewGuid(), hotelId, room.Id, oldStatus, room.Status, actorUserAccountId),
                         cancellationToken);
+
+                    if (!requiresRoomInspection)
+                    {
+                        bool hasOpenCleaningTask = await _dbContext.HousekeepingTasks
+                            .IgnoreQueryFilters()
+                            .AsNoTracking()
+                            .AnyAsync(task => task.PhysicalRoomId == room.Id &&
+                                task.Status != HousekeepingTaskStatus.Completed &&
+                                task.Status != HousekeepingTaskStatus.Cancelled,
+                                cancellationToken);
+                        if (!hasOpenCleaningTask)
+                        {
+                            await _dbContext.HousekeepingTasks.AddAsync(
+                                new HousekeepingTask(Guid.NewGuid(), hotelId, room.Id, "PostMaintenanceCleaning"),
+                                cancellationToken);
+                        }
+                    }
+                }
+                else if (request.Status == MaintenanceStatus.Released)
+                {
+                    RoomOperationalStatus oldStatus = room.Status;
+                    if (room.Status == RoomOperationalStatus.InspectionRequired)
+                    {
+                        room.CompleteInspection();
+                        await _dbContext.RoomStatusHistories.AddAsync(
+                            new RoomStatusHistory(Guid.NewGuid(), hotelId, room.Id, oldStatus, room.Status, actorUserAccountId),
+                            cancellationToken);
+                    }
+                    else if (room.Status != RoomOperationalStatus.Available)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return MaintenanceRequestPersistenceResult.Failure(MaintenancePersistenceStatus.InvalidRoomStatus);
+                    }
+
+                    maintenanceRequest.Release();
                 }
                 else
                 {
@@ -323,7 +369,9 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
                 maintenanceRequest.Severity,
                 maintenanceRequest.Status,
                 room.Status,
-                maintenanceRequest.CreatedAtUtc))
+                maintenanceRequest.CreatedAtUtc,
+                maintenanceRequest.ResolvedAtUtc,
+                maintenanceRequest.ResolutionNote))
             .FirstAsync(cancellationToken);
     }
 

@@ -142,6 +142,34 @@ internal sealed class HousekeepingService : IHousekeepingService
         };
     }
 
+    public async Task<Result<HousekeepingTaskDto>> CompleteInspectionAsync(
+        Guid hotelId,
+        Guid taskId,
+        CancellationToken cancellationToken)
+    {
+        UserRoleCode[] inspectionRoles = { UserRoleCode.HotelManager, UserRoleCode.PropertyOwner };
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, inspectionRoles, cancellationToken);
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<HousekeepingTaskDto>(authorizationFailure.Error);
+        }
+
+        HousekeepingTaskUpdateResult result = await _housekeepingRepository.CompleteInspectionAsync(
+            hotelId,
+            taskId,
+            _currentUserService.UserId!.Value,
+            cancellationToken);
+
+        return result.Status switch
+        {
+            HousekeepingPersistenceStatus.Success => Result.Success(result.Task!),
+            HousekeepingPersistenceStatus.TaskNotFound => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.TaskNotFound),
+            HousekeepingPersistenceStatus.RoomNotFound => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.RoomNotFound),
+            HousekeepingPersistenceStatus.LockUnavailable => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.LockUnavailable),
+            _ => Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.InvalidTransition)
+        };
+    }
+
     private async Task<Result?> ValidateAuthorizationAsync(
         Guid hotelId,
         IReadOnlyCollection<UserRoleCode> allowedRoles,

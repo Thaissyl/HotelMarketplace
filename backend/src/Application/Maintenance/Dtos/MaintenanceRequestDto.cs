@@ -13,4 +13,6 @@ public sealed record MaintenanceRequestDto(
     MaintenanceSeverity Severity,
     MaintenanceStatus Status,
     RoomOperationalStatus RoomStatus,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    DateTime? ResolvedAtUtc,
+    string? ResolutionNote);

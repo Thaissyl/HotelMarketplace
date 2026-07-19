@@ -10,13 +10,21 @@ internal sealed class CheckInBookingRequestValidator : AbstractValidator<CheckIn
 {
     public CheckInBookingRequestValidator()
     {
-        RuleFor(request => request.PhysicalRoomIds).NotEmpty();
         RuleForEach(request => request.PhysicalRoomIds).NotEmpty();
         RuleFor(request => request.PhysicalRoomIds)
             .Must(roomIds => roomIds is not null && roomIds.Distinct().Count() == roomIds.Count)
             .WithMessage("Physical room ids must be unique.");
         RuleFor(request => request.GuestFullName).SafeRequiredText(200, "Guest full name");
-        RuleFor(request => request.IdentityDocumentNumber).SafeOptionalText(64, "Identity document number");
+        RuleFor(request => request.IdentityDocumentType).SafeRequiredText(32, "Identity document type");
+        RuleFor(request => request.IdentityDocumentNumber).SafeRequiredText(64, "Identity document number");
+        RuleFor(request => request.IdentityIssuingCountry)
+            .Matches("^[A-Za-z]{2}$")
+            .When(request => !string.IsNullOrWhiteSpace(request.IdentityIssuingCountry))
+            .WithMessage("Identity issuing country must be a two-letter country code.");
+        RuleFor(request => request.IdentityExpiryDate)
+            .GreaterThanOrEqualTo(DateOnly.FromDateTime(DateTime.UtcNow))
+            .When(request => request.IdentityExpiryDate.HasValue)
+            .WithMessage("Identity document must not be expired.");
     }
 }
 
@@ -68,8 +76,33 @@ internal sealed class CreateWalkInBookingRequestValidator : AbstractValidator<Cr
         RuleFor(request => request.GuestCount).InclusiveBetween(1, 30);
         RuleFor(request => request.GuestFullName).SafeRequiredText(200, "Guest full name");
         RuleFor(request => request.GuestPhone).TenDigitPhone("Guest phone");
+        RuleFor(request => request.IdentityDocumentType).SafeOptionalText(32, "Identity document type");
         RuleFor(request => request.IdentityDocumentNumber).SafeOptionalText(64, "Identity document number");
+        RuleFor(request => request.IdentityDocumentType)
+            .NotEmpty()
+            .When(request => request.PhysicalRoomIds is { Count: > 0 })
+            .WithMessage("Identity document type is required for immediate check-in.");
+        RuleFor(request => request.IdentityDocumentNumber)
+            .NotEmpty()
+            .When(request => request.PhysicalRoomIds is { Count: > 0 })
+            .WithMessage("Identity document number is required for immediate check-in.");
+        RuleFor(request => request.IdentityIssuingCountry)
+            .Matches("^[A-Za-z]{2}$")
+            .When(request => !string.IsNullOrWhiteSpace(request.IdentityIssuingCountry))
+            .WithMessage("Identity issuing country must be a two-letter country code.");
         RuleFor(request => request.CashCollectedAmount).GreaterThanOrEqualTo(0);
+    }
+}
+
+internal sealed class AssignBookingRoomsRequestValidator : AbstractValidator<AssignBookingRoomsRequest>
+{
+    public AssignBookingRoomsRequestValidator()
+    {
+        RuleFor(request => request.PhysicalRoomIds).NotEmpty();
+        RuleForEach(request => request.PhysicalRoomIds).NotEmpty();
+        RuleFor(request => request.PhysicalRoomIds)
+            .Must(roomIds => roomIds is not null && roomIds.Distinct().Count() == roomIds.Count)
+            .WithMessage("Physical room ids must be unique.");
     }
 }
 
