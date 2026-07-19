@@ -37,6 +37,32 @@ public sealed class HotelStaffAssignment : Entity, IHotelScopedEntity
 
     public void Revoke()
     {
+        if (!IsActive)
+        {
+            return;
+        }
+
         IsActive = false;
+    }
+
+    public void Reactivate(Guid roleId)
+    {
+        Guard.NotEmpty(roleId, nameof(RoleId));
+        RoleId = roleId;
+        IsActive = true;
+    }
+
+    public void ChangeRole(Guid roleId)
+    {
+        Guard.NotEmpty(roleId, nameof(RoleId));
+
+        if (!IsActive)
+        {
+            throw new SharedKernel.Exceptions.DomainException(
+                "HotelStaffAssignment.InactiveRoleChange",
+                "An inactive hotel staff assignment must be reactivated before its role can be changed.");
+        }
+
+        RoleId = roleId;
     }
 }

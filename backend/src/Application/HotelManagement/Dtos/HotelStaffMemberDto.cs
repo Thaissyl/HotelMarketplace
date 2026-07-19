@@ -11,4 +11,5 @@ public sealed record HotelStaffMemberDto(
     string? PhoneNumber,
     UserRoleCode Role,
     AccountStatus Status,
+    bool IsAssignmentActive,
     DateTime AssignedAtUtc);

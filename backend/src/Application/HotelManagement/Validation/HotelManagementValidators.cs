@@ -54,6 +54,34 @@ internal sealed class CreateHotelStaffRequestValidator : AbstractValidator<Creat
     }
 }
 
+internal sealed class AttachHotelStaffRequestValidator : AbstractValidator<AttachHotelStaffRequest>
+{
+    public AttachHotelStaffRequestValidator()
+    {
+        RuleFor(request => request.Email).NotEmpty().EmailAddress().MaximumLength(256);
+        RuleFor(request => request.Role).Must(IsStaffRole).WithMessage("The selected hotel role is invalid.");
+    }
+
+    private static bool IsStaffRole(UserRoleCode role) =>
+        role is UserRoleCode.HotelManager or UserRoleCode.Receptionist or
+            UserRoleCode.HousekeepingStaff or UserRoleCode.MaintenanceStaff;
+}
+
+internal sealed class UpdateHotelStaffAssignmentRequestValidator : AbstractValidator<UpdateHotelStaffAssignmentRequest>
+{
+    public UpdateHotelStaffAssignmentRequestValidator()
+    {
+        RuleFor(request => request)
+            .Must(request => request.Role.HasValue ^ request.IsActive.HasValue)
+            .WithMessage("Provide either Role or IsActive, but not both.");
+        RuleFor(request => request.Role!.Value)
+            .Must(role => role is UserRoleCode.HotelManager or UserRoleCode.Receptionist or
+                UserRoleCode.HousekeepingStaff or UserRoleCode.MaintenanceStaff)
+            .When(request => request.Role.HasValue)
+            .WithMessage("The selected hotel role is invalid.");
+    }
+}
+
 internal sealed class CreateRoomTypeRequestValidator : AbstractValidator<CreateRoomTypeRequest>
 {
     public CreateRoomTypeRequestValidator()

@@ -216,3 +216,26 @@ Docker Compose behavior, local operations scripts, and run documentation.
 The final commit is additionally verified from a separate clean Git worktree so
 untracked emulator screenshots, local environment files, and prior build output
 cannot influence build, test, Compose, or Flutter results.
+
+## ALN-010 Staff Lifecycle Verification
+
+The Owner and Manager staff lifecycle was verified against domain invariants,
+the complete SQL Server API suite, the EF migration model, Mobile contracts, and
+the Android debug build.
+
+| Command | Result |
+| --- | --- |
+| `dotnet build .\backend\HotelMarketplace.slnx --no-restore` | Passed; 0 warnings and 0 errors |
+| `dotnet test .\backend\HotelMarketplace.slnx --no-build` | Passed; 18 Domain tests and 36 API integration tests |
+| `dotnet ef migrations has-pending-model-changes` | Passed; model matches `EnforceHotelStaffLifecycle` |
+| `flutter analyze` | Passed; no issues found |
+| `flutter test` | Passed; 6 tests |
+| `flutter build apk --debug` | Passed; debug APK built successfully |
+
+The lifecycle integration scenario verifies Owner-created Manager accounts,
+Manager-created operational staff, attach-existing behavior, duplicate rejection,
+Manager escalation and self-management denial, stale-token denial after role
+change or revocation, open-task protection, reactivation, and list projection.
+Actor authority is revalidated under the same transaction and application lock
+as each mutation so concurrent Manager revocation cannot authorize a later staff
+change.

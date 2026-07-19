@@ -121,9 +121,14 @@ mutation. External notification delivery may remain mocked.
 
 ### ALN-010 Owner, Manager, and Staff Lifecycle
 
-Implement approved Hotel Manager management permissions, staff invitation or
-attach-existing-user, deactivate/reactivate, role reassignment, hotel assignment,
-revocation, and role-neutral own-profile management.
+Status: Staff lifecycle implemented and verified on `feat/aln-010-staff-lifecycle`;
+delegated Manager hotel and inventory setup remains pending.
+
+Implemented approved Hotel Manager management permissions, create-account and
+attach-existing-user flows, deactivate/reactivate, role reassignment, tuple-aware
+revocation, transactional concurrency safeguards, API operations, and Mobile
+staff management. Delegated profile and inventory setup remains GAP-019, while
+role-neutral own-profile management remains GAP-021.
 
 ### ALN-011 Contract and Data Completeness
 

@@ -212,7 +212,7 @@ enum _OperationSection {
         frontDesk,
         housekeeping,
         maintenance,
-        if (roles.contains(UserRoleCode.propertyOwner.apiValue)) staff,
+        staff,
       ];
     }
 

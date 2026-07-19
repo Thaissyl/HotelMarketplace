@@ -1593,6 +1593,209 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
     }
 
     [Fact]
+    public async Task OwnerAndManagerEnforceCompleteHotelStaffLifecycle()
+    {
+        using HttpClient client = _factory.CreateClient();
+        string suffix = Guid.NewGuid().ToString("N");
+        const string ownerPassword = "OwnerPassword123!";
+        const string managerPassword = "ManagerPassword123!";
+        const string housekeeperPassword = "HousekeeperPassword123!";
+
+        TestAuthResponse owner = await PostJsonAsync<TestAuthResponse>(
+            client,
+            "/api/auth/register",
+            new
+            {
+                email = $"staff-owner-{suffix}@example.com",
+                password = ownerPassword,
+                fullName = "Staff Lifecycle Owner",
+                phoneNumber = TestPhoneNumber(suffix),
+                role = UserRoleCode.PropertyOwner
+            },
+            HttpStatusCode.Created);
+
+        HotelDto hotel = await PostJsonAsync<HotelDto>(
+            client,
+            "/api/owner/hotels",
+            new
+            {
+                name = $"Staff Lifecycle Hotel {suffix}",
+                city = "Ho Chi Minh City",
+                addressLine = "10 Staff Lifecycle Street",
+                contactEmail = $"staff-hotel-{suffix}@example.com",
+                contactPhone = "0901234567",
+                description = "Hotel used to verify staff lifecycle invariants."
+            },
+            HttpStatusCode.Created,
+            owner.AccessToken);
+        owner = await LoginAsync(client, owner.Email, ownerPassword);
+
+        HotelStaffMemberDto manager = await PostJsonAsync<HotelStaffMemberDto>(
+            client,
+            $"/api/operations/hotels/{hotel.Id}/staff",
+            new
+            {
+                email = $"manager-{suffix}@example.com",
+                password = managerPassword,
+                fullName = "Lifecycle Manager",
+                phoneNumber = TestPhoneNumber($"{suffix}-manager"),
+                role = UserRoleCode.HotelManager
+            },
+            HttpStatusCode.Created,
+            owner.AccessToken);
+        manager.IsAssignmentActive.Should().BeTrue();
+
+        TestAuthResponse managerAuth = await LoginAsync(client, manager.Email, managerPassword);
+        HotelStaffMemberDto housekeeper = await PostJsonAsync<HotelStaffMemberDto>(
+            client,
+            $"/api/operations/hotels/{hotel.Id}/staff",
+            new
+            {
+                email = $"housekeeper-{suffix}@example.com",
+                password = housekeeperPassword,
+                fullName = "Lifecycle Housekeeper",
+                phoneNumber = TestPhoneNumber($"{suffix}-housekeeper"),
+                role = UserRoleCode.HousekeepingStaff
+            },
+            HttpStatusCode.Created,
+            managerAuth.AccessToken);
+
+        using HttpResponseMessage managerCreatesManager = await SendJsonWithoutReadingAsync(
+            client,
+            HttpMethod.Post,
+            $"/api/operations/hotels/{hotel.Id}/staff",
+            new
+            {
+                email = $"forbidden-manager-{suffix}@example.com",
+                password = managerPassword,
+                fullName = "Forbidden Manager",
+                phoneNumber = TestPhoneNumber($"{suffix}-forbidden-manager"),
+                role = UserRoleCode.HotelManager
+            },
+            managerAuth.AccessToken);
+        managerCreatesManager.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await managerCreatesManager.Content.ReadAsStringAsync()).Should().Contain("HotelManagement.ManagerRoleManagementForbidden");
+
+        using HttpResponseMessage managerDisablesSelf = await SendJsonWithoutReadingAsync(
+            client,
+            HttpMethod.Patch,
+            $"/api/operations/hotels/{hotel.Id}/staff/{manager.AssignmentId}",
+            new { isActive = false },
+            managerAuth.AccessToken);
+        managerDisablesSelf.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await managerDisablesSelf.Content.ReadAsStringAsync()).Should().Contain("HotelManagement.SelfManagementForbidden");
+
+        TestAuthResponse existingCustomer = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Customer,
+            "attach-existing-customer");
+        HotelStaffMemberDto attachedReceptionist = await PostJsonAsync<HotelStaffMemberDto>(
+            client,
+            $"/api/operations/hotels/{hotel.Id}/staff/attachments",
+            new { email = existingCustomer.Email, role = UserRoleCode.Receptionist },
+            HttpStatusCode.Created,
+            managerAuth.AccessToken);
+        attachedReceptionist.UserAccountId.Should().Be(existingCustomer.UserId);
+
+        using HttpResponseMessage duplicateAttachment = await SendJsonWithoutReadingAsync(
+            client,
+            HttpMethod.Post,
+            $"/api/operations/hotels/{hotel.Id}/staff/attachments",
+            new { email = existingCustomer.Email, role = UserRoleCode.Receptionist },
+            managerAuth.AccessToken);
+        duplicateAttachment.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        using HttpRequestMessage staleCustomerRequest = new(
+            HttpMethod.Get,
+            $"/api/hotels/{hotel.Id}/front-desk/physical-rooms");
+        staleCustomerRequest.Headers.Authorization = Bearer(existingCustomer.AccessToken);
+        using HttpResponseMessage staleCustomerResponse = await client.SendAsync(staleCustomerRequest);
+        staleCustomerResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        TestAuthResponse receptionistAuth = await LoginAsync(
+            client,
+            existingCustomer.Email,
+            "IntegrationPassword123!");
+        HotelStaffMemberDto changedRole = await SendJsonAsync<HotelStaffMemberDto>(
+            client,
+            HttpMethod.Patch,
+            $"/api/operations/hotels/{hotel.Id}/staff/{attachedReceptionist.AssignmentId}",
+            new { role = UserRoleCode.MaintenanceStaff },
+            HttpStatusCode.OK,
+            owner.AccessToken);
+        changedRole.Role.Should().Be(UserRoleCode.MaintenanceStaff);
+
+        using HttpRequestMessage staleReceptionistRequest = new(
+            HttpMethod.Get,
+            $"/api/hotels/{hotel.Id}/front-desk/physical-rooms");
+        staleReceptionistRequest.Headers.Authorization = Bearer(receptionistAuth.AccessToken);
+        using HttpResponseMessage staleReceptionistResponse = await client.SendAsync(staleReceptionistRequest);
+        staleReceptionistResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using (IServiceScope scope = _factory.Services.CreateScope())
+        {
+            HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+            RoomType roomType = new(Guid.NewGuid(), hotel.Id, "Staff Lifecycle Room", 2, 0, 100m);
+            PhysicalRoom room = new(Guid.NewGuid(), hotel.Id, roomType.Id, "SL-101");
+            HousekeepingTask task = new(
+                Guid.NewGuid(),
+                hotel.Id,
+                room.Id,
+                "CheckoutCleaning",
+                assignedToUserAccountId: housekeeper.UserAccountId);
+            dbContext.RoomTypes.Add(roomType);
+            dbContext.PhysicalRooms.Add(room);
+            dbContext.HousekeepingTasks.Add(task);
+            await dbContext.SaveChangesAsync();
+        }
+
+        using HttpResponseMessage deactivateWithOpenTask = await SendJsonWithoutReadingAsync(
+            client,
+            HttpMethod.Patch,
+            $"/api/operations/hotels/{hotel.Id}/staff/{housekeeper.AssignmentId}",
+            new { isActive = false },
+            owner.AccessToken);
+        deactivateWithOpenTask.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await deactivateWithOpenTask.Content.ReadAsStringAsync()).Should().Contain("HotelManagement.StaffHasOpenTasks");
+
+        HotelStaffMemberDto deactivatedManager = await SendJsonAsync<HotelStaffMemberDto>(
+            client,
+            HttpMethod.Patch,
+            $"/api/operations/hotels/{hotel.Id}/staff/{manager.AssignmentId}",
+            new { isActive = false },
+            HttpStatusCode.OK,
+            owner.AccessToken);
+        deactivatedManager.IsAssignmentActive.Should().BeFalse();
+
+        using HttpRequestMessage revokedManagerRequest = new(
+            HttpMethod.Get,
+            $"/api/operations/hotels/{hotel.Id}/staff");
+        revokedManagerRequest.Headers.Authorization = Bearer(managerAuth.AccessToken);
+        using HttpResponseMessage revokedManagerResponse = await client.SendAsync(revokedManagerRequest);
+        revokedManagerResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        HotelStaffMemberDto reactivatedManager = await SendJsonAsync<HotelStaffMemberDto>(
+            client,
+            HttpMethod.Patch,
+            $"/api/operations/hotels/{hotel.Id}/staff/{manager.AssignmentId}",
+            new { isActive = true },
+            HttpStatusCode.OK,
+            owner.AccessToken);
+        reactivatedManager.IsAssignmentActive.Should().BeTrue();
+
+        managerAuth = await LoginAsync(client, manager.Email, managerPassword);
+        IReadOnlyCollection<HotelStaffMemberDto> staff = await GetJsonAsync<IReadOnlyCollection<HotelStaffMemberDto>>(
+            client,
+            $"/api/operations/hotels/{hotel.Id}/staff",
+            HttpStatusCode.OK,
+            managerAuth.AccessToken);
+        staff.Should().Contain(member => member.AssignmentId == manager.AssignmentId && member.IsAssignmentActive);
+        staff.Should().Contain(member => member.AssignmentId == housekeeper.AssignmentId);
+        staff.Should().Contain(member => member.AssignmentId == attachedReceptionist.AssignmentId &&
+            member.Role == UserRoleCode.MaintenanceStaff);
+    }
+
+    [Fact]
     public async Task ConcurrentCheckInRequestsAssignPhysicalRoomOnlyOnce()
     {
         using HttpClient client = _factory.CreateClient();

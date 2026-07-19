@@ -16,4 +16,14 @@ public static class HotelManagementErrors
     public static readonly ResultError DuplicateStaffEmail = new("HotelManagement.DuplicateStaffEmail", "A user account with this email already exists.");
     public static readonly ResultError DuplicateStaffPhoneNumber = new("HotelManagement.DuplicateStaffPhoneNumber", "A user account with this phone number already exists.");
     public static readonly ResultError InvalidStaffRole = new("HotelManagement.InvalidStaffRole", "The selected staff role is not valid for hotel operations.");
+    public static readonly ResultError StaffNotFound = new("HotelManagement.StaffNotFound", "The hotel staff assignment was not found.");
+    public static readonly ResultError StaffUserNotFound = new("HotelManagement.StaffUserNotFound", "No user account exists with the supplied email address.");
+    public static readonly ResultError DuplicateStaffAssignment = new("HotelManagement.DuplicateStaffAssignment", "This user already has an active assignment at the hotel.");
+    public static readonly ResultError StaffSystemAccountForbidden = new("HotelManagement.StaffSystemAccountForbidden", "System accounts cannot be assigned as hotel staff.");
+    public static readonly ResultError StaffPlatformAdministratorForbidden = new("HotelManagement.StaffPlatformAdministratorForbidden", "Platform Administrator accounts cannot be assigned to hotel operations.");
+    public static readonly ResultError StaffAccountInactive = new("HotelManagement.StaffAccountInactive", "The user account must be active before it can be assigned to a hotel.");
+    public static readonly ResultError StaffHasOpenTasks = new("HotelManagement.StaffHasOpenTasks", "Reassign or complete this staff member's open tasks before changing or deactivating the assignment.");
+    public static readonly ResultError SelfManagementForbidden = new("HotelManagement.SelfManagementForbidden", "Hotel Managers cannot change or deactivate their own assignment.");
+    public static readonly ResultError ManagerRoleManagementForbidden = new("HotelManagement.ManagerRoleManagementForbidden", "Hotel Managers can manage Receptionist, Housekeeping Staff, and Maintenance Staff assignments only.");
+    public static readonly ResultError InactiveStaffAssignment = new("HotelManagement.InactiveStaffAssignment", "Reactivate the staff assignment before changing its role.");
 }

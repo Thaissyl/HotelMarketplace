@@ -11,6 +11,7 @@ assumed from current code behavior.
 | DEC-AUD-003 | Walk-in customer and payment flow | Every walk-in booking is mapped to the shared system account named `Anonymous Walk-in Customer`. Cash is collected at the front desk, so the booking never enters `PendingPayment` and never receives a fifteen-minute payment timer. | A walk-in booking becomes `CheckedIn` when physical rooms are assigned during creation. If creation is completed without room assignment, it becomes `Confirmed` and requires the normal room-assignment and check-in transition. Both paths must use the same inventory concurrency protection as online booking. | Approved |
 | DEC-AUD-004 | Check-in identity fields | Check-in stores document type and number, optional issuing-country code, and optional expiry date. | Type and number are required at check-in; expiry cannot be in the past; identity fields remain absent from general booking projections. | Approved for ALN-008 |
 | DEC-AUD-006 | Inspection and maintenance release policy | Hotels have a configurable `RequiresRoomInspection` policy that defaults to enabled. | Cleaning or repair completion does not directly release an inspection-required room; only an assigned Owner or Manager may complete the release action. | Approved for ALN-008 |
+| DEC-AUD-005 | Hotel Manager staff authority | Property Owners may create or attach Hotel Managers and operational staff. Hotel Managers may manage Receptionist, HousekeepingStaff, and MaintenanceStaff only at assigned hotels. | Managers cannot grant Owner, Manager, or PlatformAdministrator authority, cannot change or deactivate themselves, and cannot remove access while the target owns open work. | Approved for ALN-010 |
 
 ## Remaining Decisions Before Related Implementation
 
@@ -19,5 +20,4 @@ work. They must be resolved before their corresponding P1 or P2 change begins.
 
 | Decision ID | Topic | Document conflict or ambiguity | Recommended default | Needed before | Status |
 | --- | --- | --- | --- | --- | --- |
-| DEC-AUD-005 | Hotel Manager staff authority | SRS permits Manager staff management but leaves delegated approval detail open | Manager may manage Receptionist, HousekeepingStaff, and MaintenanceStaff only at assigned hotels; cannot grant Owner, Manager, or PlatformAdministrator; cannot elevate self | ALN-010 | Open |
 | DEC-AUD-007 | Saved hotels and notifications | Notification records are now server-backed under ALN-009; saved hotels remain device-local | Retain durable notification outbox records; either make saved hotels server-backed or explicitly remove favorites from supported scope | ALN-013 | Partially resolved |

@@ -26,12 +26,29 @@ public interface IHotelManagementRepository
 
     Task<UserRole?> GetRoleAsync(UserRoleCode roleCode, CancellationToken cancellationToken);
 
-    Task<HotelStaffMemberDto> CreateStaffAsync(
+    Task<StaffLifecyclePersistenceResult> CreateStaffAsync(
         Guid hotelId,
         UserAccount userAccount,
         Guid roleId,
         Guid assignedByUserAccountId,
         UserRoleCode roleCode,
+        CancellationToken cancellationToken);
+
+    Task<StaffLifecyclePersistenceResult> AttachStaffAsync(
+        Guid hotelId,
+        string normalizedEmail,
+        Guid roleId,
+        Guid assignedByUserAccountId,
+        UserRoleCode roleCode,
+        CancellationToken cancellationToken);
+
+    Task<StaffLifecyclePersistenceResult> UpdateStaffAssignmentAsync(
+        Guid hotelId,
+        Guid assignmentId,
+        Guid? targetRoleId,
+        UserRoleCode? targetRoleCode,
+        bool? isActive,
+        Guid actorUserAccountId,
         CancellationToken cancellationToken);
 
     Task AddRoomTypeAsync(RoomType roomType, CancellationToken cancellationToken);

@@ -50,6 +50,7 @@ to the canonical SRS and SDD.
 | [16-aln-008-stay-room-lifecycle.md](16-aln-008-stay-room-lifecycle.md) | ALN-008 check-in identity, room assignment, inspection, maintenance release, and setup safeguards |
 | [17-aln-009-audit-notification-outbox.md](17-aln-009-audit-notification-outbox.md) | ALN-009 transactional protected-mutation audit and durable notification outbox evidence |
 | [18-aln-015-release-readiness.md](18-aln-015-release-readiness.md) | ALN-015 SDK, dependency, Compose, backup/restore, and clean-checkout release evidence |
+| [19-aln-010-owner-manager-staff-lifecycle.md](19-aln-010-owner-manager-staff-lifecycle.md) | ALN-010 Owner and Manager authority, staff assignment lifecycle, concurrency, API, and Mobile evidence |
 | [workstreams](workstreams/README.md) | Detailed reviews by business capability |
 
 ## Completion Criteria

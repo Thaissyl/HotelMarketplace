@@ -118,6 +118,7 @@ class HotelStaffMember {
     required this.phoneNumber,
     required this.role,
     required this.status,
+    required this.isAssignmentActive,
     required this.assignedAtUtc,
   });
 
@@ -129,6 +130,7 @@ class HotelStaffMember {
   final String? phoneNumber;
   final String role;
   final String status;
+  final bool isAssignmentActive;
   final DateTime assignedAtUtc;
 
   static HotelStaffMember fromJson(Object? data) {
@@ -142,6 +144,7 @@ class HotelStaffMember {
       phoneNumber: json['phoneNumber']?.toString(),
       role: json['role']?.toString() ?? '',
       status: json['status']?.toString() ?? '',
+      isAssignmentActive: json['isAssignmentActive'] == true,
       assignedAtUtc:
           DateTime.tryParse(json['assignedAtUtc']?.toString() ?? '')?.toUtc() ??
               DateTime.now().toUtc(),
@@ -171,6 +174,31 @@ class CreateStaffRequest {
       'fullName': fullName.trim(),
       'phoneNumber': phoneNumber.trim(),
       'role': role,
+    };
+  }
+}
+
+class AttachStaffRequest {
+  const AttachStaffRequest({required this.email, required this.role});
+
+  final String email;
+  final String role;
+
+  Map<String, dynamic> toJson() {
+    return {'email': email.trim(), 'role': role};
+  }
+}
+
+class UpdateStaffAssignmentRequest {
+  const UpdateStaffAssignmentRequest({this.role, this.isActive});
+
+  final String? role;
+  final bool? isActive;
+
+  Map<String, dynamic> toJson() {
+    return {
+      if (role != null) 'role': role,
+      if (isActive != null) 'isActive': isActive,
     };
   }
 }

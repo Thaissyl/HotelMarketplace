@@ -186,7 +186,32 @@ class OperationsApi {
     required CreateStaffRequest request,
   }) {
     return _apiClient.post<HotelStaffMember>(
-      '/api/owner/hotels/$hotelId/staff',
+      '/api/operations/hotels/$hotelId/staff',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: request.toJson(),
+      decoder: HotelStaffMember.fromJson,
+    );
+  }
+
+  Future<HotelStaffMember> attachStaff({
+    required String hotelId,
+    required AttachStaffRequest request,
+  }) {
+    return _apiClient.post<HotelStaffMember>(
+      '/api/operations/hotels/$hotelId/staff/attachments',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: request.toJson(),
+      decoder: HotelStaffMember.fromJson,
+    );
+  }
+
+  Future<HotelStaffMember> updateStaffAssignment({
+    required String hotelId,
+    required String assignmentId,
+    required UpdateStaffAssignmentRequest request,
+  }) {
+    return _apiClient.patch<HotelStaffMember>(
+      '/api/operations/hotels/$hotelId/staff/$assignmentId',
       options: AuthHeaderInterceptor.hotelScopedOptions(),
       data: request.toJson(),
       decoder: HotelStaffMember.fromJson,

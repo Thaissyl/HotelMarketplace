@@ -70,8 +70,8 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
                 on assignment.UserAccountId equals user.Id
             join role in _dbContext.UserRoles.IgnoreQueryFilters().AsNoTracking()
                 on assignment.RoleId equals role.Id
-            where assignment.HotelId == hotelId && assignment.IsActive
-            orderby role.Name, user.FullName
+            where assignment.HotelId == hotelId
+            orderby assignment.IsActive descending, role.Name, user.FullName
             select new HotelStaffMemberDto(
                 user.Id,
                 assignment.Id,
@@ -81,10 +81,19 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
                 user.PhoneNumber,
                 ParseRoleCode(role.Code),
                 user.Status,
+                assignment.IsActive,
                 assignment.AssignedAtUtc))
             .ToListAsync(cancellationToken);
 
-        return staff;
+        return staff
+            .GroupBy(member => member.UserAccountId)
+            .Select(group => group
+                .OrderByDescending(member => member.IsAssignmentActive)
+                .ThenByDescending(member => member.AssignedAtUtc)
+                .First())
+            .OrderBy(member => member.Role)
+            .ThenBy(member => member.FullName)
+            .ToArray();
     }
 
     public Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken)
@@ -111,7 +120,7 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
             .FirstOrDefaultAsync(role => role.Code == roleCodeValue, cancellationToken);
     }
 
-    public async Task<HotelStaffMemberDto> CreateStaffAsync(
+    public async Task<StaffLifecyclePersistenceResult> CreateStaffAsync(
         Guid hotelId,
         UserAccount userAccount,
         Guid roleId,
@@ -127,16 +136,66 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
                 IsolationLevel.Serializable,
                 cancellationToken);
 
+            if (!await SqlApplicationLock.AcquireExclusiveAsync(
+                    _dbContext,
+                    $"staff-email:{userAccount.Email.ToUpperInvariant()}",
+                    cancellationToken) ||
+                !await SqlApplicationLock.AcquireExclusiveAsync(
+                    _dbContext,
+                    $"staff-phone:{userAccount.PhoneNumber}",
+                    cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.LockUnavailable);
+            }
+
+            UserRoleCode? actorRole = await GetTransactionalStaffManagerRoleAsync(
+                hotelId,
+                assignedByUserAccountId,
+                cancellationToken);
+            if (!actorRole.HasValue)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.ActorAccessRevoked);
+            }
+            if (!CanManageStaffRole(actorRole.Value, roleCode))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.ManagerRoleManagementForbidden);
+            }
+
+            if (await _dbContext.UserAccounts.IgnoreQueryFilters().AnyAsync(user => user.Email == userAccount.Email, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.DuplicateEmail);
+            }
+            if (userAccount.PhoneNumber is not null && await _dbContext.UserAccounts.IgnoreQueryFilters()
+                .AnyAsync(user => user.PhoneNumber == userAccount.PhoneNumber, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.DuplicatePhoneNumber);
+            }
+
             UserAccountRole userAccountRole = new(Guid.NewGuid(), userAccount.Id, roleId);
             HotelStaffAssignment assignment = new(Guid.NewGuid(), userAccount.Id, hotelId, roleId, assignedByUserAccountId);
 
             await _dbContext.UserAccounts.AddAsync(userAccount, cancellationToken);
             await _dbContext.UserAccountRoles.AddAsync(userAccountRole, cancellationToken);
             await _dbContext.HotelStaffAssignments.AddAsync(assignment, cancellationToken);
+            await _dbContext.NotificationRecords.AddAsync(
+                new NotificationRecord(
+                    Guid.NewGuid(),
+                    userAccount.Id,
+                    "HotelStaffAssigned",
+                    nameof(HotelStaffAssignment),
+                    assignment.Id,
+                    $"You were assigned the {roleCode} role at a hotel.",
+                    hotelId),
+                cancellationToken);
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
-            return new HotelStaffMemberDto(
+            return StaffLifecyclePersistenceResult.Success(new HotelStaffMemberDto(
                 userAccount.Id,
                 assignment.Id,
                 hotelId,
@@ -145,7 +204,253 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
                 userAccount.PhoneNumber,
                 roleCode,
                 userAccount.Status,
-                assignment.AssignedAtUtc);
+                assignment.IsActive,
+                assignment.AssignedAtUtc));
+        });
+    }
+
+    public async Task<StaffLifecyclePersistenceResult> AttachStaffAsync(
+        Guid hotelId,
+        string normalizedEmail,
+        Guid roleId,
+        Guid assignedByUserAccountId,
+        UserRoleCode roleCode,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            if (!await SqlApplicationLock.AcquireExclusiveAsync(
+                    _dbContext,
+                    $"staff-email:{normalizedEmail.ToUpperInvariant()}",
+                    cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.LockUnavailable);
+            }
+
+            UserAccount? user = await _dbContext.UserAccounts
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(entity => entity.Email == normalizedEmail, cancellationToken);
+            if (user is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.UserNotFound);
+            }
+            if (!await AcquireStaffAssignmentLockAsync(hotelId, user.Id, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.LockUnavailable);
+            }
+            UserRoleCode? actorRole = await GetTransactionalStaffManagerRoleAsync(
+                hotelId,
+                assignedByUserAccountId,
+                cancellationToken);
+            if (!actorRole.HasValue)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.ActorAccessRevoked);
+            }
+            if (!CanManageStaffRole(actorRole.Value, roleCode))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.ManagerRoleManagementForbidden);
+            }
+            if (user.IsSystemAccount)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.SystemAccountForbidden);
+            }
+            if (user.Status != AccountStatus.Active)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.AccountInactive);
+            }
+            if (await HasActivePlatformAdministratorRoleAsync(user.Id, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.PlatformAdministratorForbidden);
+            }
+
+            HotelStaffAssignment? assignment = await _dbContext.HotelStaffAssignments
+                .IgnoreQueryFilters()
+                .Where(entity => entity.HotelId == hotelId && entity.UserAccountId == user.Id)
+                .OrderByDescending(entity => entity.IsActive)
+                .ThenByDescending(entity => entity.AssignedAtUtc)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (assignment?.IsActive == true)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.DuplicateAssignment);
+            }
+
+            Guid? previousRoleId = assignment?.RoleId;
+            if (assignment is null)
+            {
+                assignment = new HotelStaffAssignment(Guid.NewGuid(), user.Id, hotelId, roleId, assignedByUserAccountId);
+                await _dbContext.HotelStaffAssignments.AddAsync(assignment, cancellationToken);
+            }
+            else
+            {
+                assignment.Reactivate(roleId);
+            }
+
+            await EnsureGlobalRoleActiveAsync(user.Id, roleId, cancellationToken);
+            if (previousRoleId.HasValue && previousRoleId.Value != roleId)
+            {
+                await RevokeGlobalRoleIfUnusedAsync(user.Id, previousRoleId.Value, assignment.Id, cancellationToken);
+            }
+            await AddStaffNotificationAsync(user.Id, assignment.Id, hotelId, "HotelStaffAssigned", roleCode, cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return StaffLifecyclePersistenceResult.Success(
+                new HotelStaffMemberDto(
+                    user.Id,
+                    assignment.Id,
+                    hotelId,
+                    user.Email,
+                    user.FullName,
+                    user.PhoneNumber,
+                    roleCode,
+                    user.Status,
+                    assignment.IsActive,
+                    assignment.AssignedAtUtc));
+        });
+    }
+
+    public async Task<StaffLifecyclePersistenceResult> UpdateStaffAssignmentAsync(
+        Guid hotelId,
+        Guid assignmentId,
+        Guid? targetRoleId,
+        UserRoleCode? targetRoleCode,
+        bool? isActive,
+        Guid actorUserAccountId,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            if (!await SqlApplicationLock.AcquireExclusiveAsync(
+                    _dbContext,
+                    $"staff-assignment:{hotelId:N}:{assignmentId:N}",
+                    cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.LockUnavailable);
+            }
+
+            HotelStaffAssignment? assignment = await _dbContext.HotelStaffAssignments
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(entity => entity.Id == assignmentId && entity.HotelId == hotelId, cancellationToken);
+            if (assignment is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.AssignmentNotFound);
+            }
+            if (!await AcquireStaffAssignmentLockAsync(hotelId, assignment.UserAccountId, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.LockUnavailable);
+            }
+            UserRoleCode? actorRole = await GetTransactionalStaffManagerRoleAsync(
+                hotelId,
+                actorUserAccountId,
+                cancellationToken);
+            if (!actorRole.HasValue)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.ActorAccessRevoked);
+            }
+            bool canManageHotelManagers = actorRole.Value == UserRoleCode.PropertyOwner;
+            if (!canManageHotelManagers && assignment.UserAccountId == actorUserAccountId)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.SelfManagementForbidden);
+            }
+
+            UserRole currentRole = await _dbContext.UserRoles.IgnoreQueryFilters().AsNoTracking()
+                .SingleAsync(role => role.Id == assignment.RoleId, cancellationToken);
+            UserRoleCode currentRoleCode = ParseRoleCode(currentRole.Code);
+            if (!canManageHotelManagers &&
+                (currentRoleCode == UserRoleCode.HotelManager || targetRoleCode == UserRoleCode.HotelManager))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.ManagerRoleManagementForbidden);
+            }
+
+            UserAccount user = await _dbContext.UserAccounts.IgnoreQueryFilters()
+                .SingleAsync(entity => entity.Id == assignment.UserAccountId, cancellationToken);
+            if (targetRoleId.HasValue && !assignment.IsActive)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.InactiveAssignment);
+            }
+            if (isActive == true && user.Status != AccountStatus.Active)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.AccountInactive);
+            }
+
+            bool removesCurrentOperationalRole = isActive == false ||
+                (targetRoleId.HasValue && targetRoleId.Value != assignment.RoleId);
+            if (removesCurrentOperationalRole && await HasOpenStaffTasksAsync(hotelId, user.Id, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return StaffLifecyclePersistenceResult.Failure(StaffLifecyclePersistenceStatus.OpenTasks);
+            }
+
+            Guid previousRoleId = assignment.RoleId;
+            UserRoleCode resultingRoleCode = targetRoleCode ?? currentRoleCode;
+            string eventType;
+            if (targetRoleId.HasValue)
+            {
+                assignment.ChangeRole(targetRoleId.Value);
+                await EnsureGlobalRoleActiveAsync(user.Id, targetRoleId.Value, cancellationToken);
+                eventType = "HotelStaffRoleChanged";
+            }
+            else if (isActive == true)
+            {
+                assignment.Reactivate(assignment.RoleId);
+                await EnsureGlobalRoleActiveAsync(user.Id, assignment.RoleId, cancellationToken);
+                eventType = "HotelStaffReactivated";
+            }
+            else
+            {
+                assignment.Revoke();
+                eventType = "HotelStaffDeactivated";
+            }
+
+            if (previousRoleId != assignment.RoleId || !assignment.IsActive)
+            {
+                await RevokeGlobalRoleIfUnusedAsync(user.Id, previousRoleId, assignment.Id, cancellationToken);
+            }
+
+            await AddStaffNotificationAsync(user.Id, assignment.Id, hotelId, eventType, resultingRoleCode, cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return StaffLifecyclePersistenceResult.Success(new HotelStaffMemberDto(
+                user.Id,
+                assignment.Id,
+                hotelId,
+                user.Email,
+                user.FullName,
+                user.PhoneNumber,
+                resultingRoleCode,
+                user.Status,
+                assignment.IsActive,
+                assignment.AssignedAtUtc));
         });
     }
 
@@ -415,6 +720,193 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
     public Task SaveChangesAsync(CancellationToken cancellationToken)
     {
         return _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private Task<bool> AcquireStaffAssignmentLockAsync(
+        Guid hotelId,
+        Guid userAccountId,
+        CancellationToken cancellationToken)
+    {
+        return SqlApplicationLock.AcquireExclusiveAsync(
+            _dbContext,
+            $"staff-assignment-user:{hotelId:N}:{userAccountId:N}",
+            cancellationToken);
+    }
+
+    private async Task<UserRoleCode?> GetTransactionalStaffManagerRoleAsync(
+        Guid hotelId,
+        Guid actorUserAccountId,
+        CancellationToken cancellationToken)
+    {
+        if (!await AcquireStaffAssignmentLockAsync(hotelId, actorUserAccountId, cancellationToken))
+        {
+            return null;
+        }
+
+        bool actorIsActive = await _dbContext.UserAccounts
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(
+                user => user.Id == actorUserAccountId && user.Status == AccountStatus.Active,
+                cancellationToken);
+        if (!actorIsActive)
+        {
+            return null;
+        }
+
+        bool ownsHotel = await _dbContext.HotelProperties
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(
+                hotel => hotel.Id == hotelId && hotel.OwnerUserAccountId == actorUserAccountId,
+                cancellationToken);
+        if (ownsHotel)
+        {
+            return UserRoleCode.PropertyOwner;
+        }
+
+        string managerCode = UserRoleCode.HotelManager.ToString().ToUpperInvariant();
+        bool isActiveManager = await (
+            from assignment in _dbContext.HotelStaffAssignments.IgnoreQueryFilters().AsNoTracking()
+            join role in _dbContext.UserRoles.IgnoreQueryFilters().AsNoTracking()
+                on assignment.RoleId equals role.Id
+            where assignment.HotelId == hotelId &&
+                assignment.UserAccountId == actorUserAccountId &&
+                assignment.IsActive &&
+                role.Code == managerCode
+            select assignment.Id)
+            .AnyAsync(cancellationToken);
+
+        return isActiveManager ? UserRoleCode.HotelManager : null;
+    }
+
+    private static bool CanManageStaffRole(UserRoleCode actorRole, UserRoleCode targetRole)
+    {
+        bool targetIsOperational = targetRole is UserRoleCode.Receptionist or
+                UserRoleCode.HousekeepingStaff or
+                UserRoleCode.MaintenanceStaff;
+
+        return actorRole == UserRoleCode.PropertyOwner
+            ? targetRole == UserRoleCode.HotelManager || targetIsOperational
+            : actorRole == UserRoleCode.HotelManager && targetIsOperational;
+    }
+
+    private Task<bool> HasActivePlatformAdministratorRoleAsync(
+        Guid userAccountId,
+        CancellationToken cancellationToken)
+    {
+        string platformRoleCode = UserRoleCode.PlatformAdministrator.ToString().ToUpperInvariant();
+
+        return (
+            from accountRole in _dbContext.UserAccountRoles.IgnoreQueryFilters().AsNoTracking()
+            join role in _dbContext.UserRoles.IgnoreQueryFilters().AsNoTracking()
+                on accountRole.RoleId equals role.Id
+            where accountRole.UserAccountId == userAccountId &&
+                accountRole.IsActive &&
+                role.Code == platformRoleCode
+            select accountRole.Id)
+            .AnyAsync(cancellationToken);
+    }
+
+    private async Task<bool> HasOpenStaffTasksAsync(
+        Guid hotelId,
+        Guid userAccountId,
+        CancellationToken cancellationToken)
+    {
+        bool hasHousekeepingTasks = await _dbContext.HousekeepingTasks
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(task => task.HotelId == hotelId &&
+                task.AssignedToUserAccountId == userAccountId &&
+                task.Status != HousekeepingTaskStatus.Completed &&
+                task.Status != HousekeepingTaskStatus.Cancelled,
+                cancellationToken);
+        if (hasHousekeepingTasks)
+        {
+            return true;
+        }
+
+        return await _dbContext.MaintenanceRequests
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(request => request.HotelId == hotelId &&
+                request.AssignedToUserAccountId == userAccountId &&
+                request.Status != MaintenanceStatus.Resolved &&
+                request.Status != MaintenanceStatus.Released &&
+                request.Status != MaintenanceStatus.Cancelled,
+                cancellationToken);
+    }
+
+    private async Task EnsureGlobalRoleActiveAsync(
+        Guid userAccountId,
+        Guid roleId,
+        CancellationToken cancellationToken)
+    {
+        UserAccountRole? accountRole = await _dbContext.UserAccountRoles
+            .IgnoreQueryFilters()
+            .Where(entity => entity.UserAccountId == userAccountId && entity.RoleId == roleId)
+            .OrderByDescending(entity => entity.IsActive)
+            .ThenByDescending(entity => entity.AssignedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (accountRole is null)
+        {
+            await _dbContext.UserAccountRoles.AddAsync(
+                new UserAccountRole(Guid.NewGuid(), userAccountId, roleId),
+                cancellationToken);
+        }
+        else if (!accountRole.IsActive)
+        {
+            accountRole.Reactivate();
+        }
+    }
+
+    private async Task RevokeGlobalRoleIfUnusedAsync(
+        Guid userAccountId,
+        Guid roleId,
+        Guid excludedAssignmentId,
+        CancellationToken cancellationToken)
+    {
+        bool roleStillRequired = await _dbContext.HotelStaffAssignments
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(assignment => assignment.UserAccountId == userAccountId &&
+                assignment.RoleId == roleId &&
+                assignment.IsActive &&
+                assignment.Id != excludedAssignmentId,
+                cancellationToken);
+        if (roleStillRequired)
+        {
+            return;
+        }
+
+        UserAccountRole? accountRole = await _dbContext.UserAccountRoles
+            .IgnoreQueryFilters()
+            .Where(entity => entity.UserAccountId == userAccountId &&
+                entity.RoleId == roleId &&
+                entity.IsActive)
+            .FirstOrDefaultAsync(cancellationToken);
+        accountRole?.Revoke();
+    }
+
+    private async Task AddStaffNotificationAsync(
+        Guid recipientUserAccountId,
+        Guid assignmentId,
+        Guid hotelId,
+        string eventType,
+        UserRoleCode roleCode,
+        CancellationToken cancellationToken)
+    {
+        await _dbContext.NotificationRecords.AddAsync(
+            new NotificationRecord(
+                Guid.NewGuid(),
+                recipientUserAccountId,
+                eventType,
+                nameof(HotelStaffAssignment),
+                assignmentId,
+                $"Your hotel staff assignment is now {roleCode} ({eventType}).",
+                hotelId),
+            cancellationToken);
     }
 
     private static UserRoleCode ParseRoleCode(string roleCode)

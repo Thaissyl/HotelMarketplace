@@ -26,4 +26,14 @@ public sealed class UserAccountRole : Entity
     public bool IsActive { get; private set; }
 
     public DateTime AssignedAtUtc { get; private set; }
+
+    public void Revoke()
+    {
+        IsActive = false;
+    }
+
+    public void Reactivate()
+    {
+        IsActive = true;
+    }
 }

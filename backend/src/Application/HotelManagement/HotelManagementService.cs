@@ -22,6 +22,8 @@ internal sealed class HotelManagementService : IHotelManagementService
     private readonly IValidator<RegisterHotelRequest> _registerHotelValidator;
     private readonly IValidator<UpdateHotelProfileRequest> _updateHotelProfileValidator;
     private readonly IValidator<CreateHotelStaffRequest> _createHotelStaffValidator;
+    private readonly IValidator<AttachHotelStaffRequest> _attachHotelStaffValidator;
+    private readonly IValidator<UpdateHotelStaffAssignmentRequest> _updateHotelStaffAssignmentValidator;
     private readonly IValidator<CreateRoomTypeRequest> _createRoomTypeValidator;
     private readonly IValidator<UpdateRoomTypeRequest> _updateRoomTypeValidator;
     private readonly IValidator<CreatePhysicalRoomRequest> _createPhysicalRoomValidator;
@@ -36,6 +38,8 @@ internal sealed class HotelManagementService : IHotelManagementService
         IValidator<RegisterHotelRequest> registerHotelValidator,
         IValidator<UpdateHotelProfileRequest> updateHotelProfileValidator,
         IValidator<CreateHotelStaffRequest> createHotelStaffValidator,
+        IValidator<AttachHotelStaffRequest> attachHotelStaffValidator,
+        IValidator<UpdateHotelStaffAssignmentRequest> updateHotelStaffAssignmentValidator,
         IValidator<CreateRoomTypeRequest> createRoomTypeValidator,
         IValidator<UpdateRoomTypeRequest> updateRoomTypeValidator,
         IValidator<CreatePhysicalRoomRequest> createPhysicalRoomValidator,
@@ -49,6 +53,8 @@ internal sealed class HotelManagementService : IHotelManagementService
         _registerHotelValidator = registerHotelValidator;
         _updateHotelProfileValidator = updateHotelProfileValidator;
         _createHotelStaffValidator = createHotelStaffValidator;
+        _attachHotelStaffValidator = attachHotelStaffValidator;
+        _updateHotelStaffAssignmentValidator = updateHotelStaffAssignmentValidator;
         _createRoomTypeValidator = createRoomTypeValidator;
         _updateRoomTypeValidator = updateRoomTypeValidator;
         _createPhysicalRoomValidator = createPhysicalRoomValidator;
@@ -206,10 +212,10 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<HotelStaffMemberDto>> CreateStaffAsync(Guid hotelId, CreateHotelStaffRequest request, CancellationToken cancellationToken)
     {
-        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
-        if (accessFailure is not null)
+        Result<UserRoleCode> managerRole = await GetStaffManagementRoleAsync(hotelId, cancellationToken);
+        if (managerRole.IsFailure)
         {
-            return Result.Failure<HotelStaffMemberDto>(accessFailure.Error);
+            return Result.Failure<HotelStaffMemberDto>(managerRole.Error);
         }
 
         ValidationResult validationResult = await _createHotelStaffValidator.ValidateAsync(request, cancellationToken);
@@ -217,6 +223,11 @@ internal sealed class HotelManagementService : IHotelManagementService
         {
             return Result.Failure<HotelStaffMemberDto>(
                 ValidationErrorFormatter.ToResultError("HotelManagement.InvalidStaffAccount", validationResult));
+        }
+
+        if (!CanManageRole(managerRole.Value, request.Role))
+        {
+            return Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.ManagerRoleManagementForbidden);
         }
 
         string normalizedEmail = request.Email.Trim().ToLowerInvariant();
@@ -245,7 +256,7 @@ internal sealed class HotelManagementService : IHotelManagementService
             request.FullName.Trim(),
             normalizedPhone);
 
-        HotelStaffMemberDto staff = await _repository.CreateStaffAsync(
+        StaffLifecyclePersistenceResult persistenceResult = await _repository.CreateStaffAsync(
             hotelId,
             userAccount,
             role.Id,
@@ -253,7 +264,93 @@ internal sealed class HotelManagementService : IHotelManagementService
             request.Role,
             cancellationToken);
 
-        return Result.Success(staff);
+        return MapStaffPersistenceResult(persistenceResult);
+    }
+
+    public async Task<Result<HotelStaffMemberDto>> AttachStaffAsync(
+        Guid hotelId,
+        AttachHotelStaffRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<UserRoleCode> managerRole = await GetStaffManagementRoleAsync(hotelId, cancellationToken);
+        if (managerRole.IsFailure)
+        {
+            return Result.Failure<HotelStaffMemberDto>(managerRole.Error);
+        }
+
+        ValidationResult validationResult = await _attachHotelStaffValidator.ValidateAsync(request, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return Result.Failure<HotelStaffMemberDto>(
+                ValidationErrorFormatter.ToResultError("HotelManagement.InvalidStaffAttachment", validationResult));
+        }
+        if (!CanManageRole(managerRole.Value, request.Role))
+        {
+            return Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.ManagerRoleManagementForbidden);
+        }
+
+        UserRole? role = await _repository.GetRoleAsync(request.Role, cancellationToken);
+        if (role is null)
+        {
+            return Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.InvalidStaffRole);
+        }
+
+        StaffLifecyclePersistenceResult persistenceResult = await _repository.AttachStaffAsync(
+            hotelId,
+            request.Email.Trim().ToLowerInvariant(),
+            role.Id,
+            _currentUserService.UserId!.Value,
+            request.Role,
+            cancellationToken);
+
+        return MapStaffPersistenceResult(persistenceResult);
+    }
+
+    public async Task<Result<HotelStaffMemberDto>> UpdateStaffAssignmentAsync(
+        Guid hotelId,
+        Guid assignmentId,
+        UpdateHotelStaffAssignmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<UserRoleCode> managerRole = await GetStaffManagementRoleAsync(hotelId, cancellationToken);
+        if (managerRole.IsFailure)
+        {
+            return Result.Failure<HotelStaffMemberDto>(managerRole.Error);
+        }
+
+        ValidationResult validationResult = await _updateHotelStaffAssignmentValidator.ValidateAsync(request, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return Result.Failure<HotelStaffMemberDto>(
+                ValidationErrorFormatter.ToResultError("HotelManagement.InvalidStaffUpdate", validationResult));
+        }
+        if (request.Role.HasValue && !CanManageRole(managerRole.Value, request.Role.Value))
+        {
+            return Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.ManagerRoleManagementForbidden);
+        }
+
+        Guid? targetRoleId = null;
+        if (request.Role.HasValue)
+        {
+            UserRole? role = await _repository.GetRoleAsync(request.Role.Value, cancellationToken);
+            if (role is null)
+            {
+                return Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.InvalidStaffRole);
+            }
+
+            targetRoleId = role.Id;
+        }
+
+        StaffLifecyclePersistenceResult persistenceResult = await _repository.UpdateStaffAssignmentAsync(
+            hotelId,
+            assignmentId,
+            targetRoleId,
+            request.Role,
+            request.IsActive,
+            _currentUserService.UserId!.Value,
+            cancellationToken);
+
+        return MapStaffPersistenceResult(persistenceResult);
     }
 
     public async Task<Result<RoomTypeDto>> CreateRoomTypeAsync(Guid hotelId, CreateRoomTypeRequest request, CancellationToken cancellationToken)
@@ -457,6 +554,63 @@ internal sealed class HotelManagementService : IHotelManagementService
         return await _hotelAccessAuthorizer.HasAccessAsync(hotelId, allowedRoles, cancellationToken)
             ? null
             : Result.Failure(HotelManagementErrors.Forbidden);
+    }
+
+    private async Task<Result<UserRoleCode>> GetStaffManagementRoleAsync(
+        Guid hotelId,
+        CancellationToken cancellationToken)
+    {
+        if (_currentUserService.UserId is null)
+        {
+            return Result.Failure<UserRoleCode>(HotelManagementErrors.Forbidden);
+        }
+
+        if (await _repository.UserOwnsHotelAsync(_currentUserService.UserId.Value, hotelId, cancellationToken))
+        {
+            return Result.Success(UserRoleCode.PropertyOwner);
+        }
+
+        return await _hotelAccessAuthorizer.HasAccessAsync(
+            hotelId,
+            new[] { UserRoleCode.HotelManager },
+            cancellationToken)
+            ? Result.Success(UserRoleCode.HotelManager)
+            : Result.Failure<UserRoleCode>(HotelManagementErrors.Forbidden);
+    }
+
+    private static bool CanManageRole(UserRoleCode managerRole, UserRoleCode targetRole)
+    {
+        if (managerRole == UserRoleCode.PropertyOwner)
+        {
+            return targetRole is UserRoleCode.HotelManager or UserRoleCode.Receptionist or
+                UserRoleCode.HousekeepingStaff or UserRoleCode.MaintenanceStaff;
+        }
+
+        return managerRole == UserRoleCode.HotelManager &&
+            targetRole is UserRoleCode.Receptionist or UserRoleCode.HousekeepingStaff or UserRoleCode.MaintenanceStaff;
+    }
+
+    private static Result<HotelStaffMemberDto> MapStaffPersistenceResult(StaffLifecyclePersistenceResult result)
+    {
+        return result.Status switch
+        {
+            StaffLifecyclePersistenceStatus.Success => Result.Success(result.Staff!),
+            StaffLifecyclePersistenceStatus.UserNotFound => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.StaffUserNotFound),
+            StaffLifecyclePersistenceStatus.AssignmentNotFound => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.StaffNotFound),
+            StaffLifecyclePersistenceStatus.DuplicateAssignment => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.DuplicateStaffAssignment),
+            StaffLifecyclePersistenceStatus.DuplicateEmail => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.DuplicateStaffEmail),
+            StaffLifecyclePersistenceStatus.DuplicatePhoneNumber => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.DuplicateStaffPhoneNumber),
+            StaffLifecyclePersistenceStatus.SystemAccountForbidden => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.StaffSystemAccountForbidden),
+            StaffLifecyclePersistenceStatus.PlatformAdministratorForbidden => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.StaffPlatformAdministratorForbidden),
+            StaffLifecyclePersistenceStatus.AccountInactive => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.StaffAccountInactive),
+            StaffLifecyclePersistenceStatus.OpenTasks => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.StaffHasOpenTasks),
+            StaffLifecyclePersistenceStatus.LockUnavailable => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.LockUnavailable),
+            StaffLifecyclePersistenceStatus.SelfManagementForbidden => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.SelfManagementForbidden),
+            StaffLifecyclePersistenceStatus.ManagerRoleManagementForbidden => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.ManagerRoleManagementForbidden),
+            StaffLifecyclePersistenceStatus.InactiveAssignment => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.InactiveStaffAssignment),
+            StaffLifecyclePersistenceStatus.ActorAccessRevoked => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.Forbidden),
+            _ => Result.Failure<HotelStaffMemberDto>(HotelManagementErrors.StaffNotFound)
+        };
     }
 
     private static HotelDto ToHotelDto(HotelProperty hotel)

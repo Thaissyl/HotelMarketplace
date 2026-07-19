@@ -236,6 +236,8 @@ public sealed class OwnerHotelsController : ControllerBase
             "HotelManagement.DuplicateStaffEmail" => StatusCodes.Status409Conflict,
             "HotelManagement.DuplicateStaffPhoneNumber" => StatusCodes.Status409Conflict,
             "HotelManagement.InvalidStaffRole" => StatusCodes.Status400BadRequest,
+            "HotelManagement.DuplicateStaffAssignment" => StatusCodes.Status409Conflict,
+            "HotelManagement.StaffHasOpenTasks" => StatusCodes.Status409Conflict,
             _ => StatusCodes.Status400BadRequest
         };
 

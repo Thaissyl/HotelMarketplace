@@ -158,7 +158,7 @@ internal sealed class HotelStaffAssignmentConfiguration : IEntityTypeConfigurati
     {
         builder.ConfigureEntity("HotelStaffAssignments");
         builder.Property(entity => entity.AssignedAtUtc).HasPrecision(3);
-        builder.HasIndex(entity => new { entity.UserAccountId, entity.HotelId, entity.RoleId }).IsUnique().HasFilter("[IsActive] = 1");
+        builder.HasIndex(entity => new { entity.UserAccountId, entity.HotelId }).IsUnique().HasFilter("[IsActive] = 1");
         builder.HasOne<UserAccount>().WithMany("StaffAssignments").HasForeignKey(entity => entity.UserAccountId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<HotelProperty>().WithMany().HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<UserRole>().WithMany().HasForeignKey(entity => entity.RoleId).OnDelete(DeleteBehavior.Restrict);

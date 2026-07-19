@@ -1,5 +1,6 @@
 using HotelMarketplace.Application.HotelManagement;
 using HotelMarketplace.Application.HotelManagement.Dtos;
+using HotelMarketplace.Application.HotelManagement.Requests;
 using HotelMarketplace.Domain.Enums;
 using HotelMarketplace.Presentation.Api.Authorization;
 using HotelMarketplace.SharedKernel.Results;
@@ -69,5 +70,98 @@ public sealed class OperationsHotelsController : ControllerBase
         return result.IsFailure
             ? this.ToProblemResult(result.Error, StatusCodes.Status403Forbidden)
             : Ok(result.Value);
+    }
+
+    [HttpPost("{hotelId:guid}/staff")]
+    [Authorize(
+        Policy = AuthorizationPolicies.HotelScoped,
+        Roles = nameof(UserRoleCode.PropertyOwner) + "," + nameof(UserRoleCode.HotelManager))]
+    [ProducesResponseType(typeof(HotelStaffMemberDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CreateStaff(
+        Guid hotelId,
+        CreateHotelStaffRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<HotelStaffMemberDto> result = await _hotelManagementService.CreateStaffAsync(
+            hotelId,
+            request,
+            cancellationToken);
+
+        return result.IsFailure
+            ? ToStaffProblem(result.Error)
+            : CreatedAtAction(nameof(GetOperationStaff), new { hotelId }, result.Value);
+    }
+
+    [HttpPost("{hotelId:guid}/staff/attachments")]
+    [Authorize(
+        Policy = AuthorizationPolicies.HotelScoped,
+        Roles = nameof(UserRoleCode.PropertyOwner) + "," + nameof(UserRoleCode.HotelManager))]
+    [ProducesResponseType(typeof(HotelStaffMemberDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> AttachStaff(
+        Guid hotelId,
+        AttachHotelStaffRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<HotelStaffMemberDto> result = await _hotelManagementService.AttachStaffAsync(
+            hotelId,
+            request,
+            cancellationToken);
+
+        return result.IsFailure
+            ? ToStaffProblem(result.Error)
+            : CreatedAtAction(nameof(GetOperationStaff), new { hotelId }, result.Value);
+    }
+
+    [HttpPatch("{hotelId:guid}/staff/{assignmentId:guid}")]
+    [Authorize(
+        Policy = AuthorizationPolicies.HotelScoped,
+        Roles = nameof(UserRoleCode.PropertyOwner) + "," + nameof(UserRoleCode.HotelManager))]
+    [ProducesResponseType(typeof(HotelStaffMemberDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> UpdateStaffAssignment(
+        Guid hotelId,
+        Guid assignmentId,
+        UpdateHotelStaffAssignmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<HotelStaffMemberDto> result = await _hotelManagementService.UpdateStaffAssignmentAsync(
+            hotelId,
+            assignmentId,
+            request,
+            cancellationToken);
+
+        return result.IsFailure ? ToStaffProblem(result.Error) : Ok(result.Value);
+    }
+
+    private ObjectResult ToStaffProblem(ResultError error)
+    {
+        int statusCode = error.Code switch
+        {
+            "HotelManagement.Forbidden" or
+            "HotelManagement.SelfManagementForbidden" or
+            "HotelManagement.ManagerRoleManagementForbidden" or
+            "HotelManagement.StaffSystemAccountForbidden" or
+            "HotelManagement.StaffPlatformAdministratorForbidden" => StatusCodes.Status403Forbidden,
+            "HotelManagement.StaffNotFound" or
+            "HotelManagement.StaffUserNotFound" => StatusCodes.Status404NotFound,
+            "HotelManagement.DuplicateStaffEmail" or
+            "HotelManagement.DuplicateStaffPhoneNumber" or
+            "HotelManagement.DuplicateStaffAssignment" or
+            "HotelManagement.StaffHasOpenTasks" => StatusCodes.Status409Conflict,
+            "HotelManagement.LockUnavailable" => StatusCodes.Status423Locked,
+            _ => StatusCodes.Status400BadRequest
+        };
+
+        return this.ToProblemResult(error, statusCode);
     }
 }

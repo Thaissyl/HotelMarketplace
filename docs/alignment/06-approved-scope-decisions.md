@@ -47,3 +47,16 @@ The shared account does not merge guest identity, stay history, invoices, or
 contact details. Those records remain booking-specific. Walk-in inventory checks
 must participate in the same room-type and physical-room concurrency controls as
 online reservations.
+
+## Hotel Staff Authority
+
+Property Owners may create a new Hotel Manager or operational staff account, or
+attach an eligible existing account to a hotel. They may change hotel roles and
+pause or restore hotel access.
+
+An assigned Hotel Manager may manage Receptionist, HousekeepingStaff, and
+MaintenanceStaff assignments for that hotel. A Manager cannot create or grant
+PropertyOwner, HotelManager, or PlatformAdministrator authority, cannot change
+or deactivate their own assignment, and cannot remove an assignee from open
+housekeeping or maintenance work. Platform Administrators do not participate in
+hotel staff assignment operations.
