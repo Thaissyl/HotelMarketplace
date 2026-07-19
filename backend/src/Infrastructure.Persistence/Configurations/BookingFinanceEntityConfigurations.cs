@@ -80,9 +80,7 @@ internal sealed class PaymentTransactionConfiguration : IEntityTypeConfiguration
         builder.ConfigureEntity("PaymentTransactions");
         builder.Property(entity => entity.Provider).HasMaxLength(64).IsRequired();
         builder.Property(entity => entity.GatewayReference).HasMaxLength(128);
-        builder.Property(entity => entity.GatewayPaymentLinkId).HasMaxLength(128);
         builder.Property(entity => entity.GatewayTransactionReference).HasMaxLength(128);
-        builder.Property(entity => entity.CheckoutUrl).HasMaxLength(1000);
         builder.Property(entity => entity.Amount).HasPrecision(18, 2);
         builder.Property(entity => entity.Status).HasEnumConversion();
         builder.Property(entity => entity.ReconciliationStatus).HasEnumConversion();

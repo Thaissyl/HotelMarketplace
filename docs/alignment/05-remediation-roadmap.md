@@ -57,6 +57,8 @@ not attribute the booking to the staff member.
 
 ### ALN-004 Explicit Demo Payment
 
+Status: Implemented on `fix/aln-004-explicit-demo-payment`.
+
 - Treat simulated payment as the approved gateway adapter for this project.
 - Rename user-facing behavior to Demo Payment and record provider `DEMO`.
 - Verify booking ownership, eligible state, expiration, server-side amount, and

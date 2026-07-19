@@ -46,7 +46,7 @@ http://localhost:5080/swagger
 
 | Role | Flow Readiness | Main Result |
 | --- | --- | --- |
-| Customer | Demo-ready | The user can register/login, search hotels, view hotel details, create a booking, press the MVP Payment button, review trips, and update profile/password. |
+| Customer | Demo-ready | The user can register/login, search hotels, view hotel details, create a booking, explicitly confirm a no-charge demo payment, review trips, and update profile/password. |
 | Receptionist | Demo-ready | The user lands in Front Desk, sees readable hotel context, can process arrivals, check-in, checkout, and create walk-in bookings. |
 | Housekeeping Staff | Demo-ready | The user can see assigned/open room-cleaning tasks, claim work, and mark rooms clean. |
 | Maintenance Staff | Demo-ready | The user can create room issue requests, start repair, and resolve requests. |
@@ -81,7 +81,7 @@ Implemented:
 - Marketplace search with location, dates, guests, rooms, sorting, filters, and pagination.
 - Hotel details page with back navigation, hotel address, stay date editing, guests/rooms editing, and room availability.
 - Booking confirmation and pending payment hold.
-- Simulated payment completion through the Payment button.
+- Explicit no-charge demo payment confirmation through the `Confirm demo payment` button.
 - Saved hotels, trips, notifications, and settings tabs.
 - Trips tab is connected to the backend booking history endpoint and keeps a local fallback for bookings created in the current session.
 - Trip detail bottom sheet with booking amount, dates, guests, rooms, booking code, and payment deadline.

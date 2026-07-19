@@ -1,20 +1,13 @@
 using HotelMarketplace.Application.Payments.Dtos;
-using HotelMarketplace.Application.Payments.Models;
+using HotelMarketplace.Application.Payments.Requests;
 using HotelMarketplace.SharedKernel.Results;
 
 namespace HotelMarketplace.Application.Payments;
 
 public interface IPaymentService
 {
-    Task<Result<PaymentLinkDto>> CreatePaymentLinkAsync(
+    Task<Result<DemoPaymentResultDto>> ConfirmDemoPaymentAsync(
         Guid bookingId,
-        CancellationToken cancellationToken);
-
-    Task<Result<PaymentWebhookResultDto>> SimulateSuccessfulPaymentAsync(
-        Guid bookingId,
-        CancellationToken cancellationToken);
-
-    Task<Result<PaymentWebhookResultDto>> HandlePayOsWebhookAsync(
-        PaymentWebhookRequest request,
+        ConfirmDemoPaymentRequest request,
         CancellationToken cancellationToken);
 }

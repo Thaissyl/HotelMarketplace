@@ -134,14 +134,15 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
 
         BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, seededHotel);
 
-        PaymentWebhookResultDto simulatedPayment = await PostJsonAsync<PaymentWebhookResultDto>(
+        DemoPaymentResultDto demoPayment = await PostJsonAsync<DemoPaymentResultDto>(
             client,
-            $"/api/bookings/{booking.Id}/simulate-payment-success",
-            new { },
+            $"/api/bookings/{booking.Id}/demo-payment",
+            new { amount = booking.TotalAmount },
             HttpStatusCode.OK,
             customer.AccessToken);
 
-        simulatedPayment.Status.Should().Be("processed");
+        demoPayment.Status.Should().Be("processed");
+        demoPayment.Provider.Should().Be("DEMO");
 
         FrontDeskBookingDto checkedIn = await PostJsonAsync<FrontDeskBookingDto>(
             client,
@@ -225,6 +226,145 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             .CountAsync();
 
         activeReservations.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DemoPaymentRejectsAmountMismatchAndForeignCustomer()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse bookingCustomer = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Customer,
+            "demo-payment-owner");
+        TestAuthResponse foreignCustomer = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Customer,
+            "demo-payment-foreign");
+        BookingDto booking = await CreateBookingAsync(client, bookingCustomer.AccessToken, hotel);
+
+        using HttpResponseMessage amountMismatch = await SendDemoPaymentAsync(
+            client,
+            bookingCustomer.AccessToken,
+            booking.Id,
+            booking.TotalAmount - 1m);
+        amountMismatch.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await amountMismatch.Content.ReadAsStringAsync()).Should().Contain("Payment.AmountMismatch");
+
+        using HttpResponseMessage foreignAttempt = await SendDemoPaymentAsync(
+            client,
+            foreignCustomer.AccessToken,
+            booking.Id,
+            booking.TotalAmount);
+        foreignAttempt.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+        (await dbContext.PaymentTransactions.IgnoreQueryFilters().CountAsync(entity => entity.BookingId == booking.Id))
+            .Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ConcurrentDemoPaymentIsIdempotentAndCreatesSingleFinancialRecordSet()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Customer,
+            "concurrent-demo-payment");
+        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, hotel);
+
+        HttpResponseMessage[] responses = await Task.WhenAll(
+            SendDemoPaymentAsync(client, customer.AccessToken, booking.Id, booking.TotalAmount),
+            SendDemoPaymentAsync(client, customer.AccessToken, booking.Id, booking.TotalAmount));
+
+        responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.OK);
+        List<DemoPaymentResultDto> results = new();
+        foreach (HttpResponseMessage response in responses)
+        {
+            DemoPaymentResultDto? result = await response.Content.ReadFromJsonAsync<DemoPaymentResultDto>(JsonOptions);
+            result.Should().NotBeNull();
+            results.Add(result!);
+        }
+        List<string> expectedStatuses = ["processed", "duplicate"];
+        results.Select(result => result.Status).Should().BeEquivalentTo(expectedStatuses);
+        results.Should().OnlyContain(result => result.Provider == "DEMO" && result.Amount == booking.TotalAmount);
+
+        foreach (HttpResponseMessage response in responses)
+        {
+            response.Dispose();
+        }
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+        (await dbContext.PaymentTransactions.IgnoreQueryFilters().CountAsync(entity => entity.BookingId == booking.Id))
+            .Should().Be(1);
+        (await dbContext.CommissionRecords.IgnoreQueryFilters().CountAsync(entity => entity.BookingId == booking.Id))
+            .Should().Be(1);
+        (await dbContext.AuditRecords.IgnoreQueryFilters().CountAsync(entity =>
+            entity.ActionType == "ConfirmDemoPayment" && entity.TargetEntityId == results[0].PaymentTransactionId))
+            .Should().Be(1);
+        (await dbContext.NotificationRecords.IgnoreQueryFilters().CountAsync(entity =>
+            entity.EventType == "DemoPaymentConfirmed" && entity.RelatedEntityId == booking.Id))
+            .Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DemoPaymentAfterDeadlineExpiresBookingWithoutCreatingTransaction()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Customer,
+            "expired-demo-payment");
+        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, hotel);
+
+        using (IServiceScope setupScope = _factory.Services.CreateScope())
+        {
+            HotelMarketplaceDbContext setupContext = setupScope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+            await setupContext.Bookings
+                .IgnoreQueryFilters()
+                .Where(entity => entity.Id == booking.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(
+                    entity => entity.PaymentExpiresAtUtc,
+                    DateTime.UtcNow.AddMinutes(-1)));
+        }
+
+        using HttpResponseMessage response = await SendDemoPaymentAsync(
+            client,
+            customer.AccessToken,
+            booking.Id,
+            booking.TotalAmount);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Payment.PaymentExpired");
+
+        using IServiceScope verificationScope = _factory.Services.CreateScope();
+        HotelMarketplaceDbContext dbContext = verificationScope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+        Booking expiredBooking = await dbContext.Bookings.IgnoreQueryFilters().SingleAsync(entity => entity.Id == booking.Id);
+        expiredBooking.Status.Should().Be(BookingStatus.Expired);
+        (await dbContext.PaymentTransactions.IgnoreQueryFilters().AnyAsync(entity => entity.BookingId == booking.Id))
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task LegacyPayOsAndPaymentLinkRoutesAreNotExposed()
+    {
+        using HttpClient client = _factory.CreateClient();
+
+        using HttpResponseMessage webhookResponse = await client.PostAsJsonAsync(
+            "/api/payments/payos/webhook",
+            new { });
+        using HttpResponseMessage returnResponse = await client.GetAsync("/api/payments/payos/return");
+        using HttpResponseMessage paymentLinkResponse = await client.PostAsJsonAsync(
+            $"/api/bookings/{Guid.NewGuid()}/payment-link",
+            new { });
+
+        webhookResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        returnResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        paymentLinkResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -665,10 +805,10 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
 
         BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, seededHotel);
 
-        await PostJsonAsync<PaymentWebhookResultDto>(
+        await PostJsonAsync<DemoPaymentResultDto>(
             client,
-            $"/api/bookings/{booking.Id}/simulate-payment-success",
-            new { },
+            $"/api/bookings/{booking.Id}/demo-payment",
+            new { amount = booking.TotalAmount },
             HttpStatusCode.OK,
             customer.AccessToken);
 
@@ -952,47 +1092,14 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
         updatedProfile.FullName.Should().Be("Updated Smoke Customer");
         updatedProfile.PhoneNumber.Should().Be(updatedCustomerPhoneNumber);
 
-        PaymentWebhookResultDto simulatedPayment = await PostJsonAsync<PaymentWebhookResultDto>(
+        DemoPaymentResultDto demoPayment = await PostJsonAsync<DemoPaymentResultDto>(
             client,
-            $"/api/bookings/{booking.Id}/simulate-payment-success",
-            new { },
+            $"/api/bookings/{booking.Id}/demo-payment",
+            new { amount = booking.TotalAmount },
             HttpStatusCode.OK,
             customer.AccessToken);
-        simulatedPayment.Status.Should().Be("processed");
-
-        await GetJsonAsync<JsonElement>(client, "/api/payments/payos/return", HttpStatusCode.OK);
-        await GetJsonAsync<JsonElement>(client, "/api/payments/payos/cancel", HttpStatusCode.OK);
-
-        await PostJsonAsync<JsonElement>(
-            client,
-            "/api/payments/payos/webhook",
-            new
-            {
-                code = "00",
-                desc = "success",
-                success = true,
-                data = new
-                {
-                    orderCode = 123456789L,
-                    amount = 130,
-                    description = "invalid signature smoke",
-                    accountNumber = "000000",
-                    reference = "INVALID",
-                    transactionDateTime = DateTime.UtcNow.ToString("O"),
-                    currency = "VND",
-                    paymentLinkId = "INVALID",
-                    code = "00",
-                    desc = "success",
-                    counterAccountBankId = (string?)null,
-                    counterAccountBankName = (string?)null,
-                    counterAccountName = (string?)null,
-                    counterAccountNumber = (string?)null,
-                    virtualAccountName = (string?)null,
-                    virtualAccountNumber = (string?)null
-                },
-                signature = "invalid"
-            },
-            HttpStatusCode.BadRequest);
+        demoPayment.Status.Should().Be("processed");
+        demoPayment.Provider.Should().Be("DEMO");
 
         TestAuthResponse receptionist = await SeedUserAndLoginAsync(client, UserRoleCode.Receptionist, "smoke-receptionist", hotel.Id);
         TestAuthResponse housekeeper = await SeedUserAndLoginAsync(client, UserRoleCode.HousekeepingStaff, "smoke-housekeeper", hotel.Id);
@@ -1327,6 +1434,20 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
 
         HttpResponseMessage response = await client.SendAsync(request);
         return response.StatusCode;
+    }
+
+    private static async Task<HttpResponseMessage> SendDemoPaymentAsync(
+        HttpClient client,
+        string accessToken,
+        Guid bookingId,
+        decimal amount)
+    {
+        using HttpRequestMessage request = new(
+            HttpMethod.Post,
+            $"/api/bookings/{bookingId}/demo-payment");
+        request.Headers.Authorization = Bearer(accessToken);
+        request.Content = JsonContent.Create(new { amount }, options: JsonOptions);
+        return await client.SendAsync(request);
     }
 
     private static async Task<HttpStatusCode> SendWalkInBookingAttemptAsync(

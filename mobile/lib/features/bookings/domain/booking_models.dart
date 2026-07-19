@@ -127,23 +127,37 @@ class Booking {
   }
 }
 
-class PaymentResult {
-  const PaymentResult({
+class DemoPaymentResult {
+  const DemoPaymentResult({
     required this.status,
     required this.message,
+    required this.paymentTransactionId,
+    required this.provider,
+    required this.amount,
+    required this.paidAtUtc,
   });
 
   final String status;
   final String message;
+  final String paymentTransactionId;
+  final String provider;
+  final double amount;
+  final DateTime paidAtUtc;
 
   bool get isProcessed => status.toLowerCase() == 'processed';
 
-  static PaymentResult fromJson(Object? data) {
+  static DemoPaymentResult fromJson(Object? data) {
     final json = _asMap(data);
 
-    return PaymentResult(
+    return DemoPaymentResult(
       status: json['status']?.toString() ?? '',
-      message: json['message']?.toString() ?? 'Payment completed.',
+      message: json['message']?.toString() ?? 'Demo payment completed.',
+      paymentTransactionId: json['paymentTransactionId']?.toString() ?? '',
+      provider: json['provider']?.toString() ?? '',
+      amount: (json['amount'] as num?)?.toDouble() ?? 0,
+      paidAtUtc:
+          DateTime.tryParse(json['paidAtUtc']?.toString() ?? '')?.toUtc() ??
+              DateTime.now().toUtc(),
     );
   }
 }

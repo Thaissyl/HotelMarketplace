@@ -64,12 +64,7 @@ public sealed class HotelMarketplaceApiFactory : WebApplicationFactory<Program>,
                 ["Jwt:Audience"] = TestAudience,
                 ["Jwt:SigningKey"] = TestSigningKey,
                 ["Scheduling:BookingExpiration:Enabled"] = "false",
-                ["PayOs:ClientId"] = "test-client-id",
-                ["PayOs:ApiKey"] = "test-api-key",
-                ["PayOs:ChecksumKey"] = "test-checksum-key",
-                ["PayOs:BaseUrl"] = "https://example.invalid",
-                ["PayOs:ReturnUrl"] = "https://example.invalid/return",
-                ["PayOs:CancelUrl"] = "https://example.invalid/cancel"
+                ["Payment:Mode"] = "Demo"
             };
 
             configurationBuilder.AddInMemoryCollection(configuration);
@@ -114,12 +109,7 @@ public sealed class HotelMarketplaceApiFactory : WebApplicationFactory<Program>,
             ["Jwt__Audience"] = TestAudience,
             ["Jwt__SigningKey"] = TestSigningKey,
             ["Scheduling__BookingExpiration__Enabled"] = "false",
-            ["PayOs__ClientId"] = "test-client-id",
-            ["PayOs__ApiKey"] = "test-api-key",
-            ["PayOs__ChecksumKey"] = "test-checksum-key",
-            ["PayOs__BaseUrl"] = "https://example.invalid",
-            ["PayOs__ReturnUrl"] = "https://example.invalid/return",
-            ["PayOs__CancelUrl"] = "https://example.invalid/cancel"
+            ["Payment__Mode"] = "Demo"
         };
 
         foreach ((string key, string value) in testValues)

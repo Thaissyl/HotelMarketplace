@@ -125,7 +125,7 @@ class CustomerStateController extends StateNotifier<CustomerState> {
     );
   }
 
-  void markBookingPaid(String bookingId) {
+  void markBookingDemoPaid(String bookingId) {
     state = state.copyWith(
       bookings: state.bookings.map((booking) {
         if (booking.id != bookingId) {
@@ -136,8 +136,8 @@ class CustomerStateController extends StateNotifier<CustomerState> {
       }).toList(growable: false),
       notifications: [
         const CustomerNotification(
-          title: 'Payment completed',
-          body: 'Your booking has been confirmed.',
+          title: 'Demo payment completed',
+          body: 'Your booking has been confirmed in demo mode.',
           createdLabel: 'Now',
           unread: true,
         ),

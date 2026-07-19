@@ -27,10 +27,14 @@ class BookingApi {
     );
   }
 
-  Future<PaymentResult> simulatePaymentSuccess(String bookingId) {
-    return _apiClient.post<PaymentResult>(
-      '/api/bookings/$bookingId/simulate-payment-success',
-      decoder: PaymentResult.fromJson,
+  Future<DemoPaymentResult> confirmDemoPayment({
+    required String bookingId,
+    required double amount,
+  }) {
+    return _apiClient.post<DemoPaymentResult>(
+      '/api/bookings/$bookingId/demo-payment',
+      data: {'amount': amount},
+      decoder: DemoPaymentResult.fromJson,
     );
   }
 }

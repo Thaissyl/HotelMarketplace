@@ -1,152 +1,55 @@
-using FluentValidation;
-using FluentValidation.Results;
-using HotelMarketplace.Application.Common.Validation;
 using HotelMarketplace.Application.Payments.Dtos;
-using HotelMarketplace.Application.Payments.Models;
+using HotelMarketplace.Application.Payments.Requests;
 using HotelMarketplace.Application.Security;
 using HotelMarketplace.SharedKernel.Results;
-using Microsoft.Extensions.Logging;
 
 namespace HotelMarketplace.Application.Payments;
 
 internal sealed class PaymentService : IPaymentService
 {
-    private static readonly Action<ILogger, Guid, string, Exception> LogPaymentGatewayRejected =
-        LoggerMessage.Define<Guid, string>(
-            LogLevel.Warning,
-            new EventId(2001, nameof(LogPaymentGatewayRejected)),
-            "Payment gateway rejected payment link creation. BookingId={BookingId}, BookingCode={BookingCode}.");
-
     private readonly IPaymentRepository _paymentRepository;
-    private readonly IPayOsGateway _payOsGateway;
     private readonly ICurrentUserService _currentUserService;
-    private readonly IValidator<PaymentWebhookRequest> _webhookValidator;
-    private readonly ILogger<PaymentService> _logger;
 
     public PaymentService(
         IPaymentRepository paymentRepository,
-        IPayOsGateway payOsGateway,
-        ICurrentUserService currentUserService,
-        IValidator<PaymentWebhookRequest> webhookValidator,
-        ILogger<PaymentService> logger)
+        ICurrentUserService currentUserService)
     {
         _paymentRepository = paymentRepository;
-        _payOsGateway = payOsGateway;
         _currentUserService = currentUserService;
-        _webhookValidator = webhookValidator;
-        _logger = logger;
     }
 
-    public async Task<Result<PaymentLinkDto>> CreatePaymentLinkAsync(
+    public async Task<Result<DemoPaymentResultDto>> ConfirmDemoPaymentAsync(
         Guid bookingId,
+        ConfirmDemoPaymentRequest request,
         CancellationToken cancellationToken)
     {
         if (_currentUserService.UserId is null)
         {
-            return Result.Failure<PaymentLinkDto>(PaymentErrors.Forbidden);
+            return Result.Failure<DemoPaymentResultDto>(PaymentErrors.Forbidden);
         }
 
-        CreatePaymentLinkPersistenceResult persistenceResult = await _paymentRepository.PreparePaymentLinkAsync(
+        if (request.Amount <= 0)
+        {
+            return Result.Failure<DemoPaymentResultDto>(PaymentErrors.InvalidAmount);
+        }
+
+        DemoPaymentPersistenceResult persistenceResult = await _paymentRepository.ConfirmDemoPaymentAsync(
             bookingId,
             _currentUserService.UserId.Value,
-            cancellationToken);
-
-        if (persistenceResult.Status == CreatePaymentLinkPersistenceStatus.ExistingPaymentLink)
-        {
-            return Result.Success(persistenceResult.ExistingPaymentLink!);
-        }
-
-        if (persistenceResult.Status != CreatePaymentLinkPersistenceStatus.Prepared)
-        {
-            return Result.Failure<PaymentLinkDto>(MapCreateLinkError(persistenceResult.Status));
-        }
-
-        PreparedPaymentLink preparedPaymentLink = persistenceResult.PreparedPaymentLink!;
-
-        CreatePaymentLinkGatewayResult gatewayResult;
-        try
-        {
-            gatewayResult = await _payOsGateway.CreatePaymentLinkAsync(preparedPaymentLink.GatewayRequest, cancellationToken);
-        }
-        catch (InvalidOperationException exception)
-        {
-            LogPaymentGatewayRejected(_logger, bookingId, preparedPaymentLink.BookingCode, exception);
-            return Result.Failure<PaymentLinkDto>(PaymentErrors.GatewayRejected);
-        }
-
-        PaymentLinkDto paymentLink = await _paymentRepository.AttachPaymentLinkAsync(
-            preparedPaymentLink.PaymentTransactionId,
-            gatewayResult,
-            cancellationToken);
-
-        return Result.Success(paymentLink);
-    }
-
-    public async Task<Result<PaymentWebhookResultDto>> HandlePayOsWebhookAsync(
-        PaymentWebhookRequest request,
-        CancellationToken cancellationToken)
-    {
-        ValidationResult validationResult = await _webhookValidator.ValidateAsync(request, cancellationToken);
-        if (!validationResult.IsValid)
-        {
-            return Result.Failure<PaymentWebhookResultDto>(
-                ValidationErrorFormatter.ToResultError("Payment.InvalidWebhookRequest", validationResult));
-        }
-
-        if (!_payOsGateway.VerifyWebhook(request))
-        {
-            return Result.Failure<PaymentWebhookResultDto>(PaymentErrors.InvalidWebhookSignature);
-        }
-
-        PaymentWebhookPersistenceResult persistenceResult = await _paymentRepository.ProcessWebhookAsync(request, cancellationToken);
-
-        return persistenceResult.Status switch
-        {
-            PaymentWebhookPersistenceStatus.Processed => Result.Success(new PaymentWebhookResultDto("processed", persistenceResult.Message)),
-            PaymentWebhookPersistenceStatus.Duplicate => Result.Success(new PaymentWebhookResultDto("duplicate", persistenceResult.Message)),
-            PaymentWebhookPersistenceStatus.TransactionNotFound => Result.Failure<PaymentWebhookResultDto>(PaymentErrors.PaymentTransactionNotFound),
-            PaymentWebhookPersistenceStatus.AmountMismatch => Result.Failure<PaymentWebhookResultDto>(PaymentErrors.WebhookAmountMismatch),
-            PaymentWebhookPersistenceStatus.PaymentExpired => Result.Failure<PaymentWebhookResultDto>(PaymentErrors.PaymentExpired),
-            _ => Result.Failure<PaymentWebhookResultDto>(PaymentErrors.PaymentTransactionNotFound)
-        };
-    }
-
-    public async Task<Result<PaymentWebhookResultDto>> SimulateSuccessfulPaymentAsync(
-        Guid bookingId,
-        CancellationToken cancellationToken)
-    {
-        if (_currentUserService.UserId is null)
-        {
-            return Result.Failure<PaymentWebhookResultDto>(PaymentErrors.Forbidden);
-        }
-
-        SimulatedPaymentPersistenceResult persistenceResult = await _paymentRepository.SimulateSuccessfulPaymentAsync(
-            bookingId,
-            _currentUserService.UserId.Value,
+            request,
             cancellationToken);
 
         return persistenceResult.Status switch
         {
-            SimulatedPaymentPersistenceStatus.Processed => Result.Success(new PaymentWebhookResultDto("processed", persistenceResult.Message)),
-            SimulatedPaymentPersistenceStatus.Duplicate => Result.Success(new PaymentWebhookResultDto("duplicate", persistenceResult.Message)),
-            SimulatedPaymentPersistenceStatus.Forbidden => Result.Failure<PaymentWebhookResultDto>(PaymentErrors.Forbidden),
-            SimulatedPaymentPersistenceStatus.BookingNotFound => Result.Failure<PaymentWebhookResultDto>(PaymentErrors.BookingNotFound),
-            SimulatedPaymentPersistenceStatus.BookingNotPendingPayment => Result.Failure<PaymentWebhookResultDto>(PaymentErrors.BookingNotPendingPayment),
-            SimulatedPaymentPersistenceStatus.PaymentExpired => Result.Failure<PaymentWebhookResultDto>(PaymentErrors.PaymentExpired),
-            _ => Result.Failure<PaymentWebhookResultDto>(PaymentErrors.BookingNotFound)
-        };
-    }
-
-    private static ResultError MapCreateLinkError(CreatePaymentLinkPersistenceStatus status)
-    {
-        return status switch
-        {
-            CreatePaymentLinkPersistenceStatus.Forbidden => PaymentErrors.Forbidden,
-            CreatePaymentLinkPersistenceStatus.BookingNotFound => PaymentErrors.BookingNotFound,
-            CreatePaymentLinkPersistenceStatus.BookingNotPendingPayment => PaymentErrors.BookingNotPendingPayment,
-            CreatePaymentLinkPersistenceStatus.PaymentExpired => PaymentErrors.PaymentExpired,
-            CreatePaymentLinkPersistenceStatus.InvalidAmount => PaymentErrors.InvalidAmount,
-            _ => PaymentErrors.BookingNotFound
+            DemoPaymentPersistenceStatus.Processed => Result.Success(persistenceResult.Payment!),
+            DemoPaymentPersistenceStatus.Duplicate => Result.Success(persistenceResult.Payment!),
+            DemoPaymentPersistenceStatus.Forbidden => Result.Failure<DemoPaymentResultDto>(PaymentErrors.Forbidden),
+            DemoPaymentPersistenceStatus.BookingNotFound => Result.Failure<DemoPaymentResultDto>(PaymentErrors.BookingNotFound),
+            DemoPaymentPersistenceStatus.BookingNotPendingPayment => Result.Failure<DemoPaymentResultDto>(PaymentErrors.BookingNotPendingPayment),
+            DemoPaymentPersistenceStatus.PaymentExpired => Result.Failure<DemoPaymentResultDto>(PaymentErrors.PaymentExpired),
+            DemoPaymentPersistenceStatus.AmountMismatch => Result.Failure<DemoPaymentResultDto>(PaymentErrors.AmountMismatch),
+            DemoPaymentPersistenceStatus.LockUnavailable => Result.Failure<DemoPaymentResultDto>(PaymentErrors.LockUnavailable),
+            _ => Result.Failure<DemoPaymentResultDto>(PaymentErrors.BookingNotFound)
         };
     }
 }

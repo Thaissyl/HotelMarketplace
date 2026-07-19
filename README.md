@@ -33,7 +33,6 @@ The MVP scope includes:
 
 External systems:
 
-- payOS Payment Gateway
 - Notification Service or mock notification recorder
 - System Scheduler
 
@@ -47,7 +46,7 @@ External systems:
 | Backend architecture | Clean Architecture |
 | Database | Microsoft SQL Server |
 | ORM | Entity Framework Core |
-| Payment provider | payOS |
+| Payment mode | Explicit in-app demo payment; no real bank transaction |
 | Local infrastructure | Docker Compose |
 | Testing | xUnit, FluentAssertions, ASP.NET Core integration testing |
 
@@ -61,7 +60,6 @@ HotelMarketplace/
       Application/
       Domain/
       Infrastructure.Persistence/
-      Infrastructure.Payment/
       Infrastructure.Notification/
       Infrastructure.Scheduling/
       SharedKernel/
@@ -101,7 +99,6 @@ The backend follows Clean Architecture boundaries.
 | `Application` | Use case orchestration, DTOs, validators, authorization checks, transaction boundaries. |
 | `Domain` | Domain entities, value objects, enums, and business rules. |
 | `Infrastructure.Persistence` | SQL Server persistence, EF Core configuration, migrations, repository implementations. |
-| `Infrastructure.Payment` | payOS client and payment webhook verification. |
 | `Infrastructure.Notification` | Notification dispatcher and provider adapters. |
 | `Infrastructure.Scheduling` | Background jobs such as unpaid booking expiration. |
 | `SharedKernel` | Shared primitives such as common results, exceptions, constants, and time abstractions. |
@@ -242,9 +239,7 @@ SQLSERVER_HOST
 JWT_ISSUER
 JWT_AUDIENCE
 JWT_SIGNING_KEY
-PAYOS_CLIENT_ID
-PAYOS_API_KEY
-PAYOS_CHECKSUM_KEY
+PAYMENT_MODE
 MOBILE_API_BASE_URL
 ```
 
@@ -260,7 +255,8 @@ Important business concepts from the requirements:
 - Marketplace availability uses a hybrid model:
   - Public booking checks room type quantity by date.
   - Physical room assignment happens before or during check-in.
-- Platform Collect uses payOS.
+- Platform Collect uses the explicit `DEMO` provider. It does not contact a bank
+  or external payment gateway.
 - Pay at Property is recorded by hotel-side staff.
 - Refunds and settlements are manual for MVP.
 - Protected financial, staff, booking, room, housekeeping, and maintenance actions should be auditable.
@@ -273,7 +269,7 @@ Important business concepts from the requirements:
 4. Add domain entities and EF Core persistence mappings.
 5. Implement marketplace search and hotel detail read flows.
 6. Implement customer booking and atomic availability reservation.
-7. Add payOS payment callback handling and idempotency.
+7. Add explicit demo payment confirmation and idempotency.
 8. Add unpaid booking expiration scheduling.
 9. Implement owner and manager hotel setup.
 10. Implement room inventory and availability management.

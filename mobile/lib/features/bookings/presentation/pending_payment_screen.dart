@@ -125,16 +125,17 @@ class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
     setState(() => _isProcessingPayment = true);
 
     try {
-      final result = await ref
-          .read(bookingApiProvider)
-          .simulatePaymentSuccess(widget.booking.id);
+      final result = await ref.read(bookingApiProvider).confirmDemoPayment(
+            bookingId: widget.booking.id,
+            amount: widget.booking.totalAmount,
+          );
 
       if (!mounted) {
         return;
       }
 
       _timer?.cancel();
-      ref.read(customerStateProvider.notifier).markBookingPaid(
+      ref.read(customerStateProvider.notifier).markBookingDemoPaid(
             widget.booking.id,
           );
 
@@ -146,7 +147,7 @@ class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadii.lg),
             ),
-            title: const Text('Payment completed'),
+            title: const Text('Demo payment completed'),
             content: Text(
               result.message.isEmpty
                   ? 'Your booking has been confirmed.'
@@ -238,7 +239,7 @@ class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      'Complete payment before the timer ends.',
+                      'Confirm the demo payment before the timer ends.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
@@ -272,10 +273,16 @@ class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
                                 ),
                               )
                             : const Text(
-                                'Payment',
+                                'Confirm demo payment',
                                 key: ValueKey('payment-label'),
                               ),
                       ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Demo only. No bank account or real money is charged.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     TextButton(

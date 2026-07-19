@@ -43,6 +43,7 @@ to the canonical SRS and SDD.
 | [09-aln-001-hotel-role-authorization.md](09-aln-001-hotel-role-authorization.md) | ALN-001 implementation evidence and acceptance results |
 | [10-aln-002-unified-inventory-commitment.md](10-aln-002-unified-inventory-commitment.md) | ALN-002 inventory invariants and concurrency evidence |
 | [11-aln-003-approved-walk-in-model.md](11-aln-003-approved-walk-in-model.md) | ALN-003 protected anonymous customer and Walk-in lifecycle evidence |
+| [12-aln-004-explicit-demo-payment.md](12-aln-004-explicit-demo-payment.md) | ALN-004 explicit demo payment contract, atomicity, and audit evidence |
 | [workstreams](workstreams/README.md) | Detailed reviews by business capability |
 
 ## Completion Criteria

@@ -223,7 +223,8 @@ Use this order when demonstrating the app so every role has useful data on scree
 3. Open a hotel detail page.
 4. Adjust check-in/check-out dates, guests, and rooms.
 5. Select a room type and create a booking.
-6. On the reservation hold screen, press `Payment` to confirm the booking.
+6. On the reservation hold screen, press `Confirm demo payment`. This records a
+   local `DEMO` transaction and does not charge real money.
 7. Open `Trips` to review the booking details.
 
 ### Receptionist
@@ -281,5 +282,5 @@ Use this order when demonstrating the app so every role has useful data on scree
 
 - Saved hotels and notifications are local app state.
 - Customer trips are connected to backend booking history, but the MVP booking table does not persist the original guest count separately.
-- Receptionist Arrivals should have seeded data after running `seed-local-test-accounts.ps1`. You can also create one from the Customer flow and press `Payment`.
+- Receptionist Arrivals should have seeded data after running `seed-local-test-accounts.ps1`. You can also create one from the Customer flow and press `Confirm demo payment`.
 - Flutter debug mode can feel slower on an emulator. Use profile mode for smoother demo runs.

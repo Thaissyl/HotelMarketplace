@@ -5,7 +5,6 @@ using System.Text.Json.Serialization;
 using HotelMarketplace.Application;
 using HotelMarketplace.Application.Security;
 using HotelMarketplace.Infrastructure.Notification;
-using HotelMarketplace.Infrastructure.Payment;
 using HotelMarketplace.Infrastructure.Persistence;
 using HotelMarketplace.Infrastructure.Scheduling;
 using HotelMarketplace.Presentation.Api.Authorization;
@@ -64,7 +63,11 @@ try
 
     builder.Services.AddApplicationServices();
     builder.Services.AddPersistenceInfrastructure(builder.Configuration);
-    builder.Services.AddPaymentInfrastructure(builder.Configuration);
+    string paymentMode = builder.Configuration["Payment:Mode"] ?? "Demo";
+    if (!string.Equals(paymentMode, "Demo", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException("This build supports only the approved Demo payment mode.");
+    }
     builder.Services.AddNotificationInfrastructure(builder.Configuration);
     builder.Services.AddSchedulingInfrastructure(builder.Configuration);
     builder.Services.AddScoped<ICurrentUserService, HttpContextCurrentUserService>();
@@ -321,12 +324,7 @@ static void AddMappedConfigurationValue(
         "JWT_ISSUER" => "Jwt:Issuer",
         "JWT_AUDIENCE" => "Jwt:Audience",
         "JWT_SIGNING_KEY" => "Jwt:SigningKey",
-        "PAYOS_CLIENT_ID" => "PayOs:ClientId",
-        "PAYOS_API_KEY" => "PayOs:ApiKey",
-        "PAYOS_CHECKSUM_KEY" => "PayOs:ChecksumKey",
-        "PAYOS_BASE_URL" => "PayOs:BaseUrl",
-        "PAYOS_RETURN_URL" => "PayOs:ReturnUrl",
-        "PAYOS_CANCEL_URL" => "PayOs:CancelUrl",
+        "PAYMENT_MODE" => "Payment:Mode",
         "ASPNETCORE_ENVIRONMENT" => "ASPNETCORE_ENVIRONMENT",
         "SQLSERVER_HOST" => "SQLSERVER_HOST",
         "SQLSERVER_PORT" => "SQLSERVER_PORT",

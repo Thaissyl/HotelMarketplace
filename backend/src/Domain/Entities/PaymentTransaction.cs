@@ -34,11 +34,7 @@ public sealed class PaymentTransaction : Entity, IHotelScopedEntity
 
     public string? GatewayReference { get; private set; }
 
-    public string? GatewayPaymentLinkId { get; private set; }
-
     public string? GatewayTransactionReference { get; private set; }
-
-    public string? CheckoutUrl { get; private set; }
 
     public decimal Amount { get; private set; }
 
@@ -58,19 +54,6 @@ public sealed class PaymentTransaction : Entity, IHotelScopedEntity
         }
 
         GatewayReference = Guard.NotBlank(gatewayReference, nameof(GatewayReference), 128);
-        Status = PaymentStatus.Processing;
-    }
-
-    public void AttachPaymentLink(string gatewayReference, string? gatewayPaymentLinkId, string checkoutUrl)
-    {
-        if (Status != PaymentStatus.Pending && Status != PaymentStatus.Processing)
-        {
-            throw new DomainException("PaymentTransaction.InvalidStatusForPaymentLink", "Only pending or processing transactions can be linked to a payment gateway request.");
-        }
-
-        GatewayReference = Guard.NotBlank(gatewayReference, nameof(GatewayReference), 128);
-        GatewayPaymentLinkId = Guard.Optional(gatewayPaymentLinkId, nameof(GatewayPaymentLinkId), 128);
-        CheckoutUrl = Guard.NotBlank(checkoutUrl, nameof(CheckoutUrl), 1000);
         Status = PaymentStatus.Processing;
     }
 

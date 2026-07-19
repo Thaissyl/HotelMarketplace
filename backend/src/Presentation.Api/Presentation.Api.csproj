@@ -2,7 +2,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Application\Application.csproj" />
     <ProjectReference Include="..\Infrastructure.Persistence\Infrastructure.Persistence.csproj" />
-    <ProjectReference Include="..\Infrastructure.Payment\Infrastructure.Payment.csproj" />
     <ProjectReference Include="..\Infrastructure.Notification\Infrastructure.Notification.csproj" />
     <ProjectReference Include="..\Infrastructure.Scheduling\Infrastructure.Scheduling.csproj" />
   </ItemGroup>

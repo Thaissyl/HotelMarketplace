@@ -9,6 +9,8 @@ Status: Architecture is usable; audit, notification, transport, tests, and opera
   client responses.
 - Read-heavy queries commonly use projections and `AsNoTracking`.
 - Unpaid booking expiration uses a lightweight hosted service.
+- Demo payment writes its payment, commission, audit, and notification evidence
+  in one transaction and has negative and concurrency integration coverage.
 
 ## Verified Gaps
 
