@@ -39,9 +39,9 @@ internal sealed class EfPaymentRepository : IPaymentRepository
                 IsolationLevel.Serializable,
                 cancellationToken);
 
-            bool bookingLockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
+            bool bookingLockAcquired = await SqlApplicationLock.AcquireBookingLockAsync(
                 _dbContext,
-                $"payment:booking:{bookingId:N}",
+                bookingId,
                 cancellationToken);
             if (!bookingLockAcquired)
             {

@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
 using HotelMarketplace.Application.Bookings.Dtos;
+using HotelMarketplace.Application.Bookings.Expiration;
 using HotelMarketplace.Application.CustomerAccount.Dtos;
 using HotelMarketplace.Application.FrontDesk.Dtos;
 using HotelMarketplace.Application.HotelManagement.Dtos;
@@ -350,6 +351,39 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
     }
 
     [Fact]
+    public async Task ExpirationBatchProcessesDueBookingIdsWithoutSpanEvaluationFailure()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Customer,
+            "expiration-batch");
+        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, hotel);
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+        await dbContext.Bookings
+            .IgnoreQueryFilters()
+            .Where(entity => entity.Id == booking.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(
+                entity => entity.PaymentExpiresAtUtc,
+                DateTime.UtcNow.AddMinutes(-1)));
+
+        IExpiredBookingService expirationService =
+            scope.ServiceProvider.GetRequiredService<IExpiredBookingService>();
+        ExpireUnpaidBookingsResult result = await expirationService.ExpireUnpaidBookingsAsync(
+            100,
+            CancellationToken.None);
+
+        result.ExpiredBookings.Should().Contain(entity => entity.BookingId == booking.Id);
+        Booking expiredBooking = await dbContext.Bookings
+            .IgnoreQueryFilters()
+            .SingleAsync(entity => entity.Id == booking.Id);
+        expiredBooking.Status.Should().Be(BookingStatus.Expired);
+    }
+
+    [Fact]
     public async Task LegacyPayOsAndPaymentLinkRoutesAreNotExposed()
     {
         using HttpClient client = _factory.CreateClient();
@@ -365,6 +399,256 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
         webhookResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         returnResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         paymentLinkResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task CancellingUnpaidBookingReleasesInventoryWithoutCreatingRefund()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Customer,
+            "unpaid-cancellation");
+        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, hotel);
+
+        BookingCancellationQuoteDto quote = await GetJsonAsync<BookingCancellationQuoteDto>(
+            client,
+            $"/api/bookings/{booking.Id}/cancellation-quote",
+            HttpStatusCode.OK,
+            customer.AccessToken);
+        quote.CanCancel.Should().BeTrue();
+        quote.IsPaid.Should().BeFalse();
+        quote.EstimatedRefundAmount.Should().Be(0);
+
+        BookingCancellationResultDto cancellation = await PostJsonAsync<BookingCancellationResultDto>(
+            client,
+            $"/api/bookings/{booking.Id}/cancel",
+            new { reason = "Travel plans changed" },
+            HttpStatusCode.OK,
+            customer.AccessToken);
+        cancellation.BookingStatus.Should().Be(BookingStatus.Cancelled);
+        cancellation.RefundRecordId.Should().BeNull();
+
+        BookingDto replacementBooking = await CreateBookingAsync(client, customer.AccessToken, hotel);
+        replacementBooking.Status.Should().Be(BookingStatus.PendingPayment);
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+        (await dbContext.RefundRecords.IgnoreQueryFilters().AnyAsync(refund => refund.BookingId == booking.Id))
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CancellingPaidBookingWithinPolicyCreatesSinglePendingRefund()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Customer,
+            "paid-cancellation");
+
+        using (IServiceScope setupScope = _factory.Services.CreateScope())
+        {
+            HotelMarketplaceDbContext setupContext = setupScope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+            setupContext.CancellationPolicies.Add(
+                new CancellationPolicy(Guid.NewGuid(), hotel.HotelId, "Flexible 48 hours", 48, 80m));
+            await setupContext.SaveChangesAsync();
+        }
+
+        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, hotel);
+        await PostJsonAsync<DemoPaymentResultDto>(
+            client,
+            $"/api/bookings/{booking.Id}/demo-payment",
+            new { amount = booking.TotalAmount },
+            HttpStatusCode.OK,
+            customer.AccessToken);
+
+        BookingCancellationQuoteDto quote = await GetJsonAsync<BookingCancellationQuoteDto>(
+            client,
+            $"/api/bookings/{booking.Id}/cancellation-quote",
+            HttpStatusCode.OK,
+            customer.AccessToken);
+        quote.IsPaid.Should().BeTrue();
+        quote.IsWithinFreeCancellationWindow.Should().BeTrue();
+        quote.EstimatedRefundAmount.Should().Be(booking.TotalAmount * 0.8m);
+
+        BookingCancellationResultDto cancellation = await PostJsonAsync<BookingCancellationResultDto>(
+            client,
+            $"/api/bookings/{booking.Id}/cancel",
+            new { reason = "Unable to travel" },
+            HttpStatusCode.OK,
+            customer.AccessToken);
+        cancellation.RefundRequestedAmount.Should().Be(booking.TotalAmount * 0.8m);
+        cancellation.RefundStatus.Should().Be(RefundStatus.PendingReview);
+
+        IReadOnlyCollection<BookingDto> customerBookings = await GetJsonAsync<IReadOnlyCollection<BookingDto>>(
+            client,
+            "/api/bookings/my",
+            HttpStatusCode.OK,
+            customer.AccessToken);
+        BookingDto cancelledBooking = customerBookings.Single(entity => entity.Id == booking.Id);
+        cancelledBooking.RefundStatus.Should().Be(RefundStatus.PendingReview);
+        cancelledBooking.RefundRequestedAmount.Should().Be(booking.TotalAmount * 0.8m);
+
+        using IServiceScope verificationScope = _factory.Services.CreateScope();
+        HotelMarketplaceDbContext dbContext = verificationScope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+        RefundRecord refund = await dbContext.RefundRecords
+            .IgnoreQueryFilters()
+            .SingleAsync(entity => entity.BookingId == booking.Id);
+        refund.RequestedAmount.Should().Be(booking.TotalAmount * 0.8m);
+        (await dbContext.PaymentTransactions.IgnoreQueryFilters().SingleAsync(entity => entity.BookingId == booking.Id))
+            .Status.Should().Be(PaymentStatus.Paid);
+    }
+
+    [Fact]
+    public async Task ForeignCustomerCannotReadQuoteOrCancelBooking()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse owner = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "cancel-owner");
+        TestAuthResponse foreignCustomer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "cancel-foreign");
+        BookingDto booking = await CreateBookingAsync(client, owner.AccessToken, hotel);
+
+        using HttpRequestMessage quoteRequest = new(
+            HttpMethod.Get,
+            $"/api/bookings/{booking.Id}/cancellation-quote");
+        quoteRequest.Headers.Authorization = Bearer(foreignCustomer.AccessToken);
+        using HttpResponseMessage quoteResponse = await client.SendAsync(quoteRequest);
+        quoteResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using HttpRequestMessage cancelRequest = new(
+            HttpMethod.Post,
+            $"/api/bookings/{booking.Id}/cancel");
+        cancelRequest.Headers.Authorization = Bearer(foreignCustomer.AccessToken);
+        cancelRequest.Content = JsonContent.Create(new { reason = "Unauthorized cancellation" }, options: JsonOptions);
+        using HttpResponseMessage cancelResponse = await client.SendAsync(cancelRequest);
+        cancelResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task ConcurrentPaymentAndCancellationLeaveOneConsistentCancelledOutcome()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Customer,
+            "payment-cancellation-race");
+        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, hotel);
+
+        Task<HttpResponseMessage> paymentTask = SendDemoPaymentAsync(
+            client,
+            customer.AccessToken,
+            booking.Id,
+            booking.TotalAmount);
+        Task<HttpResponseMessage> cancellationTask = SendCancellationAsync(
+            client,
+            customer.AccessToken,
+            booking.Id,
+            "Concurrent cancellation request");
+
+        HttpResponseMessage[] responses = await Task.WhenAll(paymentTask, cancellationTask);
+        using HttpResponseMessage paymentResponse = responses[0];
+        using HttpResponseMessage cancellationResponse = responses[1];
+
+        cancellationResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        paymentResponse.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Conflict);
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+        Booking storedBooking = await dbContext.Bookings
+            .IgnoreQueryFilters()
+            .SingleAsync(entity => entity.Id == booking.Id);
+        storedBooking.Status.Should().Be(BookingStatus.Cancelled);
+        storedBooking.CancellationReason.Should().Be("Concurrent cancellation request");
+        (await dbContext.PaymentTransactions.IgnoreQueryFilters().CountAsync(entity => entity.BookingId == booking.Id))
+            .Should().BeLessThanOrEqualTo(1);
+        (await dbContext.AuditRecords.IgnoreQueryFilters().CountAsync(entity =>
+            entity.ActionType == "CancelBooking" && entity.TargetEntityId == booking.Id)).Should().Be(1);
+        (await dbContext.RefundRecords.IgnoreQueryFilters().AnyAsync(entity => entity.BookingId == booking.Id))
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task NoShowRequiresElapsedWindowAndCreatesOperationalEvidence()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse receptionist = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Receptionist,
+            "no-show-receptionist",
+            hotel.HotelId);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "no-show-customer");
+        BookingDto futureBooking = await CreateBookingAsync(client, customer.AccessToken, hotel);
+        await PostJsonAsync<DemoPaymentResultDto>(
+            client,
+            $"/api/bookings/{futureBooking.Id}/demo-payment",
+            new { amount = futureBooking.TotalAmount },
+            HttpStatusCode.OK,
+            customer.AccessToken);
+
+        using HttpRequestMessage earlyRequest = new(
+            HttpMethod.Post,
+            $"/api/hotels/{hotel.HotelId}/front-desk/bookings/{futureBooking.Id}/no-show");
+        earlyRequest.Headers.Authorization = Bearer(receptionist.AccessToken);
+        earlyRequest.Content = JsonContent.Create(
+            new { reason = "Guest did not arrive" },
+            options: JsonOptions);
+        using HttpResponseMessage earlyResponse = await client.SendAsync(earlyRequest);
+        earlyResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await earlyResponse.Content.ReadAsStringAsync()).Should().Contain("FrontDesk.NoShowWindowNotReached");
+
+        Guid eligibleBookingId;
+        using (IServiceScope setupScope = _factory.Services.CreateScope())
+        {
+            HotelMarketplaceDbContext setupContext = setupScope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+            DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(-2);
+            Booking eligibleBooking = new(
+                Guid.NewGuid(),
+                $"NS{Guid.NewGuid():N}"[..32],
+                customer.UserId,
+                hotel.HotelId,
+                checkInDate,
+                checkInDate.AddDays(3),
+                PaymentMode.PayAtProperty,
+                BookingSource.Marketplace,
+                100m,
+                "No Show Guest",
+                "0900000000");
+            eligibleBooking.AddRoom(new BookingRoom(
+                Guid.NewGuid(),
+                eligibleBooking.Id,
+                hotel.RoomTypeId,
+                1,
+                100m,
+                3));
+            setupContext.Bookings.Add(eligibleBooking);
+            await setupContext.SaveChangesAsync();
+            eligibleBookingId = eligibleBooking.Id;
+        }
+
+        FrontDeskBookingDto noShow = await PostJsonAsync<FrontDeskBookingDto>(
+            client,
+            $"/api/hotels/{hotel.HotelId}/front-desk/bookings/{eligibleBookingId}/no-show",
+            new { reason = "Guest did not arrive within the operational window" },
+            HttpStatusCode.OK,
+            receptionist.AccessToken);
+        noShow.Status.Should().Be(BookingStatus.NoShow);
+
+        using IServiceScope verificationScope = _factory.Services.CreateScope();
+        HotelMarketplaceDbContext verificationContext = verificationScope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+        Booking storedBooking = await verificationContext.Bookings
+            .IgnoreQueryFilters()
+            .SingleAsync(entity => entity.Id == eligibleBookingId);
+        storedBooking.NoShowReason.Should().Be("Guest did not arrive within the operational window");
+        storedBooking.NoShowAtUtc.Should().NotBeNull();
+        (await verificationContext.AuditRecords.IgnoreQueryFilters().AnyAsync(record =>
+            record.ActionType == "MarkBookingNoShow" && record.TargetEntityId == eligibleBookingId)).Should().BeTrue();
+        (await verificationContext.NotificationRecords.IgnoreQueryFilters().AnyAsync(record =>
+            record.EventType == "BookingMarkedNoShow" && record.RelatedEntityId == eligibleBookingId)).Should().BeTrue();
     }
 
     [Fact]
@@ -1447,6 +1731,20 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             $"/api/bookings/{bookingId}/demo-payment");
         request.Headers.Authorization = Bearer(accessToken);
         request.Content = JsonContent.Create(new { amount }, options: JsonOptions);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> SendCancellationAsync(
+        HttpClient client,
+        string accessToken,
+        Guid bookingId,
+        string reason)
+    {
+        using HttpRequestMessage request = new(
+            HttpMethod.Post,
+            $"/api/bookings/{bookingId}/cancel");
+        request.Headers.Authorization = Bearer(accessToken);
+        request.Content = JsonContent.Create(new { reason }, options: JsonOptions);
         return await client.SendAsync(request);
     }
 

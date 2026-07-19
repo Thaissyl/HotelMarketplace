@@ -38,4 +38,11 @@ public interface IFrontDeskRepository
         Guid actorUserAccountId,
         CreateWalkInBookingRequest request,
         CancellationToken cancellationToken);
+
+    Task<FrontDeskPersistenceResult> MarkBookingNoShowAsync(
+        Guid hotelId,
+        Guid bookingId,
+        Guid actorUserAccountId,
+        MarkBookingNoShowRequest request,
+        CancellationToken cancellationToken);
 }

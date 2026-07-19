@@ -15,7 +15,9 @@ public enum FrontDeskPersistenceStatus
     CapacityExceeded = 9,
     LockUnavailable = 10,
     InsufficientAvailability = 11,
-    IncorrectCashAmount = 12
+    IncorrectCashAmount = 12,
+    InvalidBookingStatusForNoShow = 13,
+    NoShowWindowNotReached = 14
 }
 
 public sealed record FrontDeskPersistenceResult(

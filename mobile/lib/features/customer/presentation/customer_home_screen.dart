@@ -9,6 +9,7 @@ import '../../../app/theme/app_spacing.dart';
 import '../../../features/auth/application/auth_controller.dart';
 import '../../../features/auth/presentation/auth_form_validators.dart';
 import '../../../features/bookings/application/booking_controller.dart';
+import '../../../features/bookings/domain/booking_models.dart';
 import '../../../features/marketplace/application/marketplace_providers.dart';
 import '../../../features/marketplace/presentation/hotel_detail_screen.dart';
 import '../../../features/marketplace/presentation/marketplace_screen.dart';
@@ -197,7 +198,7 @@ class _TripsTab extends ConsumerWidget {
               final booking = bookings[index];
               return _TripCard(
                 booking: booking,
-                onTap: () => _showBookingDetails(context, booking),
+                onTap: () => _showBookingDetails(context, ref, booking),
               );
             },
             separatorBuilder: (context, index) =>
@@ -210,7 +211,8 @@ class _TripsTab extends ConsumerWidget {
         if (localBookings.isNotEmpty) {
           return _LocalTripFallback(
             bookings: localBookings,
-            onViewDetails: (booking) => _showBookingDetails(context, booking),
+            onViewDetails: (booking) =>
+                _showBookingDetails(context, ref, booking),
             onRetry: () => ref.invalidate(myBookingsProvider),
           );
         }
@@ -226,8 +228,8 @@ class _TripsTab extends ConsumerWidget {
     );
   }
 
-  List<dynamic> _mergeBookings(List<dynamic> backend, List<dynamic> local) {
-    final byId = <String, dynamic>{};
+  List<Booking> _mergeBookings(List<Booking> backend, List<Booking> local) {
+    final byId = <String, Booking>{};
     for (final booking in local) {
       byId[booking.id] = booking;
     }
@@ -242,7 +244,12 @@ class _TripsTab extends ConsumerWidget {
     return bookings;
   }
 
-  void _showBookingDetails(BuildContext context, dynamic booking) {
+  void _showBookingDetails(
+    BuildContext context,
+    WidgetRef ref,
+    Booking booking,
+  ) {
+    final parentContext = context;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -307,7 +314,7 @@ class _TripsTab extends ConsumerWidget {
                   value: AppFormatters.money(booking.unitPricePerNight),
                 ),
                 _BookingDetailRow(
-                  label: 'Total paid',
+                  label: 'Booking total',
                   value: AppFormatters.money(booking.totalAmount),
                 ),
                 if (booking.paymentExpiresAtUtc != null)
@@ -317,16 +324,195 @@ class _TripsTab extends ConsumerWidget {
                       booking.paymentExpiresAtUtc!,
                     ),
                   ),
+                if (booking.refundStatus != null) ...[
+                  _BookingDetailRow(
+                    label: 'Refund status',
+                    value: booking.refundStatus!,
+                  ),
+                  _BookingDetailRow(
+                    label: 'Refund requested',
+                    value: AppFormatters.money(
+                      booking.refundRequestedAmount ?? 0,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.lg),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Close'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Close'),
+                      ),
+                    ),
+                    if (booking.status == 'PendingPayment' ||
+                        booking.status == 'Confirmed') ...[
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () async {
+                            Navigator.of(context).pop();
+                            await _showCancellationFlow(
+                              parentContext,
+                              ref,
+                              booking,
+                            );
+                          },
+                          icon: const Icon(Icons.event_busy_rounded),
+                          label: const Text('Cancel booking'),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  Future<void> _showCancellationFlow(
+    BuildContext context,
+    WidgetRef ref,
+    Booking booking,
+  ) async {
+    try {
+      final api = ref.read(bookingApiProvider);
+      final quote = await api.getCancellationQuote(booking.id);
+      if (!context.mounted) {
+        return;
+      }
+
+      final reason = await showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (context) => _CancellationConfirmationSheet(
+          booking: booking,
+          quote: quote,
+        ),
+      );
+
+      if (reason == null || !context.mounted) {
+        return;
+      }
+
+      final result = await api.cancelBooking(
+        bookingId: booking.id,
+        reason: reason,
+      );
+      ref.read(customerStateProvider.notifier).markBookingCancelled(booking.id);
+      ref.invalidate(myBookingsProvider);
+
+      if (context.mounted) {
+        AppErrorPresenter.showSnackBar(context, result.summary);
+      }
+    } catch (error) {
+      if (context.mounted) {
+        await AppErrorPresenter.showBottomSheet(
+          context,
+          error,
+          title: 'Cancellation not completed',
+        );
+      }
+    }
+  }
+}
+
+class _CancellationConfirmationSheet extends StatefulWidget {
+  const _CancellationConfirmationSheet({
+    required this.booking,
+    required this.quote,
+  });
+
+  final Booking booking;
+  final BookingCancellationQuote quote;
+
+  @override
+  State<_CancellationConfirmationSheet> createState() =>
+      _CancellationConfirmationSheetState();
+}
+
+class _CancellationConfirmationSheetState
+    extends State<_CancellationConfirmationSheet> {
+  final _reasonController = TextEditingController();
+  String? _errorText;
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    final reason = _reasonController.text.trim();
+    if (reason.length < 3) {
+      setState(() => _errorText = 'Enter a clear cancellation reason.');
+      return;
+    }
+
+    Navigator.of(context).pop(reason);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final quote = widget.quote;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        AppSpacing.sm,
+        AppSpacing.xl,
+        AppSpacing.xl + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Cancel ${widget.booking.bookingCode}',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(quote.summary),
+            const SizedBox(height: AppSpacing.lg),
+            _BookingDetailRow(
+              label: 'Policy',
+              value: quote.policyName ?? 'No refundable policy configured',
+            ),
+            _BookingDetailRow(
+              label: 'Payment collected',
+              value: quote.isPaid ? 'Yes' : 'No',
+            ),
+            _BookingDetailRow(
+              label: 'Estimated refund',
+              value: AppFormatters.money(quote.estimatedRefundAmount),
+            ),
+            if (quote.freeCancellationDeadlineUtc != null)
+              _BookingDetailRow(
+                label: 'Refund deadline',
+                value: AppFormatters.displayDate(
+                  quote.freeCancellationDeadlineUtc!,
+                ),
+              ),
+            const SizedBox(height: AppSpacing.md),
+            AppTextFormField(
+              controller: _reasonController,
+              labelText: 'Cancellation reason',
+              errorText: _errorText,
+              maxLines: 3,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            FilledButton.icon(
+              onPressed: quote.canCancel ? _confirm : null,
+              icon: const Icon(Icons.event_busy_rounded),
+              label: const Text('Confirm cancellation'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

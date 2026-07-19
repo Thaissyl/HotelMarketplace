@@ -9,6 +9,8 @@ Status: Walk-in alignment completed; remaining check-in/out lifecycle gaps are t
 - Check-in and checkout use Serializable transactions and application locks.
 - Checkout creates an Invoice and HousekeepingTask and moves rooms to Dirty.
 - Concurrent check-in is covered by an integration test.
+- No-show enforces hotel access, Confirmed state, a configured UTC operational
+  window, assignment release, and transactional audit/notification evidence.
 
 ## Verified Gaps
 
@@ -17,7 +19,7 @@ Status: Walk-in alignment completed; remaining check-in/out lifecycle gaps are t
 | Approved role decision | Platform Administrator can perform all Front Desk operations | GAP-001 |
 | UC-015 | Check-in does not enforce arrival date and identity number is optional | GAP-014 |
 | UC-016 | Invoice and collection do not model complete outstanding-balance rules | GAP-012, GAP-013 |
-| UC-017 | No-show operation is absent | GAP-007 |
+| UC-017 | Remediated: no-show operation and mobile action are implemented | GAP-007, ALN-005 |
 | UC-028 | No-show candidates and room-status overview are incomplete | GAP-027 |
 | UC-029 | Pre-assignment/change-room is unavailable outside check-in | GAP-013 |
 | UC-030 | Collection is only a checkout side effect and uses the wrong status type | GAP-012 |

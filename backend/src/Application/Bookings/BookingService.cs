@@ -14,15 +14,18 @@ internal sealed class BookingService : IBookingService
     private readonly IBookingRepository _bookingRepository;
     private readonly ICurrentUserService _currentUserService;
     private readonly IValidator<CreateBookingRequest> _createBookingValidator;
+    private readonly IValidator<CancelBookingRequest> _cancelBookingValidator;
 
     public BookingService(
         IBookingRepository bookingRepository,
         ICurrentUserService currentUserService,
-        IValidator<CreateBookingRequest> createBookingValidator)
+        IValidator<CreateBookingRequest> createBookingValidator,
+        IValidator<CancelBookingRequest> cancelBookingValidator)
     {
         _bookingRepository = bookingRepository;
         _currentUserService = currentUserService;
         _createBookingValidator = createBookingValidator;
+        _cancelBookingValidator = cancelBookingValidator;
     }
 
     public async Task<Result<BookingDto>> CreateBookingAsync(
@@ -80,5 +83,69 @@ internal sealed class BookingService : IBookingService
             cancellationToken);
 
         return Result.Success(bookings);
+    }
+
+    public async Task<Result<BookingCancellationQuoteDto>> GetCancellationQuoteAsync(
+        Guid bookingId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetCustomerUserId(out Guid customerUserAccountId))
+        {
+            return Result.Failure<BookingCancellationQuoteDto>(BookingErrors.Forbidden);
+        }
+
+        BookingCancellationQuotePersistenceResult quote = await _bookingRepository.GetCancellationQuoteAsync(
+            bookingId,
+            customerUserAccountId,
+            cancellationToken);
+
+        return quote.Status switch
+        {
+            BookingCancellationPersistenceStatus.Success => Result.Success(quote.Quote!),
+            BookingCancellationPersistenceStatus.BookingNotFound => Result.Failure<BookingCancellationQuoteDto>(BookingErrors.BookingNotFound),
+            BookingCancellationPersistenceStatus.Forbidden => Result.Failure<BookingCancellationQuoteDto>(BookingErrors.Forbidden),
+            _ => Result.Failure<BookingCancellationQuoteDto>(BookingErrors.BookingNotFound)
+        };
+    }
+
+    public async Task<Result<BookingCancellationResultDto>> CancelBookingAsync(
+        Guid bookingId,
+        CancelBookingRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetCustomerUserId(out Guid customerUserAccountId))
+        {
+            return Result.Failure<BookingCancellationResultDto>(BookingErrors.Forbidden);
+        }
+
+        ValidationResult validationResult = await _cancelBookingValidator.ValidateAsync(request, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return Result.Failure<BookingCancellationResultDto>(
+                ValidationErrorFormatter.ToResultError("Booking.InvalidCancellationRequest", validationResult));
+        }
+
+        BookingCancellationPersistenceResult cancellation = await _bookingRepository.CancelBookingAsync(
+            bookingId,
+            customerUserAccountId,
+            request.Reason,
+            cancellationToken);
+
+        return cancellation.Status switch
+        {
+            BookingCancellationPersistenceStatus.Success => Result.Success(cancellation.Cancellation!),
+            BookingCancellationPersistenceStatus.BookingNotFound => Result.Failure<BookingCancellationResultDto>(BookingErrors.BookingNotFound),
+            BookingCancellationPersistenceStatus.Forbidden => Result.Failure<BookingCancellationResultDto>(BookingErrors.Forbidden),
+            BookingCancellationPersistenceStatus.InvalidBookingStatus => Result.Failure<BookingCancellationResultDto>(BookingErrors.InvalidCancellationStatus),
+            BookingCancellationPersistenceStatus.LockUnavailable => Result.Failure<BookingCancellationResultDto>(BookingErrors.CancellationLockUnavailable),
+            _ => Result.Failure<BookingCancellationResultDto>(BookingErrors.InvalidCancellationStatus)
+        };
+    }
+
+    private bool TryGetCustomerUserId(out Guid customerUserAccountId)
+    {
+        customerUserAccountId = _currentUserService.UserId.GetValueOrDefault();
+        return _currentUserService.UserId is not null &&
+            _currentUserService.Roles.Contains(UserRoleCode.Customer);
     }
 }

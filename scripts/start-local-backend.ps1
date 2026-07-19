@@ -1,6 +1,7 @@
 param(
     [int]$Port = 5080,
     [string]$EnvFile = ".env",
+    [string]$LogFile = "",
     [switch]$ForceRestart
 )
 
@@ -47,7 +48,7 @@ function Test-ApiHealth {
 
 Import-EnvFile -Path $EnvFile
 $env:ASPNETCORE_ENVIRONMENT = "Development"
-$env:ASPNETCORE_URLS = "http://localhost:$Port"
+$env:ASPNETCORE_URLS = "http://0.0.0.0:$Port"
 
 $portOwner = Get-PortOwner -LocalPort $Port
 if ($portOwner) {
@@ -84,6 +85,27 @@ if ($finalHealth -ne "healthy") {
     throw "SQL Server container did not become healthy. Current health: $finalHealth"
 }
 
+Write-Host "Applying pending Entity Framework Core migrations."
+dotnet ef database update `
+    --project .\backend\src\Infrastructure.Persistence\Infrastructure.Persistence.csproj `
+    --startup-project .\backend\src\Presentation.Api\Presentation.Api.csproj `
+    --context HotelMarketplaceDbContext
+if ($LASTEXITCODE -ne 0) {
+    throw "Database migration failed with exit code $LASTEXITCODE."
+}
+
 Write-Host "Starting backend API on http://localhost:$Port"
 Write-Host "Swagger will be available at http://localhost:$Port/swagger"
-dotnet run --project .\backend\src\Presentation.Api\Presentation.Api.csproj
+if ([string]::IsNullOrWhiteSpace($LogFile)) {
+    dotnet run --project .\backend\src\Presentation.Api\Presentation.Api.csproj
+}
+else {
+    $resolvedLogFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LogFile)
+    $logDirectory = Split-Path -Parent $resolvedLogFile
+    if ($logDirectory) {
+        New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
+    }
+
+    dotnet run --project .\backend\src\Presentation.Api\Presentation.Api.csproj *>&1 |
+        Tee-Object -FilePath $resolvedLogFile
+}

@@ -26,6 +26,7 @@ internal sealed class FrontDeskService : IFrontDeskService
     private readonly IValidator<CheckInBookingRequest> _checkInValidator;
     private readonly IValidator<CheckOutBookingRequest> _checkOutValidator;
     private readonly IValidator<CreateWalkInBookingRequest> _walkInValidator;
+    private readonly IValidator<MarkBookingNoShowRequest> _noShowValidator;
 
     public FrontDeskService(
         ICurrentUserService currentUserService,
@@ -33,7 +34,8 @@ internal sealed class FrontDeskService : IFrontDeskService
         IFrontDeskRepository frontDeskRepository,
         IValidator<CheckInBookingRequest> checkInValidator,
         IValidator<CheckOutBookingRequest> checkOutValidator,
-        IValidator<CreateWalkInBookingRequest> walkInValidator)
+        IValidator<CreateWalkInBookingRequest> walkInValidator,
+        IValidator<MarkBookingNoShowRequest> noShowValidator)
     {
         _currentUserService = currentUserService;
         _hotelAccessAuthorizer = hotelAccessAuthorizer;
@@ -41,6 +43,7 @@ internal sealed class FrontDeskService : IFrontDeskService
         _checkInValidator = checkInValidator;
         _checkOutValidator = checkOutValidator;
         _walkInValidator = walkInValidator;
+        _noShowValidator = noShowValidator;
     }
 
     public async Task<Result<IReadOnlyCollection<PhysicalRoomDto>>> GetPhysicalRoomsAsync(
@@ -175,6 +178,35 @@ internal sealed class FrontDeskService : IFrontDeskService
         return ToResult(result);
     }
 
+    public async Task<Result<FrontDeskBookingDto>> MarkBookingNoShowAsync(
+        Guid hotelId,
+        Guid bookingId,
+        MarkBookingNoShowRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, cancellationToken);
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<FrontDeskBookingDto>(authorizationFailure.Error);
+        }
+
+        ValidationResult validationResult = await _noShowValidator.ValidateAsync(request, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return Result.Failure<FrontDeskBookingDto>(
+                ValidationErrorFormatter.ToResultError("FrontDesk.InvalidNoShowRequest", validationResult));
+        }
+
+        FrontDeskPersistenceResult result = await _frontDeskRepository.MarkBookingNoShowAsync(
+            hotelId,
+            bookingId,
+            _currentUserService.UserId!.Value,
+            request,
+            cancellationToken);
+
+        return ToResult(result);
+    }
+
     private async Task<Result?> ValidateAuthorizationAsync(Guid hotelId, CancellationToken cancellationToken)
     {
         if (_currentUserService.UserId is null)
@@ -203,6 +235,8 @@ internal sealed class FrontDeskService : IFrontDeskService
             FrontDeskPersistenceStatus.InsufficientAvailability => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.InsufficientAvailability),
             FrontDeskPersistenceStatus.IncorrectCashAmount => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.IncorrectCashAmount),
             FrontDeskPersistenceStatus.LockUnavailable => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.LockUnavailable),
+            FrontDeskPersistenceStatus.InvalidBookingStatusForNoShow => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.InvalidBookingStatusForNoShow),
+            FrontDeskPersistenceStatus.NoShowWindowNotReached => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.NoShowWindowNotReached),
             _ => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.InvalidRoomAssignment)
         };
     }

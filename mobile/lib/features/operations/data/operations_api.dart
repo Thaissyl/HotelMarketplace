@@ -190,6 +190,19 @@ class OperationsApi {
     );
   }
 
+  Future<FrontDeskBookingResult> markBookingNoShow({
+    required String hotelId,
+    required String bookingId,
+    required String reason,
+  }) {
+    return _apiClient.post<FrontDeskBookingResult>(
+      '/api/hotels/$hotelId/front-desk/bookings/$bookingId/no-show',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: {'reason': reason.trim()},
+      decoder: FrontDeskBookingResult.fromJson,
+    );
+  }
+
   Future<FrontDeskBookingResult> createWalkInBooking({
     required String hotelId,
     required String roomTypeId,

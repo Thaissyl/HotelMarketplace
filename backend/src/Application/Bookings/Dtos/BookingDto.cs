@@ -18,4 +18,6 @@ public sealed record BookingDto(
     DateTime CreatedAtUtc,
     DateTime? PaymentExpiresAtUtc,
     string GuestFullName,
-    string GuestPhone);
+    string GuestPhone,
+    RefundStatus? RefundStatus = null,
+    decimal? RefundRequestedAmount = null);

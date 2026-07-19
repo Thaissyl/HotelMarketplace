@@ -75,6 +75,9 @@ an expired booking, and cannot duplicate payment or commission records.
 
 ### ALN-005 Cancellation, Refund Initiation, and No-Show
 
+Status: Implemented and verified on `fix/aln-005-customer-cancellation`.
+See [13-aln-005-cancellation-refund-no-show.md](13-aln-005-cancellation-refund-no-show.md).
+
 Implement policy-aware cancellation, refund creation/status, no-show eligibility,
 inventory release, assignment release, financial trace, audit, notification, API,
 mobile views, and tests.

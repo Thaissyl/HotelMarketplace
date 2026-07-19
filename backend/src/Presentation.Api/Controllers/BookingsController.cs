@@ -81,6 +81,43 @@ public sealed class BookingsController : ControllerBase
         return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
     }
 
+    [HttpGet("{bookingId:guid}/cancellation-quote")]
+    [ProducesResponseType(typeof(BookingCancellationQuoteDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetCancellationQuote(
+        Guid bookingId,
+        CancellationToken cancellationToken)
+    {
+        Result<BookingCancellationQuoteDto> result = await _bookingService.GetCancellationQuoteAsync(
+            bookingId,
+            cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
+    [HttpPost("{bookingId:guid}/cancel")]
+    [ProducesResponseType(typeof(BookingCancellationResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status423Locked)]
+    public async Task<IActionResult> CancelBooking(
+        Guid bookingId,
+        CancelBookingRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<BookingCancellationResultDto> result = await _bookingService.CancelBookingAsync(
+            bookingId,
+            request,
+            cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
     private ObjectResult ToProblem(ResultError error)
     {
         int statusCode = error.Code switch
@@ -91,6 +128,10 @@ public sealed class BookingsController : ControllerBase
             "Booking.CapacityExceeded" => StatusCodes.Status400BadRequest,
             "Booking.InsufficientAvailability" => StatusCodes.Status409Conflict,
             "Booking.ReservationLockUnavailable" => StatusCodes.Status423Locked,
+            "Booking.BookingNotFound" => StatusCodes.Status404NotFound,
+            "Booking.InvalidCancellationStatus" => StatusCodes.Status409Conflict,
+            "Booking.InvalidCancellationRequest" => StatusCodes.Status400BadRequest,
+            "Booking.CancellationLockUnavailable" => StatusCodes.Status423Locked,
             "Payment.Forbidden" => StatusCodes.Status403Forbidden,
             "Payment.BookingNotFound" => StatusCodes.Status404NotFound,
             "Payment.BookingNotPendingPayment" => StatusCodes.Status409Conflict,

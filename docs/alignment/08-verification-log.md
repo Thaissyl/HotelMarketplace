@@ -47,3 +47,48 @@ and restores prior process environment values after the suite.
 This result verifies the current ALN-001 through ALN-004 acceptance scope. It does
 not establish conformance for the remaining remediation packages or replace the
 missing Domain and Application test suites.
+
+## ALN-005 Verification
+
+The ALN-005 branch was verified after cancellation, refund initiation, no-show,
+shared booking locks, migration, and Mobile actions were implemented.
+
+| Command | Result |
+| --- | --- |
+| `dotnet build .\backend\HotelMarketplace.slnx --no-restore` | Passed; 0 warnings and 0 errors |
+| `dotnet test .\backend\HotelMarketplace.slnx --no-restore` | Passed; 27 API integration tests and 5 Domain tests |
+| `flutter analyze` | Passed; no issues found |
+| `flutter test` | Passed; 1 test |
+| Android profile build | Passed and installed on the existing Pixel 7 emulator |
+
+ALN-005 coverage includes unpaid cancellation and inventory reuse, paid policy
+refund creation and persistent Customer projection, foreign-customer denial,
+concurrent payment versus cancellation, early no-show denial, successful no-show
+evidence, invalid Domain transitions, and room assignment release. Application
+unit tests remain unauthored and are still tracked as residual test debt.
+
+## ALN-005 Emulator Verification
+
+The Mobile client was exercised against the local SQL Server container and API on
+the existing Pixel 7 emulator. The API was bound to all local interfaces and the
+database migrations were applied through `scripts/start-local-backend.ps1`.
+
+- Customer login, public hotel search, and Customer trip retrieval completed.
+- A `PendingPayment` booking displayed its guest, stay dates, room count, nightly
+  rate, booking total, and payment deadline.
+- The cancellation quote displayed policy, collected-payment, and estimated-refund
+  information. A required reason was enforced before submission.
+- Cancellation completed with HTTP 200 and the trip immediately refreshed to
+  `Cancelled`.
+- Receptionist login opened the assigned hotel by name and loaded detailed arrival
+  records with guest, phone, booking code, dates, room type, payment, and assignment
+  information.
+- The no-show action required an operational reason. Submitting it before the
+  configured window returned HTTP 409 and the Mobile client presented the business
+  explanation without exposing server details.
+- The expired-booking scheduler completed its local scan without the prior
+  `ReadOnlySpan<Guid>` expression-evaluation failure.
+
+Residual limitations remain: hotel-local time zones are not yet modeled for the
+no-show window, Application unit tests are not authored, and cancellation-policy
+administration is not exposed as a dedicated Mobile workflow.

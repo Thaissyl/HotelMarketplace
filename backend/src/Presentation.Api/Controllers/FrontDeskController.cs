@@ -104,6 +104,29 @@ public sealed class FrontDeskController : ControllerBase
         return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
     }
 
+    [HttpPost("bookings/{bookingId:guid}/no-show")]
+    [ProducesResponseType(typeof(FrontDeskBookingDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status423Locked)]
+    public async Task<IActionResult> MarkBookingNoShow(
+        Guid hotelId,
+        Guid bookingId,
+        MarkBookingNoShowRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<FrontDeskBookingDto> result = await _frontDeskService.MarkBookingNoShowAsync(
+            hotelId,
+            bookingId,
+            request,
+            cancellationToken);
+
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
     [HttpPost("walk-in-bookings")]
     [ProducesResponseType(typeof(FrontDeskBookingDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -143,6 +166,9 @@ public sealed class FrontDeskController : ControllerBase
             "FrontDesk.InsufficientAvailability" => StatusCodes.Status409Conflict,
             "FrontDesk.IncorrectCashAmount" => StatusCodes.Status400BadRequest,
             "FrontDesk.LockUnavailable" => StatusCodes.Status423Locked,
+            "FrontDesk.InvalidNoShowRequest" => StatusCodes.Status400BadRequest,
+            "FrontDesk.InvalidBookingStatusForNoShow" => StatusCodes.Status409Conflict,
+            "FrontDesk.NoShowWindowNotReached" => StatusCodes.Status409Conflict,
             _ => StatusCodes.Status400BadRequest
         };
 

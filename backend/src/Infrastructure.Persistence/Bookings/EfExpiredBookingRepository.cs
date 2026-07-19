@@ -3,6 +3,7 @@ using HotelMarketplace.Application.Bookings.Expiration;
 using HotelMarketplace.Application.Inventory;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.Infrastructure.Persistence.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -30,18 +31,43 @@ internal sealed class EfExpiredBookingRepository : IExpiredBookingRepository
 
         return await executionStrategy.ExecuteAsync(async () =>
         {
-            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
-                cancellationToken);
-
-            Booking[] expiredBookings = await _dbContext.Bookings
+            List<Guid> candidateBookingIds = await _dbContext.Bookings
                 .IgnoreQueryFilters()
-                .Include(booking => booking.Rooms)
+                .AsNoTracking()
                 .Where(booking => booking.Status == BookingStatus.PendingPayment &&
                     booking.PaymentExpiresAtUtc != null &&
                     booking.PaymentExpiresAtUtc <= utcNow)
                 .OrderBy(booking => booking.PaymentExpiresAtUtc)
+                .Select(booking => booking.Id)
                 .Take(batchSize)
+                .ToListAsync(cancellationToken);
+
+            if (candidateBookingIds.Count == 0)
+            {
+                return Array.Empty<ExpiredBookingDto>();
+            }
+
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            if (!await SqlApplicationLock.AcquireBookingLocksAsync(
+                    _dbContext,
+                    candidateBookingIds,
+                    cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Array.Empty<ExpiredBookingDto>();
+            }
+
+            Booking[] expiredBookings = await _dbContext.Bookings
+                .IgnoreQueryFilters()
+                .Include(booking => booking.Rooms)
+                .Where(booking => candidateBookingIds.Contains(booking.Id) &&
+                    booking.Status == BookingStatus.PendingPayment &&
+                    booking.PaymentExpiresAtUtc != null &&
+                    booking.PaymentExpiresAtUtc <= utcNow)
+                .OrderBy(booking => booking.PaymentExpiresAtUtc)
                 .ToArrayAsync(cancellationToken);
 
             if (expiredBookings.Length == 0)

@@ -59,6 +59,18 @@ public static class DependencyInjection
         services.AddScoped<ICustomerAccountRepository, EfCustomerAccountRepository>();
         services.AddScoped<IExpiredBookingRepository, EfExpiredBookingRepository>();
         services.AddScoped<IFrontDeskRepository, EfFrontDeskRepository>();
+        string? configuredNoShowHours = configuration["Operations:NoShowEligibleAfterHours"];
+        int noShowEligibleAfterHours = string.IsNullOrWhiteSpace(configuredNoShowHours)
+            ? NoShowPolicyOptions.DefaultEligibleAfterHours
+            : int.TryParse(configuredNoShowHours, out int parsedNoShowHours)
+                ? parsedNoShowHours
+                : throw new InvalidOperationException("Operations:NoShowEligibleAfterHours must be an integer.");
+        if (noShowEligibleAfterHours is < 0 or > 168)
+        {
+            throw new InvalidOperationException("Operations:NoShowEligibleAfterHours must be between 0 and 168.");
+        }
+
+        services.AddSingleton(new NoShowPolicyOptions(noShowEligibleAfterHours));
         services.AddScoped<IHousekeepingRepository, EfHousekeepingRepository>();
         services.AddScoped<IHotelManagementRepository, EfHotelManagementRepository>();
         services.AddScoped<IMaintenanceRepository, EfMaintenanceRepository>();

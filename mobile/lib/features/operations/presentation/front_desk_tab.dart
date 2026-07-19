@@ -260,6 +260,10 @@ class _BookingQueuePanel extends ConsumerWidget {
     if (action == _BookingDetailAction.checkOut && context.mounted) {
       await _showCheckOutSheet(context, ref, booking);
     }
+
+    if (action == _BookingDetailAction.noShow && context.mounted) {
+      await _showNoShowSheet(context, ref, booking);
+    }
   }
 
   Future<void> _showCheckInSheet(
@@ -321,6 +325,36 @@ class _BookingQueuePanel extends ConsumerWidget {
           FrontDeskBookingsRequest(
             hotelId: hotelId,
             status: FrontDeskBookingListStatus.checkedIn,
+          ),
+        ),
+      );
+      if (context.mounted) {
+        _showResult(context, result);
+      }
+    }
+  }
+
+  Future<void> _showNoShowSheet(
+    BuildContext context,
+    WidgetRef ref,
+    FrontDeskBookingSummary booking,
+  ) async {
+    final result = await showModalBottomSheet<FrontDeskBookingResult>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _NoShowSheet(
+        hotelId: hotelId,
+        booking: booking,
+      ),
+    );
+
+    if (result != null) {
+      ref.invalidate(
+        frontDeskBookingsProvider(
+          FrontDeskBookingsRequest(
+            hotelId: hotelId,
+            status: FrontDeskBookingListStatus.confirmed,
           ),
         ),
       );
@@ -496,7 +530,7 @@ class _BookingDetailGrid extends StatelessWidget {
   }
 }
 
-enum _BookingDetailAction { checkIn, checkOut }
+enum _BookingDetailAction { checkIn, checkOut, noShow }
 
 class _BookingDetailsSheet extends StatelessWidget {
   const _BookingDetailsSheet({
@@ -558,14 +592,21 @@ class _BookingDetailsSheet extends StatelessWidget {
             ),
           ],
         ),
-        if (mode == _QueueMode.checkIn)
+        if (mode == _QueueMode.checkIn) ...[
           FilledButton.icon(
             onPressed: () =>
                 Navigator.of(context).pop(_BookingDetailAction.checkIn),
             icon: const Icon(Icons.key_rounded),
             label: const Text('Assign room & check in'),
-          )
-        else if (mode == _QueueMode.checkOut || mode == _QueueMode.viewStay)
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          OutlinedButton.icon(
+            onPressed: () =>
+                Navigator.of(context).pop(_BookingDetailAction.noShow),
+            icon: const Icon(Icons.person_off_rounded),
+            label: const Text('Mark as no-show'),
+          ),
+        ] else if (mode == _QueueMode.checkOut || mode == _QueueMode.viewStay)
           FilledButton.icon(
             onPressed: () =>
                 Navigator.of(context).pop(_BookingDetailAction.checkOut),
@@ -823,6 +864,96 @@ class _CheckOutSheetState extends ConsumerState<_CheckOutSheet> {
                 )
               : const Icon(Icons.logout_rounded),
           label: const Text('Complete checkout'),
+        ),
+      ],
+    );
+  }
+}
+
+class _NoShowSheet extends ConsumerStatefulWidget {
+  const _NoShowSheet({
+    required this.hotelId,
+    required this.booking,
+  });
+
+  final String hotelId;
+  final FrontDeskBookingSummary booking;
+
+  @override
+  ConsumerState<_NoShowSheet> createState() => _NoShowSheetState();
+}
+
+class _NoShowSheetState extends ConsumerState<_NoShowSheet> {
+  final _reasonController = TextEditingController();
+  String? _errorText;
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final reason = _reasonController.text.trim();
+    if (reason.length < 3) {
+      setState(() => _errorText = 'Enter a clear operational reason.');
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _errorText = null;
+    });
+    try {
+      final result = await ref.read(operationsApiProvider).markBookingNoShow(
+            hotelId: widget.hotelId,
+            bookingId: widget.booking.bookingId,
+            reason: reason,
+          );
+      if (mounted) {
+        Navigator.of(context).pop(result);
+      }
+    } catch (error) {
+      if (mounted) {
+        await AppErrorPresenter.showBottomSheet(
+          context,
+          error,
+          title: 'No-show not recorded',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SheetScaffold(
+      title: 'Mark ${widget.booking.guestFullName} as no-show',
+      children: [
+        _BookingDetailGrid(booking: widget.booking),
+        Text(
+          'Use this only after the guest has missed the configured arrival window. The reservation and any pre-assigned room will be released.',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        AppTextFormField(
+          controller: _reasonController,
+          labelText: 'Operational reason',
+          errorText: _errorText,
+          maxLines: 3,
+        ),
+        FilledButton.icon(
+          onPressed: _loading ? null : _submit,
+          icon: _loading
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.person_off_rounded),
+          label: const Text('Confirm no-show'),
         ),
       ],
     );

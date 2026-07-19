@@ -146,6 +146,25 @@ class CustomerStateController extends StateNotifier<CustomerState> {
     );
   }
 
+  void markBookingCancelled(String bookingId) {
+    state = state.copyWith(
+      bookings: state.bookings.map((booking) {
+        return booking.id == bookingId
+            ? booking.copyWith(status: 'Cancelled')
+            : booking;
+      }).toList(growable: false),
+      notifications: [
+        const CustomerNotification(
+          title: 'Booking cancelled',
+          body: 'Your cancellation was recorded. Check Trips for details.',
+          createdLabel: 'Now',
+          unread: true,
+        ),
+        ...state.notifications,
+      ],
+    );
+  }
+
   void markNotificationsRead() {
     state = state.copyWith(
       notifications: state.notifications

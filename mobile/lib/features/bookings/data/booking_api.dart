@@ -37,4 +37,22 @@ class BookingApi {
       decoder: DemoPaymentResult.fromJson,
     );
   }
+
+  Future<BookingCancellationQuote> getCancellationQuote(String bookingId) {
+    return _apiClient.get<BookingCancellationQuote>(
+      '/api/bookings/$bookingId/cancellation-quote',
+      decoder: BookingCancellationQuote.fromJson,
+    );
+  }
+
+  Future<BookingCancellationResult> cancelBooking({
+    required String bookingId,
+    required String reason,
+  }) {
+    return _apiClient.post<BookingCancellationResult>(
+      '/api/bookings/$bookingId/cancel',
+      data: {'reason': reason.trim()},
+      decoder: BookingCancellationResult.fromJson,
+    );
+  }
 }

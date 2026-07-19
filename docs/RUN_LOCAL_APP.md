@@ -20,11 +20,19 @@ Start the backend:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local-backend.ps1
 ```
 
+The script starts SQL Server, waits for its health check, and applies all pending
+Entity Framework Core migrations before starting the API. This prevents an old
+persistent local database from running against a newer application model.
+
 The API should be available at:
 
 ```text
 http://localhost:5080
 ```
+
+The startup script binds Kestrel to all local interfaces so Android emulators
+can reach the same API through `http://10.0.2.2:5080`. It remains available from
+Windows at `http://localhost:5080`.
 
 Swagger:
 
@@ -56,6 +64,12 @@ To force-restart from one command:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local-backend.ps1 -ForceRestart
+```
+
+To keep a diagnostic log while reproducing an API problem:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local-backend.ps1 -ForceRestart -LogFile .\.local\backend.log
 ```
 
 ## 4. Run The Flutter App From Android Studio

@@ -12,4 +12,13 @@ public interface IBookingService
     Task<Result<BookingDto>> CreateBookingAsync(
         CreateBookingRequest request,
         CancellationToken cancellationToken);
+
+    Task<Result<BookingCancellationQuoteDto>> GetCancellationQuoteAsync(
+        Guid bookingId,
+        CancellationToken cancellationToken);
+
+    Task<Result<BookingCancellationResultDto>> CancelBookingAsync(
+        Guid bookingId,
+        CancelBookingRequest request,
+        CancellationToken cancellationToken);
 }

@@ -16,4 +16,7 @@ public static class FrontDeskErrors
     public static readonly ResultError InsufficientAvailability = new("FrontDesk.InsufficientAvailability", "The requested room type no longer has enough availability for these dates.");
     public static readonly ResultError IncorrectCashAmount = new("FrontDesk.IncorrectCashAmount", "Cash collected must equal the server-calculated booking total.");
     public static readonly ResultError LockUnavailable = new("FrontDesk.LockUnavailable", "The front desk operation is busy. Please try again.");
+    public static readonly ResultError InvalidNoShowRequest = new("FrontDesk.InvalidNoShowRequest", "The no-show request is invalid.");
+    public static readonly ResultError InvalidBookingStatusForNoShow = new("FrontDesk.InvalidBookingStatusForNoShow", "Only confirmed bookings can be marked as no-show.");
+    public static readonly ResultError NoShowWindowNotReached = new("FrontDesk.NoShowWindowNotReached", "The booking cannot be marked as no-show before the configured operational window has elapsed.");
 }

@@ -53,6 +53,8 @@ class Booking {
     required this.paymentExpiresAtUtc,
     required this.guestFullName,
     required this.guestPhone,
+    this.refundStatus,
+    this.refundRequestedAmount,
   });
 
   final String id;
@@ -71,6 +73,8 @@ class Booking {
   final DateTime? paymentExpiresAtUtc;
   final String guestFullName;
   final String guestPhone;
+  final String? refundStatus;
+  final double? refundRequestedAmount;
 
   bool get isPendingPayment => status == 'PendingPayment';
 
@@ -95,6 +99,8 @@ class Booking {
       paymentExpiresAtUtc: paymentExpiresAtUtc ?? this.paymentExpiresAtUtc,
       guestFullName: guestFullName,
       guestPhone: guestPhone,
+      refundStatus: refundStatus,
+      refundRequestedAmount: refundRequestedAmount,
     );
   }
 
@@ -123,6 +129,9 @@ class Booking {
       )?.toUtc(),
       guestFullName: json['guestFullName']?.toString() ?? '',
       guestPhone: json['guestPhone']?.toString() ?? '',
+      refundStatus: json['refundStatus']?.toString(),
+      refundRequestedAmount:
+          (json['refundRequestedAmount'] as num?)?.toDouble(),
     );
   }
 }
@@ -158,6 +167,92 @@ class DemoPaymentResult {
       paidAtUtc:
           DateTime.tryParse(json['paidAtUtc']?.toString() ?? '')?.toUtc() ??
               DateTime.now().toUtc(),
+    );
+  }
+}
+
+class BookingCancellationQuote {
+  const BookingCancellationQuote({
+    required this.bookingId,
+    required this.canCancel,
+    required this.isPaid,
+    required this.policyName,
+    required this.freeCancellationHours,
+    required this.refundPercentage,
+    required this.freeCancellationDeadlineUtc,
+    required this.isWithinFreeCancellationWindow,
+    required this.estimatedRefundAmount,
+    required this.summary,
+  });
+
+  final String bookingId;
+  final bool canCancel;
+  final bool isPaid;
+  final String? policyName;
+  final int? freeCancellationHours;
+  final double refundPercentage;
+  final DateTime? freeCancellationDeadlineUtc;
+  final bool isWithinFreeCancellationWindow;
+  final double estimatedRefundAmount;
+  final String summary;
+
+  static BookingCancellationQuote fromJson(Object? data) {
+    final json = _asMap(data);
+    return BookingCancellationQuote(
+      bookingId: json['bookingId']?.toString() ?? '',
+      canCancel: json['canCancel'] == true,
+      isPaid: json['isPaid'] == true,
+      policyName: json['policyName']?.toString(),
+      freeCancellationHours: (json['freeCancellationHours'] as num?)?.toInt(),
+      refundPercentage: (json['refundPercentage'] as num?)?.toDouble() ?? 0,
+      freeCancellationDeadlineUtc: DateTime.tryParse(
+        json['freeCancellationDeadlineUtc']?.toString() ?? '',
+      )?.toUtc(),
+      isWithinFreeCancellationWindow:
+          json['isWithinFreeCancellationWindow'] == true,
+      estimatedRefundAmount:
+          (json['estimatedRefundAmount'] as num?)?.toDouble() ?? 0,
+      summary: json['summary']?.toString() ?? '',
+    );
+  }
+}
+
+class BookingCancellationResult {
+  const BookingCancellationResult({
+    required this.bookingId,
+    required this.bookingStatus,
+    required this.cancelledAtUtc,
+    required this.cancellationReason,
+    required this.refundRequestedAmount,
+    required this.refundRecordId,
+    required this.refundStatus,
+    required this.summary,
+  });
+
+  final String bookingId;
+  final String bookingStatus;
+  final DateTime cancelledAtUtc;
+  final String cancellationReason;
+  final double refundRequestedAmount;
+  final String? refundRecordId;
+  final String? refundStatus;
+  final String summary;
+
+  static BookingCancellationResult fromJson(Object? data) {
+    final json = _asMap(data);
+    return BookingCancellationResult(
+      bookingId: json['bookingId']?.toString() ?? '',
+      bookingStatus: json['bookingStatus']?.toString() ?? 'Cancelled',
+      cancelledAtUtc:
+          DateTime.tryParse(json['cancelledAtUtc']?.toString() ?? '')
+                  ?.toUtc() ??
+              DateTime.now().toUtc(),
+      cancellationReason: json['cancellationReason']?.toString() ?? '',
+      refundRequestedAmount:
+          (json['refundRequestedAmount'] as num?)?.toDouble() ?? 0,
+      refundRecordId: json['refundRecordId']?.toString(),
+      refundStatus: json['refundStatus']?.toString(),
+      summary: json['summary']?.toString() ?? '',
     );
   }
 }

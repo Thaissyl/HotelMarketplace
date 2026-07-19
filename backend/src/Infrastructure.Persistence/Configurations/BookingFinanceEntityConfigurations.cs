@@ -20,6 +20,10 @@ internal sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(entity => entity.GuestPhone).HasMaxLength(32).IsRequired();
         builder.Property(entity => entity.CreatedAtUtc).HasPrecision(3);
         builder.Property(entity => entity.PaymentExpiresAtUtc).HasPrecision(3);
+        builder.Property(entity => entity.CancellationReason).HasMaxLength(500);
+        builder.Property(entity => entity.CancelledAtUtc).HasPrecision(3);
+        builder.Property(entity => entity.NoShowReason).HasMaxLength(500);
+        builder.Property(entity => entity.NoShowAtUtc).HasPrecision(3);
         builder.HasIndex(entity => entity.BookingCode).IsUnique();
         builder.HasIndex(entity => new { entity.HotelId, entity.CheckInDate, entity.CheckOutDate, entity.Status });
         builder.HasIndex(entity => new { entity.CustomerUserAccountId, entity.CreatedAtUtc });
@@ -122,6 +126,7 @@ internal sealed class RefundRecordConfiguration : IEntityTypeConfiguration<Refun
         builder.Property(entity => entity.Status).HasEnumConversion();
         builder.Property(entity => entity.CreatedAtUtc).HasPrecision(3);
         builder.HasIndex(entity => new { entity.HotelId, entity.Status });
+        builder.HasIndex(entity => entity.BookingId).IsUnique();
         builder.HasOne<HotelProperty>().WithMany().HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Booking>().WithMany().HasForeignKey(entity => entity.BookingId).OnDelete(DeleteBehavior.Restrict);
         builder.ToTable(table =>

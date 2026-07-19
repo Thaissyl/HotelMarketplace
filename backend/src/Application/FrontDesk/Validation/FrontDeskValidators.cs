@@ -65,3 +65,11 @@ internal sealed class CreateWalkInBookingRequestValidator : AbstractValidator<Cr
         RuleFor(request => request.CashCollectedAmount).GreaterThanOrEqualTo(0);
     }
 }
+
+internal sealed class MarkBookingNoShowRequestValidator : AbstractValidator<MarkBookingNoShowRequest>
+{
+    public MarkBookingNoShowRequestValidator()
+    {
+        RuleFor(request => request.Reason).SafeRequiredText(500, "No-show reason");
+    }
+}

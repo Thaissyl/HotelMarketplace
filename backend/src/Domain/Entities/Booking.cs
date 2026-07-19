@@ -73,6 +73,14 @@ public sealed class Booking : Entity, IHotelScopedEntity
 
     public DateTime? PaymentExpiresAtUtc { get; private set; }
 
+    public string? CancellationReason { get; private set; }
+
+    public DateTime? CancelledAtUtc { get; private set; }
+
+    public string? NoShowReason { get; private set; }
+
+    public DateTime? NoShowAtUtc { get; private set; }
+
     public IReadOnlyCollection<BookingRoom> Rooms => _rooms;
 
     public void AddRoom(BookingRoom bookingRoom)
@@ -148,5 +156,46 @@ public sealed class Booking : Entity, IHotelScopedEntity
         }
 
         Status = BookingStatus.Expired;
+    }
+
+    public void Cancel(string reason, DateTime utcNow)
+    {
+        if (Status is not (BookingStatus.PendingPayment or BookingStatus.Confirmed))
+        {
+            throw new DomainException(
+                "Booking.InvalidStatusForCancellation",
+                "Only pending payment or confirmed bookings can be cancelled.");
+        }
+
+        CancellationReason = Guard.NotBlank(reason, nameof(CancellationReason), 500);
+        CancelledAtUtc = EnsureUtc(utcNow, nameof(utcNow));
+        PaymentExpiresAtUtc = null;
+        Status = BookingStatus.Cancelled;
+    }
+
+    public void MarkNoShow(string reason, DateTime utcNow)
+    {
+        if (Status != BookingStatus.Confirmed)
+        {
+            throw new DomainException(
+                "Booking.InvalidStatusForNoShow",
+                "Only confirmed bookings can be marked as no-show.");
+        }
+
+        NoShowReason = Guard.NotBlank(reason, nameof(NoShowReason), 500);
+        NoShowAtUtc = EnsureUtc(utcNow, nameof(utcNow));
+        Status = BookingStatus.NoShow;
+    }
+
+    private static DateTime EnsureUtc(DateTime value, string parameterName)
+    {
+        if (value.Kind == DateTimeKind.Local)
+        {
+            throw new DomainException(
+                "Booking.InvalidUtcTimestamp",
+                $"{parameterName} must be expressed in UTC.");
+        }
+
+        return DateTime.SpecifyKind(value, DateTimeKind.Utc);
     }
 }

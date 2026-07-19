@@ -36,4 +36,10 @@ public interface IFrontDeskService
         Guid hotelId,
         CreateWalkInBookingRequest request,
         CancellationToken cancellationToken);
+
+    Task<Result<FrontDeskBookingDto>> MarkBookingNoShowAsync(
+        Guid hotelId,
+        Guid bookingId,
+        MarkBookingNoShowRequest request,
+        CancellationToken cancellationToken);
 }

@@ -61,6 +61,18 @@ public sealed class PhysicalRoom : Entity, IHotelScopedEntity
         Status = RoomOperationalStatus.Assigned;
     }
 
+    public void ReleaseAssignment()
+    {
+        if (Status != RoomOperationalStatus.Assigned)
+        {
+            throw new SharedKernel.Exceptions.DomainException(
+                "PhysicalRoom.InvalidAssignmentReleaseStatus",
+                "Only an assigned room can be released to available status.");
+        }
+
+        Status = RoomOperationalStatus.Available;
+    }
+
     public void MarkOccupiedForCheckIn()
     {
         if (Status is not (RoomOperationalStatus.Available or RoomOperationalStatus.Assigned))

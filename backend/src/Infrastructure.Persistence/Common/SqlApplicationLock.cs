@@ -46,6 +46,30 @@ internal static class SqlApplicationLock
         return lockResult >= 0;
     }
 
+    public static Task<bool> AcquireBookingLockAsync(
+        DbContext dbContext,
+        Guid bookingId,
+        CancellationToken cancellationToken)
+    {
+        return AcquireExclusiveAsync(dbContext, $"booking:{bookingId:N}", cancellationToken);
+    }
+
+    public static async Task<bool> AcquireBookingLocksAsync(
+        DbContext dbContext,
+        IEnumerable<Guid> bookingIds,
+        CancellationToken cancellationToken)
+    {
+        foreach (Guid bookingId in bookingIds.Distinct().OrderBy(id => id))
+        {
+            if (!await AcquireBookingLockAsync(dbContext, bookingId, cancellationToken))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public static async Task<bool> AcquireRoomLocksAsync(
         DbContext dbContext,
         Guid hotelId,
