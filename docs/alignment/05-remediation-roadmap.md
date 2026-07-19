@@ -112,6 +112,8 @@ versus room release, and protection from direct setup-status bypass.
 
 ### ALN-009 Audit and Notification Outbox
 
+Status: Implemented and verified on `fix/aln-009-audit-notification-outbox`.
+
 Create audit and notification records in the same transaction as every protected
 mutation. External notification delivery may remain mocked.
 

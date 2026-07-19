@@ -158,14 +158,15 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
         return await (
             from audit in _dbContext.AuditRecords.IgnoreQueryFilters().AsNoTracking()
             join actor in _dbContext.UserAccounts.IgnoreQueryFilters().AsNoTracking()
-                on audit.ActorUserAccountId equals actor.Id
+                on audit.ActorUserAccountId equals (Guid?)actor.Id into actors
+            from actor in actors.DefaultIfEmpty()
             where audit.TargetEntityId == userId ||
                 audit.ActorUserAccountId == userId
             orderby audit.ActionTimestampUtc descending
             select new AdminUserActivityDto(
                 audit.Id,
-                audit.ActorUserAccountId,
-                actor.Email,
+                audit.ActorUserAccountId ?? Guid.Empty,
+                actor == null ? "System Scheduler" : actor.Email,
                 audit.ActionType,
                 audit.TargetEntityType,
                 audit.TargetEntityId,

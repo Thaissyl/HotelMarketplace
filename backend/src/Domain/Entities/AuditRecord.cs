@@ -11,10 +11,14 @@ public sealed class AuditRecord : Entity
         Summary = string.Empty;
     }
 
-    public AuditRecord(Guid id, Guid actorUserAccountId, string actionType, string targetEntityType, Guid targetEntityId, string summary, Guid? hotelId = null)
+    public AuditRecord(Guid id, Guid? actorUserAccountId, string actionType, string targetEntityType, Guid targetEntityId, string summary, Guid? hotelId = null)
         : base(id)
     {
-        Guard.NotEmpty(actorUserAccountId, nameof(ActorUserAccountId));
+        if (actorUserAccountId.HasValue)
+        {
+            Guard.NotEmpty(actorUserAccountId.Value, nameof(ActorUserAccountId));
+        }
+
         Guard.NotEmpty(targetEntityId, nameof(TargetEntityId));
         ActorUserAccountId = actorUserAccountId;
         HotelId = hotelId;
@@ -27,7 +31,7 @@ public sealed class AuditRecord : Entity
 
     public Guid? HotelId { get; private set; }
 
-    public Guid ActorUserAccountId { get; private set; }
+    public Guid? ActorUserAccountId { get; private set; }
 
     public string ActionType { get; private set; }
 

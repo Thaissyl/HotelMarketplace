@@ -6,7 +6,7 @@ Date: 2026-07-19
 
 | Check | Result |
 | --- | --- |
-| Alignment Markdown files | 19 files before this log was added |
+| Alignment Markdown files | 29 files including implementation evidence and workstreams |
 | Broken local Markdown links | 0 |
 | Use cases assessed | 37 |
 | Verified gaps registered | 31 |
@@ -19,7 +19,7 @@ Date: 2026-07-19
 | --- | --- |
 | `dotnet build .\backend\HotelMarketplace.slnx --no-restore` | Passed; 0 warnings and 0 errors |
 | `flutter analyze` | Passed; no issues found |
-| `flutter test` | Passed; 1 test |
+| `flutter test` | Passed; 4 tests |
 
 ## Backend Test Verification
 
@@ -170,3 +170,30 @@ including legacy identity backfill, before exercising the API suite.
 Residual work remains explicit: hotel-local timezone policy is not modeled,
 task assignee ownership belongs to GAP-025, complete mutation audit/outbox belongs
 to ALN-009, and Application.UnitTests still has no authored tests.
+
+## ALN-009 Verification
+
+The audit and notification outbox implementation was verified across protected
+entity persistence, human and scheduler actors, existing explicit workflow
+evidence, SQL Server migration consistency, and the unchanged Mobile build.
+
+| Command | Result |
+| --- | --- |
+| `dotnet build .\backend\HotelMarketplace.slnx --no-restore` | Passed; 0 warnings and 0 errors |
+| `dotnet test .\backend\HotelMarketplace.slnx --no-build` | Passed; 15 Domain tests and 35 API integration tests |
+| `dotnet ef migrations has-pending-model-changes` | Passed; model matches the latest migration |
+| `flutter analyze` | Passed; no issues found |
+| `flutter test` | Passed; 4 tests |
+| `flutter build apk --debug` | Passed; debug APK built successfully |
+
+ALN-009 automatically records non-sensitive audit summaries for the protected
+account, hotel, inventory, booking, finance, stay, housekeeping, and maintenance
+entities. Existing explicit workflow audit and notification entries suppress a
+generic duplicate for the same target. Notification records cover every event
+family required by NSF-003 and remain Pending for the approved mocked-delivery
+MVP scope.
+
+Integration assertions verify audit coverage for booking, stay, room assignment,
+invoice, and housekeeping entities, plus checkout and housekeeping outbox events.
+Scheduler expiration is verified with a nullable human actor, a hotel-scoped
+system audit, and a Customer-targeted `BookingExpired` notification.

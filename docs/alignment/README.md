@@ -48,6 +48,7 @@ to the canonical SRS and SDD.
 | [14-aln-006-availability-calendar.md](14-aln-006-availability-calendar.md) | ALN-006 availability calendar, permissions, interval, marketplace, and concurrency evidence |
 | [15-aln-007-dual-collection-finance.md](15-aln-007-dual-collection-finance.md) | ALN-007 dual collection, reconciliation, settlement, and invoice invariants |
 | [16-aln-008-stay-room-lifecycle.md](16-aln-008-stay-room-lifecycle.md) | ALN-008 check-in identity, room assignment, inspection, maintenance release, and setup safeguards |
+| [17-aln-009-audit-notification-outbox.md](17-aln-009-audit-notification-outbox.md) | ALN-009 transactional protected-mutation audit and durable notification outbox evidence |
 | [workstreams](workstreams/README.md) | Detailed reviews by business capability |
 
 ## Completion Criteria

@@ -193,6 +193,42 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             .IgnoreQueryFilters()
             .SingleAsync(entity => entity.Id == seededHotel.PhysicalRoomIds.Single());
         room.Status.Should().Be(RoomOperationalStatus.Dirty);
+
+        Guid stayRecordId = await dbContext.GuestStayRecords
+            .IgnoreQueryFilters()
+            .Where(entity => entity.BookingId == booking.Id)
+            .Select(entity => entity.Id)
+            .SingleAsync();
+        Guid assignmentId = await dbContext.BookingRoomAssignments
+            .IgnoreQueryFilters()
+            .Where(entity => entity.BookingId == booking.Id)
+            .Select(entity => entity.Id)
+            .SingleAsync();
+
+        List<Guid> expectedAuditTargets =
+        [
+            booking.Id,
+            stayRecordId,
+            assignmentId,
+            invoice.Id,
+            housekeepingTask.Id
+        ];
+        Guid[] auditedTargets = await dbContext.AuditRecords
+            .IgnoreQueryFilters()
+            .Where(entity => expectedAuditTargets.Contains(entity.TargetEntityId))
+            .Select(entity => entity.TargetEntityId)
+            .Distinct()
+            .ToArrayAsync();
+        auditedTargets.Should().BeEquivalentTo(expectedAuditTargets);
+
+        (await dbContext.NotificationRecords
+            .IgnoreQueryFilters()
+            .AnyAsync(entity => entity.RelatedEntityId == booking.Id && entity.EventType == "BookingCheckedOut"))
+            .Should().BeTrue();
+        (await dbContext.NotificationRecords
+            .IgnoreQueryFilters()
+            .AnyAsync(entity => entity.RelatedEntityId == housekeepingTask.Id && entity.EventType == "HousekeepingTaskCreated"))
+            .Should().BeTrue();
     }
 
     [Fact]
@@ -585,6 +621,20 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             .IgnoreQueryFilters()
             .SingleAsync(entity => entity.Id == booking.Id);
         expiredBooking.Status.Should().Be(BookingStatus.Expired);
+
+        AuditRecord expirationAudit = await dbContext.AuditRecords
+            .IgnoreQueryFilters()
+            .Where(entity => entity.TargetEntityId == booking.Id && entity.ActionType == "Booking.Modified")
+            .OrderByDescending(entity => entity.ActionTimestampUtc)
+            .FirstAsync();
+        expirationAudit.ActorUserAccountId.Should().BeNull();
+        expirationAudit.HotelId.Should().Be(hotel.HotelId);
+
+        NotificationRecord expirationNotification = await dbContext.NotificationRecords
+            .IgnoreQueryFilters()
+            .SingleAsync(entity => entity.RelatedEntityId == booking.Id && entity.EventType == "BookingExpired");
+        expirationNotification.RecipientUserAccountId.Should().Be(customer.UserId);
+        expirationNotification.HotelId.Should().Be(hotel.HotelId);
     }
 
     [Fact]

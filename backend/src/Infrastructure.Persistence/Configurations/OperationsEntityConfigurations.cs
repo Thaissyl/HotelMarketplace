@@ -33,7 +33,7 @@ internal sealed class AuditRecordConfiguration : IEntityTypeConfiguration<AuditR
         builder.HasIndex(entity => new { entity.TargetEntityType, entity.TargetEntityId, entity.ActionTimestampUtc });
         builder.HasIndex(entity => new { entity.HotelId, entity.ActionTimestampUtc });
         builder.HasOne<HotelProperty>().WithMany().HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<UserAccount>().WithMany().HasForeignKey(entity => entity.ActorUserAccountId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<UserAccount>().WithMany().HasForeignKey(entity => entity.ActorUserAccountId).OnDelete(DeleteBehavior.Restrict).IsRequired(false);
     }
 }
 

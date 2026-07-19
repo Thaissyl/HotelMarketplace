@@ -20,4 +20,4 @@ work. They must be resolved before their corresponding P1 or P2 change begins.
 | Decision ID | Topic | Document conflict or ambiguity | Recommended default | Needed before | Status |
 | --- | --- | --- | --- | --- | --- |
 | DEC-AUD-005 | Hotel Manager staff authority | SRS permits Manager staff management but leaves delegated approval detail open | Manager may manage Receptionist, HousekeepingStaff, and MaintenanceStaff only at assigned hotels; cannot grant Owner, Manager, or PlatformAdministrator; cannot elevate self | ALN-010 | Open |
-| DEC-AUD-007 | Saved hotels and notifications | Current mobile stores convenience state locally while notification records are an SRS requirement | Keep notifications server-backed; either make saved hotels server-backed or explicitly remove favorites from supported scope | ALN-009, ALN-013 | Open |
+| DEC-AUD-007 | Saved hotels and notifications | Notification records are now server-backed under ALN-009; saved hotels remain device-local | Retain durable notification outbox records; either make saved hotels server-backed or explicitly remove favorites from supported scope | ALN-013 | Partially resolved |
