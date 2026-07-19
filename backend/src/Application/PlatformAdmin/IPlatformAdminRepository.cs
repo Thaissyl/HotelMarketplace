@@ -16,6 +16,8 @@ public interface IPlatformAdminRepository
 
     Task<IReadOnlyCollection<AdminHotelDto>> GetPendingHotelsAsync(CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<AdminHotelDto>> GetHotelsAsync(CancellationToken cancellationToken);
+
     Task<PlatformAdminHotelResult> ApproveHotelAsync(Guid hotelId, Guid actorUserAccountId, CancellationToken cancellationToken);
 
     Task<PlatformAdminHotelResult> RejectHotelAsync(Guid hotelId, Guid actorUserAccountId, RejectHotelRequest request, CancellationToken cancellationToken);

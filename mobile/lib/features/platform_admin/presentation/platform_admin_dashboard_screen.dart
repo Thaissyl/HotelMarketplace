@@ -1,12 +1,15 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../core/network/api_exception.dart';
 import '../../auth/application/auth_controller.dart';
+import '../../account/presentation/account_settings_screen.dart';
 import '../../../shared/utils/app_formatters.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
 import '../../../shared/widgets/app_shimmer.dart';
@@ -23,11 +26,16 @@ class PlatformAdminDashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 6,
+      length: 7,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Platform Admin'),
           actions: [
+            IconButton(
+              tooltip: 'Account settings',
+              onPressed: () => context.push(AccountSettingsScreen.routePath),
+              icon: const Icon(Icons.manage_accounts_rounded),
+            ),
             IconButton(
               tooltip: 'Sign out',
               onPressed: () =>
@@ -45,6 +53,7 @@ class PlatformAdminDashboardScreen extends ConsumerWidget {
                 icon: Icon(Icons.domain_verification_rounded),
                 text: 'Hotels',
               ),
+              Tab(icon: Icon(Icons.percent_rounded), text: 'Commission'),
               Tab(
                 icon: Icon(Icons.account_balance_wallet_rounded),
                 text: 'Reconciliation',
@@ -66,6 +75,7 @@ class PlatformAdminDashboardScreen extends ConsumerWidget {
               _AnalyticsTab(),
               _UsersTab(),
               _HotelReviewTab(),
+              _CommissionTab(),
               _ReconciliationTab(),
               _SettlementsTab(),
               _RefundsTab(),
@@ -806,6 +816,266 @@ class _HotelReviewTabState extends ConsumerState<_HotelReviewTab> {
           onRetry: () => ref.invalidate(pendingHotelsProvider),
         ),
         loading: () => const _PaddedShimmer(),
+      ),
+    );
+  }
+}
+
+class _CommissionTab extends ConsumerStatefulWidget {
+  const _CommissionTab();
+
+  @override
+  ConsumerState<_CommissionTab> createState() => _CommissionTabState();
+}
+
+class _CommissionTabState extends ConsumerState<_CommissionTab> {
+  static const int _pageSize = 6;
+  final _searchController = TextEditingController();
+  String _searchTerm = '';
+  int _pageIndex = 0;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hotels = ref.watch(adminHotelsProvider);
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(adminHotelsProvider),
+      child: ListView(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        children: [
+          Text(
+            'Commission management',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Set the platform fee applied to future successful bookings for each hotel.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          AppTextFormField(
+            controller: _searchController,
+            labelText: 'Search hotels',
+            prefixIcon: const Icon(Icons.search_rounded),
+            onChanged: (value) {
+              setState(() {
+                _searchTerm = value.trim().toLowerCase();
+                _pageIndex = 0;
+              });
+            },
+          ),
+          const SizedBox(height: AppSpacing.md),
+          hotels.when(
+            data: (items) {
+              final filtered = items.where((hotel) {
+                if (_searchTerm.isEmpty) {
+                  return true;
+                }
+                return '${hotel.name} ${hotel.city} ${hotel.approvalStatus}'
+                    .toLowerCase()
+                    .contains(_searchTerm);
+              }).toList(growable: false);
+              return _AdminPagedCards<AdminHotel>(
+                items: filtered,
+                itemLabel: 'hotels',
+                emptyMessage: 'No hotels match your search.',
+                pageIndex: _pageIndex,
+                pageSize: _pageSize,
+                onPageChanged: (pageIndex, pageCount) {
+                  setState(() {
+                    _pageIndex = pageIndex.clamp(0, pageCount - 1);
+                  });
+                },
+                itemBuilder: (hotel) => _CommissionHotelCard(hotel: hotel),
+              );
+            },
+            error: (error, stackTrace) => _InlineAdminError(
+              message: 'Unable to load hotel commission settings.',
+              error: error,
+              onRetry: () => ref.invalidate(adminHotelsProvider),
+            ),
+            loading: () => const _AdminShimmerGrid(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommissionHotelCard extends ConsumerStatefulWidget {
+  const _CommissionHotelCard({required this.hotel});
+
+  final AdminHotel hotel;
+
+  @override
+  ConsumerState<_CommissionHotelCard> createState() =>
+      _CommissionHotelCardState();
+}
+
+class _CommissionHotelCardState extends ConsumerState<_CommissionHotelCard> {
+  bool _saving = false;
+
+  Future<void> _editRate() async {
+    final controller = TextEditingController(
+      text: (widget.hotel.defaultCommissionRate * 100).toStringAsFixed(1),
+    );
+    final formKey = GlobalKey<FormState>();
+    final percentage = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(widget.hotel.name),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(
+                RegExp(r'^\d{0,2}(\.\d{0,2})?$'),
+              ),
+            ],
+            decoration: const InputDecoration(
+              labelText: 'Commission percentage',
+              suffixText: '%',
+              helperText: 'Allowed range: 0% to 30%',
+            ),
+            validator: (value) {
+              final parsed = double.tryParse(value ?? '');
+              if (parsed == null || parsed < 0 || parsed > 30) {
+                return 'Enter a percentage from 0 to 30.';
+              }
+              return null;
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() == true) {
+                Navigator.of(context).pop(double.parse(controller.text));
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (percentage == null) {
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      await ref.read(platformAdminApiProvider).updateCommissionRate(
+            hotelId: widget.hotel.id,
+            commissionRate: percentage / 100,
+          );
+      ref.invalidate(adminHotelsProvider);
+      if (mounted) {
+        AppErrorPresenter.showSnackBar(context, 'Commission rate updated.');
+      }
+    } catch (error) {
+      if (mounted) {
+        await AppErrorPresenter.showBottomSheet(context, error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hotel = widget.hotel;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Row(
+          children: [
+            CircleAvatar(
+              child: Text(
+                '${(hotel.defaultCommissionRate * 100).toStringAsFixed(0)}%',
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    hotel.name,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Text('${hotel.city} - ${hotel.approvalStatus}'),
+                  Text(
+                    'Current rate ${(hotel.defaultCommissionRate * 100).toStringAsFixed(1)}%',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            IconButton.filledTonal(
+              tooltip: 'Edit commission rate',
+              onPressed: _saving ? null : _editRate,
+              icon: _saving
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.edit_rounded),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InlineAdminError extends StatelessWidget {
+  const _InlineAdminError({
+    required this.message,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final String message;
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          children: [
+            Text(message, textAlign: TextAlign.center),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              AppErrorPresenter.friendlyMessage(error),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
       ),
     );
   }

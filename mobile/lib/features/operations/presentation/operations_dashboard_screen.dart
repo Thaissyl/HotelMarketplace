@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../auth/domain/auth_models.dart';
+import '../../account/presentation/account_settings_screen.dart';
 import '../../marketplace/presentation/marketplace_screen.dart';
 import '../application/selected_hotel_controller.dart';
 import 'availability_calendar_tab.dart';
@@ -12,6 +13,7 @@ import 'front_desk_tab.dart';
 import 'housekeeping_tab.dart';
 import 'manager_overview_tab.dart';
 import 'maintenance_tab.dart';
+import 'owner_hotel_onboarding.dart';
 import 'owner_property_tab.dart';
 import 'staff_management_tab.dart';
 import 'widgets/hotel_scope_selector.dart';
@@ -33,12 +35,18 @@ class OperationsDashboardScreen extends ConsumerWidget {
     final sections = _OperationSection.visibleFor(roles);
     final canUseCustomerMarketplace =
         roles.contains(UserRoleCode.customer.apiValue);
+    final isPropertyOwner = roles.contains(UserRoleCode.propertyOwner.apiValue);
 
     if (sections.isEmpty) {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Hotel operations'),
           actions: [
+            IconButton(
+              tooltip: 'Account settings',
+              onPressed: () => context.push(AccountSettingsScreen.routePath),
+              icon: const Icon(Icons.manage_accounts_rounded),
+            ),
             IconButton(
               tooltip: 'Sign out',
               onPressed: () {
@@ -74,6 +82,11 @@ class OperationsDashboardScreen extends ConsumerWidget {
               : null,
           actions: [
             IconButton(
+              tooltip: 'Account settings',
+              onPressed: () => context.push(AccountSettingsScreen.routePath),
+              icon: const Icon(Icons.manage_accounts_rounded),
+            ),
+            IconButton(
               tooltip: 'Sign out',
               onPressed: () {
                 ref.read(authControllerProvider.notifier).logout();
@@ -102,7 +115,9 @@ class OperationsDashboardScreen extends ConsumerWidget {
               const Divider(height: 1),
               Expanded(
                 child: selectedHotelId == null
-                    ? const _NoHotelScope()
+                    ? isPropertyOwner
+                        ? const OwnerHotelOnboarding()
+                        : const _NoHotelScope()
                     : sections.length == 1
                         ? KeyedSubtree(
                             key: ValueKey(
@@ -207,7 +222,7 @@ enum _OperationSection {
     if (hasAllHotelOperations) {
       return [
         overview,
-        if (roles.contains(UserRoleCode.propertyOwner.apiValue)) property,
+        property,
         availability,
         frontDesk,
         housekeeping,

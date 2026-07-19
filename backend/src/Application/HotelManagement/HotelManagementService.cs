@@ -143,7 +143,7 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<HotelDto>> GetHotelAsync(Guid hotelId, CancellationToken cancellationToken)
     {
-        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        Result? accessFailure = await EnsureHotelSetupAccessAsync(hotelId, cancellationToken);
         if (accessFailure is not null)
         {
             return Result.Failure<HotelDto>(accessFailure.Error);
@@ -158,7 +158,7 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<HotelDto>> UpdateHotelProfileAsync(Guid hotelId, UpdateHotelProfileRequest request, CancellationToken cancellationToken)
     {
-        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        Result? accessFailure = await EnsureHotelSetupAccessAsync(hotelId, cancellationToken);
         if (accessFailure is not null)
         {
             return Result.Failure<HotelDto>(accessFailure.Error);
@@ -188,7 +188,7 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<HotelContentDto>> GetHotelContentAsync(Guid hotelId, CancellationToken cancellationToken)
     {
-        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        Result? accessFailure = await EnsureHotelSetupAccessAsync(hotelId, cancellationToken);
         if (accessFailure is not null)
         {
             return Result.Failure<HotelContentDto>(accessFailure.Error);
@@ -205,7 +205,7 @@ internal sealed class HotelManagementService : IHotelManagementService
         UpdateHotelContentRequest request,
         CancellationToken cancellationToken)
     {
-        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        Result? accessFailure = await EnsureHotelSetupAccessAsync(hotelId, cancellationToken);
         if (accessFailure is not null)
         {
             return Result.Failure<HotelContentDto>(accessFailure.Error);
@@ -235,7 +235,7 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<IReadOnlyCollection<HotelStaffMemberDto>>> GetStaffAsync(Guid hotelId, CancellationToken cancellationToken)
     {
-        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        Result? accessFailure = await EnsureHotelSetupAccessAsync(hotelId, cancellationToken);
         if (accessFailure is not null)
         {
             return Result.Failure<IReadOnlyCollection<HotelStaffMemberDto>>(accessFailure.Error);
@@ -405,7 +405,7 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<RoomTypeDto>> CreateRoomTypeAsync(Guid hotelId, CreateRoomTypeRequest request, CancellationToken cancellationToken)
     {
-        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        Result? accessFailure = await EnsureHotelSetupAccessAsync(hotelId, cancellationToken);
         if (accessFailure is not null)
         {
             return Result.Failure<RoomTypeDto>(accessFailure.Error);
@@ -433,7 +433,7 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<IReadOnlyCollection<RoomTypeDto>>> GetRoomTypesAsync(Guid hotelId, CancellationToken cancellationToken)
     {
-        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        Result? accessFailure = await EnsureHotelSetupAccessAsync(hotelId, cancellationToken);
         if (accessFailure is not null)
         {
             return Result.Failure<IReadOnlyCollection<RoomTypeDto>>(accessFailure.Error);
@@ -467,7 +467,7 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<RoomTypeDto>> UpdateRoomTypeAsync(Guid hotelId, Guid roomTypeId, UpdateRoomTypeRequest request, CancellationToken cancellationToken)
     {
-        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        Result? accessFailure = await EnsureHotelSetupAccessAsync(hotelId, cancellationToken);
         if (accessFailure is not null)
         {
             return Result.Failure<RoomTypeDto>(accessFailure.Error);
@@ -499,7 +499,7 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result> DeactivateRoomTypeAsync(Guid hotelId, Guid roomTypeId, CancellationToken cancellationToken)
     {
-        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        Result? accessFailure = await EnsureHotelSetupAccessAsync(hotelId, cancellationToken);
         if (accessFailure is not null)
         {
             return accessFailure;
@@ -524,7 +524,7 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<PhysicalRoomDto>> CreatePhysicalRoomAsync(Guid hotelId, CreatePhysicalRoomRequest request, CancellationToken cancellationToken)
     {
-        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        Result? accessFailure = await EnsureHotelSetupAccessAsync(hotelId, cancellationToken);
         if (accessFailure is not null)
         {
             return Result.Failure<PhysicalRoomDto>(accessFailure.Error);
@@ -550,7 +550,7 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<IReadOnlyCollection<PhysicalRoomDto>>> GetPhysicalRoomsAsync(Guid hotelId, Guid? roomTypeId, CancellationToken cancellationToken)
     {
-        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        Result? accessFailure = await EnsureHotelSetupAccessAsync(hotelId, cancellationToken);
         if (accessFailure is not null)
         {
             return Result.Failure<IReadOnlyCollection<PhysicalRoomDto>>(accessFailure.Error);
@@ -563,7 +563,7 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<PhysicalRoomDto>> UpdatePhysicalRoomAsync(Guid hotelId, Guid physicalRoomId, UpdatePhysicalRoomRequest request, CancellationToken cancellationToken)
     {
-        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        Result? accessFailure = await EnsureHotelSetupAccessAsync(hotelId, cancellationToken);
         if (accessFailure is not null)
         {
             return Result.Failure<PhysicalRoomDto>(accessFailure.Error);
@@ -597,16 +597,25 @@ internal sealed class HotelManagementService : IHotelManagementService
         return null;
     }
 
-    private async Task<Result?> EnsureOwnedHotelAsync(Guid hotelId, CancellationToken cancellationToken)
+    private async Task<Result?> EnsureHotelSetupAccessAsync(Guid hotelId, CancellationToken cancellationToken)
     {
-        Result? roleFailure = EnsurePropertyOwner();
-        if (roleFailure is not null)
+        if (_currentUserService.UserId is null)
         {
-            return roleFailure;
+            return Result.Failure(HotelManagementErrors.Forbidden);
         }
 
         bool ownsHotel = await _repository.UserOwnsHotelAsync(_currentUserService.UserId!.Value, hotelId, cancellationToken);
-        return ownsHotel ? null : Result.Failure(HotelManagementErrors.Forbidden);
+        if (ownsHotel)
+        {
+            return null;
+        }
+
+        return await _hotelAccessAuthorizer.HasAccessAsync(
+            hotelId,
+            new[] { UserRoleCode.HotelManager },
+            cancellationToken)
+            ? null
+            : Result.Failure(HotelManagementErrors.Forbidden);
     }
 
     private async Task<Result?> EnsureHotelOperationAccessAsync(

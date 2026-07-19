@@ -6,7 +6,6 @@ using HotelMarketplace.Application.CustomerAccount.Dtos;
 using HotelMarketplace.Application.CustomerAccount.Requests;
 using HotelMarketplace.Application.Security;
 using HotelMarketplace.Domain.Entities;
-using HotelMarketplace.Domain.Enums;
 using HotelMarketplace.SharedKernel.Results;
 
 namespace HotelMarketplace.Application.CustomerAccount;
@@ -104,8 +103,7 @@ internal sealed class CustomerAccountService : ICustomerAccountService
 
     private async Task<Result<UserAccount>> GetAuthorizedUserAsync(CancellationToken cancellationToken)
     {
-        if (_currentUserService.UserId is null ||
-            !_currentUserService.Roles.Contains(UserRoleCode.Customer))
+        if (_currentUserService.UserId is null)
         {
             return Result.Failure<UserAccount>(CustomerAccountErrors.Forbidden);
         }

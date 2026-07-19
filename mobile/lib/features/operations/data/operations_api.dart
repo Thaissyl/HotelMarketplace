@@ -8,6 +8,14 @@ class OperationsApi {
 
   final ApiClient _apiClient;
 
+  Future<WorkingHotel> registerHotel(RegisterHotelRequest request) {
+    return _apiClient.post<WorkingHotel>(
+      '/api/owner/hotels',
+      data: request.toJson(),
+      decoder: WorkingHotel.fromJson,
+    );
+  }
+
   Future<List<WorkingHotel>> getWorkingHotels(List<String> hotelIds) async {
     try {
       return await _apiClient.get<List<WorkingHotel>>(
@@ -125,7 +133,7 @@ class OperationsApi {
 
   Future<WorkingHotel> getOwnerHotel(String hotelId) {
     return _apiClient.get<WorkingHotel>(
-      '/api/owner/hotels/$hotelId',
+      '/api/operations/hotels/$hotelId',
       options: AuthHeaderInterceptor.hotelScopedOptions(),
       decoder: WorkingHotel.fromJson,
     );
@@ -136,10 +144,30 @@ class OperationsApi {
     required UpdateHotelProfileRequest request,
   }) {
     return _apiClient.put<WorkingHotel>(
-      '/api/owner/hotels/$hotelId',
+      '/api/operations/hotels/$hotelId',
       options: AuthHeaderInterceptor.hotelScopedOptions(),
       data: request.toJson(),
       decoder: WorkingHotel.fromJson,
+    );
+  }
+
+  Future<HotelContent> getHotelContent(String hotelId) {
+    return _apiClient.get<HotelContent>(
+      '/api/operations/hotels/$hotelId/content',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      decoder: HotelContent.fromJson,
+    );
+  }
+
+  Future<HotelContent> updateHotelContent({
+    required String hotelId,
+    required UpdateHotelContentRequest request,
+  }) {
+    return _apiClient.put<HotelContent>(
+      '/api/operations/hotels/$hotelId/content',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: request.toJson(),
+      decoder: HotelContent.fromJson,
     );
   }
 
@@ -148,10 +176,33 @@ class OperationsApi {
     required CreateRoomTypeRequest request,
   }) {
     return _apiClient.post<RoomTypeInventoryItem>(
-      '/api/owner/hotels/$hotelId/room-types',
+      '/api/operations/hotels/$hotelId/room-types',
       options: AuthHeaderInterceptor.hotelScopedOptions(),
       data: request.toJson(),
       decoder: RoomTypeInventoryItem.fromJson,
+    );
+  }
+
+  Future<RoomTypeInventoryItem> updateRoomType({
+    required String hotelId,
+    required String roomTypeId,
+    required UpdateRoomTypeRequest request,
+  }) {
+    return _apiClient.put<RoomTypeInventoryItem>(
+      '/api/operations/hotels/$hotelId/room-types/$roomTypeId',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: request.toJson(),
+      decoder: RoomTypeInventoryItem.fromJson,
+    );
+  }
+
+  Future<void> deactivateRoomType({
+    required String hotelId,
+    required String roomTypeId,
+  }) {
+    return _apiClient.delete(
+      '/api/operations/hotels/$hotelId/room-types/$roomTypeId',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
     );
   }
 
@@ -160,7 +211,20 @@ class OperationsApi {
     required CreatePhysicalRoomRequest request,
   }) {
     return _apiClient.post<RoomInventoryItem>(
-      '/api/owner/hotels/$hotelId/physical-rooms',
+      '/api/operations/hotels/$hotelId/physical-rooms',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: request.toJson(),
+      decoder: RoomInventoryItem.fromJson,
+    );
+  }
+
+  Future<RoomInventoryItem> updatePhysicalRoom({
+    required String hotelId,
+    required String physicalRoomId,
+    required UpdatePhysicalRoomRequest request,
+  }) {
+    return _apiClient.put<RoomInventoryItem>(
+      '/api/operations/hotels/$hotelId/physical-rooms/$physicalRoomId',
       options: AuthHeaderInterceptor.hotelScopedOptions(),
       data: request.toJson(),
       decoder: RoomInventoryItem.fromJson,

@@ -63,6 +63,11 @@ final hotelStaffProvider =
   },
 );
 
+final hotelContentProvider =
+    FutureProvider.autoDispose.family<HotelContent, String>((ref, hotelId) {
+  return ref.watch(operationsApiProvider).getHotelContent(hotelId);
+});
+
 final housekeepingTasksProvider = FutureProvider.autoDispose
     .family<List<HousekeepingTask>, HousekeepingTasksRequest>((ref, request) {
   return ref.watch(operationsApiProvider).getHousekeepingTasks(

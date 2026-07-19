@@ -8,14 +8,14 @@ class CustomerAccountApi {
 
   Future<CustomerProfile> getProfile() {
     return _apiClient.get<CustomerProfile>(
-      '/api/customer/account/profile',
+      '/api/account/profile',
       decoder: CustomerProfile.fromJson,
     );
   }
 
   Future<CustomerProfile> updateProfile(UpdateCustomerProfileRequest request) {
     return _apiClient.put<CustomerProfile>(
-      '/api/customer/account/profile',
+      '/api/account/profile',
       data: request.toJson(),
       decoder: CustomerProfile.fromJson,
     );
@@ -23,7 +23,7 @@ class CustomerAccountApi {
 
   Future<void> changePassword(ChangeCustomerPasswordRequest request) {
     return _apiClient.post<void>(
-      '/api/customer/account/change-password',
+      '/api/account/change-password',
       data: request.toJson(),
       decoder: (_) {},
     );

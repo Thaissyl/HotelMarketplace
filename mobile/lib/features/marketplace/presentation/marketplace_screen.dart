@@ -9,6 +9,7 @@ import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../features/auth/application/auth_controller.dart';
 import '../../../features/auth/domain/auth_models.dart';
+import '../../../features/auth/presentation/login_screen.dart';
 import '../../../features/customer/application/customer_state.dart';
 import '../../../features/operations/presentation/operations_dashboard_screen.dart';
 import '../../../features/platform_admin/presentation/platform_admin_dashboard_screen.dart';
@@ -215,13 +216,20 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                     },
                     icon: const Icon(Icons.admin_panel_settings_rounded),
                   ),
-                IconButton(
-                  tooltip: 'Sign out',
-                  onPressed: () {
-                    ref.read(authControllerProvider.notifier).logout();
-                  },
-                  icon: const Icon(Icons.logout_rounded),
-                ),
+                if (session == null)
+                  TextButton.icon(
+                    onPressed: () => context.go(LoginScreen.routePath),
+                    icon: const Icon(Icons.login_rounded),
+                    label: const Text('Sign in'),
+                  )
+                else
+                  IconButton(
+                    tooltip: 'Sign out',
+                    onPressed: () {
+                      ref.read(authControllerProvider.notifier).logout();
+                    },
+                    icon: const Icon(Icons.logout_rounded),
+                  ),
               ],
             )
           : null,

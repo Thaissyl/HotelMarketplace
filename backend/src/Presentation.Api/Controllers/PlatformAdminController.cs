@@ -83,6 +83,17 @@ public sealed class PlatformAdminController : ControllerBase
         return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
     }
 
+    [HttpGet("hotels")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<AdminHotelDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetHotels(CancellationToken cancellationToken)
+    {
+        Result<IReadOnlyCollection<AdminHotelDto>> result =
+            await _platformAdminService.GetHotelsAsync(cancellationToken);
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
     [HttpPost("hotels/{hotelId:guid}/approve")]
     [ProducesResponseType(typeof(AdminHotelDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]

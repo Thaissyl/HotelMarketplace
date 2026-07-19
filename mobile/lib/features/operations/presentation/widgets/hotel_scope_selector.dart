@@ -22,7 +22,11 @@ class HotelScopeSelector extends ConsumerWidget {
     return Card(
       child: workingHotels.when(
         data: (hotels) {
-          if (hotelIds.isEmpty) {
+          final loadedItems = hotels
+              .where((hotel) => hotel.id.isNotEmpty)
+              .map(_WorkingHotelItem.fromWorkingHotel)
+              .toList(growable: true);
+          if (hotelIds.isEmpty && loadedItems.isEmpty) {
             return const ListTile(
               leading: _HotelLeadingIcon(),
               title: Text('No hotel scope assigned'),
@@ -30,15 +34,11 @@ class HotelScopeSelector extends ConsumerWidget {
             );
           }
 
-          final loadedItems = hotels
-              .where((hotel) => hotel.id.isNotEmpty)
-              .map(_WorkingHotelItem.fromWorkingHotel)
-              .toList(growable: true);
           final missingItems = hotelIds
               .where((id) => loadedItems.every((hotel) => hotel.id != id))
               .map(_WorkingHotelItem.fallback);
           final hotelItems = [...loadedItems, ...missingItems];
-          final selectedId = selectedHotel.value ?? hotelIds.first;
+          final selectedId = selectedHotel.value ?? hotelItems.first.id;
           final effectiveSelectedId =
               hotelItems.any((hotel) => hotel.id == selectedId)
                   ? selectedId
@@ -143,7 +143,7 @@ class HotelScopeSelector extends ConsumerWidget {
 
 class _HotelLeadingIcon extends StatelessWidget {
   const _HotelLeadingIcon();
-  
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -386,7 +386,8 @@ class _WorkingHotelItem {
       id: hotel.id.toString(),
       displayName: hotel.displayName.toString(),
       subtitle: city.isEmpty ? hotel.shortCode.toString() : city,
-      address: addressParts.isEmpty ? hotel.shortCode : addressParts.join(' - '),
+      address:
+          addressParts.isEmpty ? hotel.shortCode : addressParts.join(' - '),
       shortCode: hotel.shortCode.toString(),
       statusLabel: [
         if (hotel.approvalStatus.isNotEmpty) hotel.approvalStatus,

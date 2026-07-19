@@ -1,7 +1,6 @@
 using HotelMarketplace.Application.CustomerAccount;
 using HotelMarketplace.Application.CustomerAccount.Dtos;
 using HotelMarketplace.Application.CustomerAccount.Requests;
-using HotelMarketplace.Domain.Enums;
 using HotelMarketplace.SharedKernel.Results;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -9,8 +8,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace HotelMarketplace.Presentation.Api.Controllers;
 
 [ApiController]
+[Route("api/account")]
 [Route("api/customer/account")]
-[Authorize(Roles = nameof(UserRoleCode.Customer))]
+[Authorize]
 public sealed class CustomerAccountController : ControllerBase
 {
     private readonly ICustomerAccountService _customerAccountService;

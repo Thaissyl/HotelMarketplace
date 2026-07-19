@@ -80,6 +80,29 @@ class PlatformAdminApi {
     );
   }
 
+  Future<List<AdminHotel>> getHotels() {
+    return _apiClient.get<List<AdminHotel>>(
+      '/api/platform-admin/hotels',
+      decoder: (data) {
+        if (data is! List) {
+          return const <AdminHotel>[];
+        }
+        return data.map(AdminHotel.fromJson).toList(growable: false);
+      },
+    );
+  }
+
+  Future<AdminHotel> updateCommissionRate({
+    required String hotelId,
+    required double commissionRate,
+  }) {
+    return _apiClient.put<AdminHotel>(
+      '/api/platform-admin/hotels/$hotelId/commission-rate',
+      data: {'commissionRate': commissionRate},
+      decoder: AdminHotel.fromJson,
+    );
+  }
+
   Future<AdminHotel> approveHotel(String hotelId) {
     return _apiClient.post<AdminHotel>(
       '/api/platform-admin/hotels/$hotelId/approve',

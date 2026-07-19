@@ -10,6 +10,7 @@ import '../../../shared/widgets/app_error_presenter.dart';
 import '../../../shared/widgets/app_text_form_field.dart';
 import '../application/operations_providers.dart';
 import '../domain/operations_models.dart';
+import 'owner_hotel_content_card.dart';
 
 class OwnerPropertyTab extends ConsumerWidget {
   const OwnerPropertyTab({super.key, required this.hotelId});
@@ -51,6 +52,8 @@ class OwnerPropertyTab extends ConsumerWidget {
             ),
             loading: () => const LinearProgressIndicator(),
           ),
+          const SizedBox(height: AppSpacing.md),
+          OwnerHotelContentCard(hotelId: hotelId),
           const SizedBox(height: AppSpacing.md),
           roomTypes.when(
             data: (items) => _RoomTypeSection(hotelId: hotelId, items: items),
@@ -347,6 +350,169 @@ class _RoomTypeSectionState extends ConsumerState<_RoomTypeSection> {
     }
   }
 
+  Future<void> _edit(RoomTypeInventoryItem item) async {
+    final name = TextEditingController(text: item.name);
+    final adults = TextEditingController(text: item.adultCapacity.toString());
+    final children = TextEditingController(text: item.childCapacity.toString());
+    final price = TextEditingController(
+      text: item.basePricePerNight.toStringAsFixed(0),
+    );
+    final description = TextEditingController(text: item.description ?? '');
+    final facilities = TextEditingController(text: item.facilities ?? '');
+    final request = await showDialog<UpdateRoomTypeRequest>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit room type'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppTextFormField(controller: name, labelText: 'Name'),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppTextFormField(
+                      controller: adults,
+                      labelText: 'Adults',
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: AppTextFormField(
+                      controller: children,
+                      labelText: 'Children',
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              AppTextFormField(
+                controller: price,
+                labelText: 'Base price per night',
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              AppTextFormField(
+                controller: description,
+                labelText: 'Description',
+                maxLines: 2,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              AppTextFormField(
+                controller: facilities,
+                labelText: 'Facilities',
+                maxLines: 2,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final adultCapacity = int.tryParse(adults.text) ?? 0;
+              final childCapacity = int.tryParse(children.text) ?? -1;
+              final basePrice = double.tryParse(price.text) ?? -1;
+              if (name.text.trim().length < 2 ||
+                  adultCapacity < 1 ||
+                  childCapacity < 0 ||
+                  basePrice < 0) {
+                AppErrorPresenter.showSnackBar(
+                  context,
+                  'Enter a valid name, capacity, and price.',
+                );
+                return;
+              }
+              Navigator.of(context).pop(
+                UpdateRoomTypeRequest(
+                  name: name.text,
+                  adultCapacity: adultCapacity,
+                  childCapacity: childCapacity,
+                  basePricePerNight: basePrice,
+                  description: description.text,
+                  facilities: facilities.text,
+                ),
+              );
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    name.dispose();
+    adults.dispose();
+    children.dispose();
+    price.dispose();
+    description.dispose();
+    facilities.dispose();
+    if (request == null) {
+      return;
+    }
+    try {
+      await ref.read(operationsApiProvider).updateRoomType(
+            hotelId: widget.hotelId,
+            roomTypeId: item.id,
+            request: request,
+          );
+      ref.invalidate(roomTypesProvider(widget.hotelId));
+      if (mounted) {
+        AppErrorPresenter.showSnackBar(context, 'Room type updated.');
+      }
+    } catch (error) {
+      if (mounted) {
+        await AppErrorPresenter.showBottomSheet(context, error);
+      }
+    }
+  }
+
+  Future<void> _deactivate(RoomTypeInventoryItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Stop selling this room type?'),
+        content: Text(
+          '${item.displayName} will no longer appear as active inventory. Existing future bookings prevent this action.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep active'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Deactivate'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+    try {
+      await ref.read(operationsApiProvider).deactivateRoomType(
+            hotelId: widget.hotelId,
+            roomTypeId: item.id,
+          );
+      ref.invalidate(roomTypesProvider(widget.hotelId));
+      if (mounted) {
+        AppErrorPresenter.showSnackBar(context, 'Room type deactivated.');
+      }
+    } catch (error) {
+      if (mounted) {
+        await AppErrorPresenter.showBottomSheet(context, error);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -367,7 +533,11 @@ class _RoomTypeSectionState extends ConsumerState<_RoomTypeSection> {
               for (final item in widget.items)
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: _RoomTypeTile(item: item),
+                  child: _RoomTypeTile(
+                    item: item,
+                    onEdit: () => _edit(item),
+                    onDeactivate: () => _deactivate(item),
+                  ),
                 ),
             const Divider(height: AppSpacing.xl),
             AppTextFormField(controller: _name, labelText: 'New room type'),
@@ -505,6 +675,109 @@ class _PhysicalRoomSectionState extends ConsumerState<_PhysicalRoomSection> {
     }
   }
 
+  Future<void> _editRoom(RoomInventoryItem room) async {
+    final roomNumber = TextEditingController(text: room.roomNumber);
+    final floor = TextEditingController(text: room.floor ?? '');
+    final notes = TextEditingController(text: room.notes ?? '');
+    var status = room.status == 'Inactive' ? 'Inactive' : 'Available';
+    final request = await showDialog<UpdatePhysicalRoomRequest>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Edit room ${room.roomNumber}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppTextFormField(
+                  controller: roomNumber,
+                  labelText: 'Room number',
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AppTextFormField(controller: floor, labelText: 'Floor'),
+                const SizedBox(height: AppSpacing.sm),
+                AppTextFormField(
+                  controller: notes,
+                  labelText: 'Operational notes',
+                  maxLines: 3,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                DropdownButtonFormField<String>(
+                  initialValue: status,
+                  decoration: const InputDecoration(labelText: 'Setup status'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'Available',
+                      child: Text('Available'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Inactive',
+                      child: Text('Inactive'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => status = value);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (roomNumber.text.trim().isEmpty) {
+                  AppErrorPresenter.showSnackBar(
+                    context,
+                    'Room number is required.',
+                  );
+                  return;
+                }
+                Navigator.of(context).pop(
+                  UpdatePhysicalRoomRequest(
+                    roomNumber: roomNumber.text,
+                    status: status,
+                    floor: floor.text,
+                    notes: notes.text,
+                  ),
+                );
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    roomNumber.dispose();
+    floor.dispose();
+    notes.dispose();
+    if (request == null) {
+      return;
+    }
+    try {
+      await ref.read(operationsApiProvider).updatePhysicalRoom(
+            hotelId: widget.hotelId,
+            physicalRoomId: room.id,
+            request: request,
+          );
+      ref.invalidate(
+        physicalRoomsProvider(PhysicalRoomsRequest(hotelId: widget.hotelId)),
+      );
+      if (mounted) {
+        AppErrorPresenter.showSnackBar(context, 'Physical room updated.');
+      }
+    } catch (error) {
+      if (mounted) {
+        await AppErrorPresenter.showBottomSheet(context, error);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final safeRoomTypeId =
@@ -532,9 +805,10 @@ class _PhysicalRoomSectionState extends ConsumerState<_PhysicalRoomSection> {
                 runSpacing: AppSpacing.sm,
                 children: [
                   for (final room in widget.rooms)
-                    Chip(
+                    ActionChip(
                       avatar: const Icon(Icons.meeting_room_rounded, size: 16),
                       label: Text('${room.roomNumber} - ${room.status}'),
+                      onPressed: () => _editRoom(room),
                     ),
                 ],
               ),
@@ -606,9 +880,15 @@ class _PhysicalRoomSectionState extends ConsumerState<_PhysicalRoomSection> {
 }
 
 class _RoomTypeTile extends StatelessWidget {
-  const _RoomTypeTile({required this.item});
+  const _RoomTypeTile({
+    required this.item,
+    required this.onEdit,
+    required this.onDeactivate,
+  });
 
   final RoomTypeInventoryItem item;
+  final VoidCallback onEdit;
+  final VoidCallback onDeactivate;
 
   @override
   Widget build(BuildContext context) {
@@ -642,7 +922,20 @@ class _RoomTypeTile extends StatelessWidget {
               ],
             ),
           ),
-          Text(item.status),
+          PopupMenuButton<String>(
+            tooltip: 'Room type actions',
+            onSelected: (value) {
+              if (value == 'edit') {
+                onEdit();
+              } else {
+                onDeactivate();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'edit', child: Text('Edit')),
+              PopupMenuItem(value: 'deactivate', child: Text('Deactivate')),
+            ],
+          ),
         ],
       ),
     );

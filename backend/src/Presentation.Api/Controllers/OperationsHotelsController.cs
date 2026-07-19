@@ -72,6 +72,159 @@ public sealed class OperationsHotelsController : ControllerBase
             : Ok(result.Value);
     }
 
+    [HttpGet("{hotelId:guid}")]
+    [Authorize(
+        Policy = AuthorizationPolicies.HotelScoped,
+        Roles = nameof(UserRoleCode.PropertyOwner) + "," + nameof(UserRoleCode.HotelManager))]
+    [ProducesResponseType(typeof(HotelDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetOperationHotel(Guid hotelId, CancellationToken cancellationToken)
+    {
+        Result<HotelDto> result = await _hotelManagementService.GetHotelAsync(hotelId, cancellationToken);
+        return result.IsFailure ? ToHotelSetupProblem(result.Error) : Ok(result.Value);
+    }
+
+    [HttpPut("{hotelId:guid}")]
+    [Authorize(
+        Policy = AuthorizationPolicies.HotelScoped,
+        Roles = nameof(UserRoleCode.PropertyOwner) + "," + nameof(UserRoleCode.HotelManager))]
+    [ProducesResponseType(typeof(HotelDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateOperationHotel(
+        Guid hotelId,
+        UpdateHotelProfileRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<HotelDto> result = await _hotelManagementService.UpdateHotelProfileAsync(
+            hotelId,
+            request,
+            cancellationToken);
+        return result.IsFailure ? ToHotelSetupProblem(result.Error) : Ok(result.Value);
+    }
+
+    [HttpGet("{hotelId:guid}/content")]
+    [Authorize(
+        Policy = AuthorizationPolicies.HotelScoped,
+        Roles = nameof(UserRoleCode.PropertyOwner) + "," + nameof(UserRoleCode.HotelManager))]
+    [ProducesResponseType(typeof(HotelContentDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetOperationHotelContent(
+        Guid hotelId,
+        CancellationToken cancellationToken)
+    {
+        Result<HotelContentDto> result = await _hotelManagementService.GetHotelContentAsync(
+            hotelId,
+            cancellationToken);
+        return result.IsFailure ? ToHotelSetupProblem(result.Error) : Ok(result.Value);
+    }
+
+    [HttpPut("{hotelId:guid}/content")]
+    [Authorize(
+        Policy = AuthorizationPolicies.HotelScoped,
+        Roles = nameof(UserRoleCode.PropertyOwner) + "," + nameof(UserRoleCode.HotelManager))]
+    [ProducesResponseType(typeof(HotelContentDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateOperationHotelContent(
+        Guid hotelId,
+        UpdateHotelContentRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<HotelContentDto> result = await _hotelManagementService.UpdateHotelContentAsync(
+            hotelId,
+            request,
+            cancellationToken);
+        return result.IsFailure ? ToHotelSetupProblem(result.Error) : Ok(result.Value);
+    }
+
+    [HttpPost("{hotelId:guid}/room-types")]
+    [Authorize(
+        Policy = AuthorizationPolicies.HotelScoped,
+        Roles = nameof(UserRoleCode.PropertyOwner) + "," + nameof(UserRoleCode.HotelManager))]
+    [ProducesResponseType(typeof(RoomTypeDto), StatusCodes.Status201Created)]
+    public async Task<IActionResult> CreateOperationRoomType(
+        Guid hotelId,
+        CreateRoomTypeRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<RoomTypeDto> result = await _hotelManagementService.CreateRoomTypeAsync(
+            hotelId,
+            request,
+            cancellationToken);
+        return result.IsFailure
+            ? ToHotelSetupProblem(result.Error)
+            : CreatedAtAction(nameof(GetOperationRoomTypes), new { hotelId }, result.Value);
+    }
+
+    [HttpPut("{hotelId:guid}/room-types/{roomTypeId:guid}")]
+    [Authorize(
+        Policy = AuthorizationPolicies.HotelScoped,
+        Roles = nameof(UserRoleCode.PropertyOwner) + "," + nameof(UserRoleCode.HotelManager))]
+    [ProducesResponseType(typeof(RoomTypeDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateOperationRoomType(
+        Guid hotelId,
+        Guid roomTypeId,
+        UpdateRoomTypeRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<RoomTypeDto> result = await _hotelManagementService.UpdateRoomTypeAsync(
+            hotelId,
+            roomTypeId,
+            request,
+            cancellationToken);
+        return result.IsFailure ? ToHotelSetupProblem(result.Error) : Ok(result.Value);
+    }
+
+    [HttpDelete("{hotelId:guid}/room-types/{roomTypeId:guid}")]
+    [Authorize(
+        Policy = AuthorizationPolicies.HotelScoped,
+        Roles = nameof(UserRoleCode.PropertyOwner) + "," + nameof(UserRoleCode.HotelManager))]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> DeactivateOperationRoomType(
+        Guid hotelId,
+        Guid roomTypeId,
+        CancellationToken cancellationToken)
+    {
+        Result result = await _hotelManagementService.DeactivateRoomTypeAsync(
+            hotelId,
+            roomTypeId,
+            cancellationToken);
+        return result.IsFailure ? ToHotelSetupProblem(result.Error) : NoContent();
+    }
+
+    [HttpPost("{hotelId:guid}/physical-rooms")]
+    [Authorize(
+        Policy = AuthorizationPolicies.HotelScoped,
+        Roles = nameof(UserRoleCode.PropertyOwner) + "," + nameof(UserRoleCode.HotelManager))]
+    [ProducesResponseType(typeof(PhysicalRoomDto), StatusCodes.Status201Created)]
+    public async Task<IActionResult> CreateOperationPhysicalRoom(
+        Guid hotelId,
+        CreatePhysicalRoomRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<PhysicalRoomDto> result = await _hotelManagementService.CreatePhysicalRoomAsync(
+            hotelId,
+            request,
+            cancellationToken);
+        return result.IsFailure
+            ? ToHotelSetupProblem(result.Error)
+            : CreatedAtAction(nameof(GetOperationRoomTypes), new { hotelId }, result.Value);
+    }
+
+    [HttpPut("{hotelId:guid}/physical-rooms/{physicalRoomId:guid}")]
+    [Authorize(
+        Policy = AuthorizationPolicies.HotelScoped,
+        Roles = nameof(UserRoleCode.PropertyOwner) + "," + nameof(UserRoleCode.HotelManager))]
+    [ProducesResponseType(typeof(PhysicalRoomDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateOperationPhysicalRoom(
+        Guid hotelId,
+        Guid physicalRoomId,
+        UpdatePhysicalRoomRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<PhysicalRoomDto> result = await _hotelManagementService.UpdatePhysicalRoomAsync(
+            hotelId,
+            physicalRoomId,
+            request,
+            cancellationToken);
+        return result.IsFailure ? ToHotelSetupProblem(result.Error) : Ok(result.Value);
+    }
+
     [HttpPost("{hotelId:guid}/staff")]
     [Authorize(
         Policy = AuthorizationPolicies.HotelScoped,
@@ -158,6 +311,25 @@ public sealed class OperationsHotelsController : ControllerBase
             "HotelManagement.DuplicateStaffPhoneNumber" or
             "HotelManagement.DuplicateStaffAssignment" or
             "HotelManagement.StaffHasOpenTasks" => StatusCodes.Status409Conflict,
+            "HotelManagement.LockUnavailable" => StatusCodes.Status423Locked,
+            _ => StatusCodes.Status400BadRequest
+        };
+
+        return this.ToProblemResult(error, statusCode);
+    }
+
+    private ObjectResult ToHotelSetupProblem(ResultError error)
+    {
+        int statusCode = error.Code switch
+        {
+            "HotelManagement.Forbidden" => StatusCodes.Status403Forbidden,
+            "HotelManagement.HotelNotFound" or
+            "HotelManagement.RoomTypeNotFound" or
+            "HotelManagement.PhysicalRoomNotFound" => StatusCodes.Status404NotFound,
+            "HotelManagement.DuplicateRoomNumber" or
+            "HotelManagement.RoomTypeHasFutureBookings" or
+            "HotelManagement.RoomIsOccupied" or
+            "HotelManagement.OperationalLifecycleActive" => StatusCodes.Status409Conflict,
             "HotelManagement.LockUnavailable" => StatusCodes.Status423Locked,
             _ => StatusCodes.Status400BadRequest
         };

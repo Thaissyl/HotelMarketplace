@@ -15,6 +15,7 @@ class AppTextFormField extends StatefulWidget {
     this.autofillHints,
     this.inputFormatters,
     this.validator,
+    this.onChanged,
     this.onFieldSubmitted,
     this.obscureText = false,
     this.enableSuggestions = true,
@@ -33,6 +34,7 @@ class AppTextFormField extends StatefulWidget {
   final Iterable<String>? autofillHints;
   final List<TextInputFormatter>? inputFormatters;
   final FormFieldValidator<String>? validator;
+  final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onFieldSubmitted;
   final bool obscureText;
   final bool enableSuggestions;
@@ -90,6 +92,7 @@ class _AppTextFormFieldState extends State<AppTextFormField> {
       autofillHints: widget.autofillHints,
       inputFormatters: widget.inputFormatters,
       validator: widget.validator,
+      onChanged: widget.onChanged,
       onFieldSubmitted: widget.onFieldSubmitted,
       obscureText: widget.obscureText,
       enableSuggestions: widget.enableSuggestions,

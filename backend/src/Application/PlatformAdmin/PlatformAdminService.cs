@@ -115,6 +115,17 @@ internal sealed class PlatformAdminService : IPlatformAdminService
         return Result.Success(await _platformAdminRepository.GetPendingHotelsAsync(cancellationToken));
     }
 
+    public async Task<Result<IReadOnlyCollection<AdminHotelDto>>> GetHotelsAsync(CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = ValidatePlatformAdministrator();
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<IReadOnlyCollection<AdminHotelDto>>(authorizationFailure.Error);
+        }
+
+        return Result.Success(await _platformAdminRepository.GetHotelsAsync(cancellationToken));
+    }
+
     public async Task<Result<AdminHotelDto>> ApproveHotelAsync(Guid hotelId, CancellationToken cancellationToken)
     {
         Result? authorizationFailure = ValidatePlatformAdministrator();

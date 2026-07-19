@@ -55,4 +55,13 @@ class SelectedHotelController extends StateNotifier<AsyncValue<String?>> {
     await _sessionStorage.saveCurrentHotelId(hotelId);
     state = AsyncData(hotelId);
   }
+
+  Future<void> addAndSelectHotel(String hotelId) async {
+    if (!_availableHotelIds.contains(hotelId)) {
+      _availableHotelIds.add(hotelId);
+    }
+
+    await _sessionStorage.saveCurrentHotelId(hotelId);
+    state = AsyncData(hotelId);
+  }
 }

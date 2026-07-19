@@ -1647,6 +1647,145 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
         manager.IsAssignmentActive.Should().BeTrue();
 
         TestAuthResponse managerAuth = await LoginAsync(client, manager.Email, managerPassword);
+
+        CustomerProfileDto managerProfile = await GetJsonAsync<CustomerProfileDto>(
+            client,
+            "/api/account/profile",
+            HttpStatusCode.OK,
+            managerAuth.AccessToken);
+        managerProfile.UserId.Should().Be(manager.UserAccountId);
+
+        HotelDto managerHotel = await GetJsonAsync<HotelDto>(
+            client,
+            $"/api/operations/hotels/{hotel.Id}",
+            HttpStatusCode.OK,
+            managerAuth.AccessToken);
+        managerHotel.Id.Should().Be(hotel.Id);
+
+        HotelDto managerUpdatedHotel = await SendJsonAsync<HotelDto>(
+            client,
+            HttpMethod.Put,
+            $"/api/operations/hotels/{hotel.Id}",
+            new
+            {
+                name = hotel.Name,
+                city = hotel.City,
+                addressLine = hotel.AddressLine,
+                contactEmail = hotel.ContactEmail,
+                contactPhone = hotel.ContactPhone,
+                description = "Profile maintained by the assigned hotel manager.",
+                requiresRoomInspection = true
+            },
+            HttpStatusCode.OK,
+            managerAuth.AccessToken);
+        managerUpdatedHotel.Description.Should().Contain("hotel manager");
+
+        HotelContentDto managerUpdatedContent = await SendJsonAsync<HotelContentDto>(
+            client,
+            HttpMethod.Put,
+            $"/api/operations/hotels/{hotel.Id}/content",
+            new
+            {
+                images = new[] { new { imageUrl = "https://example.com/manager-hotel.jpg", displayOrder = 0 } },
+                amenities = new[] { new { code = "WIFI", name = "Free Wi-Fi", type = "Connectivity" } },
+                cancellationPolicy = new
+                {
+                    name = "Flexible",
+                    freeCancellationHours = 24,
+                    refundPercentage = 100m,
+                    description = "Full refund until 24 hours before arrival."
+                }
+            },
+            HttpStatusCode.OK,
+            managerAuth.AccessToken);
+        managerUpdatedContent.Images.Should().ContainSingle();
+
+        HotelContentDto managerContent = await GetJsonAsync<HotelContentDto>(
+            client,
+            $"/api/operations/hotels/{hotel.Id}/content",
+            HttpStatusCode.OK,
+            managerAuth.AccessToken);
+        managerContent.Amenities.Should().ContainSingle(item => item.Code == "WIFI");
+
+        RoomTypeDto managerRoomType = await PostJsonAsync<RoomTypeDto>(
+            client,
+            $"/api/operations/hotels/{hotel.Id}/room-types",
+            new
+            {
+                name = $"Manager Room {suffix[..6]}",
+                adultCapacity = 2,
+                childCapacity = 0,
+                basePricePerNight = 90m,
+                description = "Inventory configured by the hotel manager."
+            },
+            HttpStatusCode.Created,
+            managerAuth.AccessToken);
+
+        PhysicalRoomDto managerRoom = await PostJsonAsync<PhysicalRoomDto>(
+            client,
+            $"/api/operations/hotels/{hotel.Id}/physical-rooms",
+            new
+            {
+                roomTypeId = managerRoomType.Id,
+                roomNumber = $"M{suffix[..6]}",
+                initialStatus = RoomOperationalStatus.Available
+            },
+            HttpStatusCode.Created,
+            managerAuth.AccessToken);
+        managerRoom.HotelId.Should().Be(hotel.Id);
+
+        RoomTypeDto managerUpdatedRoomType = await SendJsonAsync<RoomTypeDto>(
+            client,
+            HttpMethod.Put,
+            $"/api/operations/hotels/{hotel.Id}/room-types/{managerRoomType.Id}",
+            new
+            {
+                name = managerRoomType.Name,
+                adultCapacity = 3,
+                childCapacity = 0,
+                basePricePerNight = 95m,
+                description = managerRoomType.Description,
+                facilities = "Wi-Fi, workspace"
+            },
+            HttpStatusCode.OK,
+            managerAuth.AccessToken);
+        managerUpdatedRoomType.AdultCapacity.Should().Be(3);
+
+        PhysicalRoomDto managerUpdatedRoom = await SendJsonAsync<PhysicalRoomDto>(
+            client,
+            HttpMethod.Put,
+            $"/api/operations/hotels/{hotel.Id}/physical-rooms/{managerRoom.Id}",
+            new
+            {
+                roomNumber = managerRoom.RoomNumber,
+                status = RoomOperationalStatus.Inactive,
+                floor = "8",
+                notes = "Temporarily held from sale during setup."
+            },
+            HttpStatusCode.OK,
+            managerAuth.AccessToken);
+        managerUpdatedRoom.Status.Should().Be(RoomOperationalStatus.Inactive);
+
+        RoomTypeDto managerTemporaryRoomType = await PostJsonAsync<RoomTypeDto>(
+            client,
+            $"/api/operations/hotels/{hotel.Id}/room-types",
+            new
+            {
+                name = $"Temporary Manager Room {suffix[..6]}",
+                adultCapacity = 1,
+                childCapacity = 0,
+                basePricePerNight = 10m,
+                description = "Temporary inventory."
+            },
+            HttpStatusCode.Created,
+            managerAuth.AccessToken);
+        await SendNoContentAsync(
+            client,
+            HttpMethod.Delete,
+            $"/api/operations/hotels/{hotel.Id}/room-types/{managerTemporaryRoomType.Id}",
+            HttpStatusCode.NoContent,
+            managerAuth.AccessToken);
+
         HotelStaffMemberDto housekeeper = await PostJsonAsync<HotelStaffMemberDto>(
             client,
             $"/api/operations/hotels/{hotel.Id}/staff",
@@ -2017,6 +2156,20 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             admin.AccessToken);
         pendingHotels.Should().Contain(item => item.Id == hotel.Id);
 
+        IReadOnlyCollection<AdminHotelDto> managedHotels = await GetJsonAsync<IReadOnlyCollection<AdminHotelDto>>(
+            client,
+            "/api/platform-admin/hotels",
+            HttpStatusCode.OK,
+            admin.AccessToken);
+        managedHotels.Should().Contain(item => item.Id == hotel.Id);
+
+        using (HttpRequestMessage unauthorizedHotelListRequest = new(HttpMethod.Get, "/api/platform-admin/hotels"))
+        {
+            unauthorizedHotelListRequest.Headers.Authorization = Bearer(owner.AccessToken);
+            using HttpResponseMessage unauthorizedHotelListResponse = await client.SendAsync(unauthorizedHotelListRequest);
+            unauthorizedHotelListResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+
         AdminHotelDto approvedHotel = await PostJsonAsync<AdminHotelDto>(
             client,
             $"/api/platform-admin/hotels/{hotel.Id}/approve",
@@ -2078,7 +2231,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
 
         CustomerProfileDto profile = await GetJsonAsync<CustomerProfileDto>(
             client,
-            "/api/customer/account/profile",
+            "/api/account/profile",
             HttpStatusCode.OK,
             customer.AccessToken);
         profile.Email.Should().Be(customer.Email);
@@ -2087,7 +2240,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
         CustomerProfileDto updatedProfile = await SendJsonAsync<CustomerProfileDto>(
             client,
             HttpMethod.Put,
-            "/api/customer/account/profile",
+            "/api/account/profile",
             new
             {
                 fullName = "Updated Smoke Customer",

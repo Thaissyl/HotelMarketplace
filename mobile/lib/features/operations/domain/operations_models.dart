@@ -108,6 +108,156 @@ class UpdateHotelProfileRequest {
   }
 }
 
+class RegisterHotelRequest {
+  const RegisterHotelRequest({
+    required this.name,
+    required this.city,
+    required this.addressLine,
+    required this.contactEmail,
+    required this.contactPhone,
+    required this.description,
+  });
+
+  final String name;
+  final String city;
+  final String addressLine;
+  final String contactEmail;
+  final String contactPhone;
+  final String description;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name.trim(),
+      'city': city.trim(),
+      'addressLine': addressLine.trim(),
+      'contactEmail': contactEmail.trim(),
+      'contactPhone': contactPhone.trim(),
+      'description': description.trim().isEmpty ? null : description.trim(),
+    };
+  }
+}
+
+class HotelContent {
+  const HotelContent({
+    required this.images,
+    required this.amenities,
+    required this.cancellationPolicy,
+  });
+
+  final List<HotelContentImage> images;
+  final List<HotelContentAmenity> amenities;
+  final HotelCancellationPolicy? cancellationPolicy;
+
+  static HotelContent fromJson(Object? data) {
+    final json = _asMap(data);
+    return HotelContent(
+      images: (json['images'] as List? ?? const [])
+          .map(HotelContentImage.fromJson)
+          .toList(growable: false),
+      amenities: (json['amenities'] as List? ?? const [])
+          .map(HotelContentAmenity.fromJson)
+          .toList(growable: false),
+      cancellationPolicy: json['cancellationPolicy'] == null
+          ? null
+          : HotelCancellationPolicy.fromJson(json['cancellationPolicy']),
+    );
+  }
+}
+
+class HotelContentImage {
+  const HotelContentImage({required this.imageUrl, required this.displayOrder});
+  final String imageUrl;
+  final int displayOrder;
+
+  static HotelContentImage fromJson(Object? data) {
+    final json = _asMap(data);
+    return HotelContentImage(
+      imageUrl: json['imageUrl']?.toString() ?? '',
+      displayOrder: (json['displayOrder'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'imageUrl': imageUrl.trim(),
+        'displayOrder': displayOrder,
+      };
+}
+
+class HotelContentAmenity {
+  const HotelContentAmenity({
+    required this.code,
+    required this.name,
+    required this.type,
+  });
+  final String code;
+  final String name;
+  final String type;
+
+  static HotelContentAmenity fromJson(Object? data) {
+    final json = _asMap(data);
+    return HotelContentAmenity(
+      code: json['code']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      type: json['type']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'code': code.trim(),
+        'name': name.trim(),
+        'type': type.trim(),
+      };
+}
+
+class HotelCancellationPolicy {
+  const HotelCancellationPolicy({
+    required this.name,
+    required this.freeCancellationHours,
+    required this.refundPercentage,
+    required this.description,
+  });
+  final String name;
+  final int freeCancellationHours;
+  final double refundPercentage;
+  final String description;
+
+  static HotelCancellationPolicy fromJson(Object? data) {
+    final json = _asMap(data);
+    return HotelCancellationPolicy(
+      name: json['name']?.toString() ?? '',
+      freeCancellationHours:
+          (json['freeCancellationHours'] as num?)?.toInt() ?? 0,
+      refundPercentage: (json['refundPercentage'] as num?)?.toDouble() ?? 0,
+      description: json['description']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'name': name.trim(),
+        'freeCancellationHours': freeCancellationHours,
+        'refundPercentage': refundPercentage,
+        'description': description.trim().isEmpty ? null : description.trim(),
+      };
+}
+
+class UpdateHotelContentRequest {
+  const UpdateHotelContentRequest({
+    required this.images,
+    required this.amenities,
+    required this.cancellationPolicy,
+  });
+  final List<HotelContentImage> images;
+  final List<HotelContentAmenity> amenities;
+  final HotelCancellationPolicy? cancellationPolicy;
+
+  Map<String, dynamic> toJson() => {
+        'images': images.map((item) => item.toJson()).toList(growable: false),
+        'amenities':
+            amenities.map((item) => item.toJson()).toList(growable: false),
+        'cancellationPolicy': cancellationPolicy?.toJson(),
+      };
+}
+
 class HotelStaffMember {
   const HotelStaffMember({
     required this.userAccountId,
@@ -356,6 +506,17 @@ class CreateRoomTypeRequest {
   }
 }
 
+class UpdateRoomTypeRequest extends CreateRoomTypeRequest {
+  const UpdateRoomTypeRequest({
+    required super.name,
+    required super.adultCapacity,
+    required super.childCapacity,
+    required super.basePricePerNight,
+    required super.description,
+    required super.facilities,
+  });
+}
+
 class CreatePhysicalRoomRequest {
   const CreatePhysicalRoomRequest({
     required this.roomTypeId,
@@ -380,6 +541,27 @@ class CreatePhysicalRoomRequest {
       'notes': notes.trim().isEmpty ? null : notes.trim(),
     };
   }
+}
+
+class UpdatePhysicalRoomRequest {
+  const UpdatePhysicalRoomRequest({
+    required this.roomNumber,
+    required this.status,
+    required this.floor,
+    required this.notes,
+  });
+
+  final String roomNumber;
+  final String status;
+  final String floor;
+  final String notes;
+
+  Map<String, dynamic> toJson() => {
+        'roomNumber': roomNumber.trim(),
+        'status': status,
+        'floor': floor.trim().isEmpty ? null : floor.trim(),
+        'notes': notes.trim().isEmpty ? null : notes.trim(),
+      };
 }
 
 class FrontDeskBookingResult {

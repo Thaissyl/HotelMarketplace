@@ -7,6 +7,7 @@ import '../../features/auth/application/auth_state.dart';
 import '../../features/auth/domain/auth_models.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
+import '../../features/account/presentation/account_settings_screen.dart';
 import '../../features/bookings/domain/booking_draft.dart';
 import '../../features/bookings/domain/booking_models.dart';
 import '../../features/bookings/presentation/booking_confirmation_screen.dart';
@@ -41,10 +42,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isLogin = location == LoginScreen.routePath;
       final isRegister = location == RegisterScreen.routePath;
       final isAuthRoute = isLogin || isRegister;
+      final isPublicMarketplaceRoute =
+          location == MarketplaceScreen.routePath ||
+              location == HotelDetailScreen.routePath;
       final isCustomerHomeRoute = location == CustomerHomeScreen.routePath;
       final isCustomerOnlyRoute = isCustomerHomeRoute ||
-          location == MarketplaceScreen.routePath ||
-          location == HotelDetailScreen.routePath ||
           location == BookingConfirmationScreen.routePath ||
           location == PendingPaymentScreen.routePath;
       final isOperationsRoute = location == OperationsDashboardScreen.routePath;
@@ -78,10 +80,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       }
 
       if (isSplash) {
-        return LoginScreen.routePath;
+        return MarketplaceScreen.routePath;
       }
 
-      if (!isAuthRoute) {
+      if (!isAuthRoute && !isPublicMarketplaceRoute) {
         return LoginScreen.routePath;
       }
 
@@ -110,6 +112,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => _slideFadePage(
           key: state.pageKey,
           child: const RegisterScreen(),
+        ),
+      ),
+      GoRoute(
+        path: AccountSettingsScreen.routePath,
+        name: AccountSettingsScreen.routeName,
+        pageBuilder: (context, state) => _slideFadePage(
+          key: state.pageKey,
+          child: const AccountSettingsScreen(),
         ),
       ),
       GoRoute(

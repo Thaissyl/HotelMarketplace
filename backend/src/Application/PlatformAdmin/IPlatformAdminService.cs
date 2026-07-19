@@ -12,6 +12,7 @@ public interface IPlatformAdminService
     Task<Result<AdminUserDto>> ReactivateUserAsync(Guid userId, CancellationToken cancellationToken);
     Task<Result<IReadOnlyCollection<AdminUserActivityDto>>> GetUserActivityAsync(Guid userId, CancellationToken cancellationToken);
     Task<Result<IReadOnlyCollection<AdminHotelDto>>> GetPendingHotelsAsync(CancellationToken cancellationToken);
+    Task<Result<IReadOnlyCollection<AdminHotelDto>>> GetHotelsAsync(CancellationToken cancellationToken);
     Task<Result<AdminHotelDto>> ApproveHotelAsync(Guid hotelId, CancellationToken cancellationToken);
     Task<Result<AdminHotelDto>> RejectHotelAsync(Guid hotelId, RejectHotelRequest request, CancellationToken cancellationToken);
     Task<Result<AdminHotelDto>> UpdateCommissionRateAsync(Guid hotelId, UpdateCommissionRateRequest request, CancellationToken cancellationToken);

@@ -36,8 +36,27 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1200));
     await tester.pumpAndSettle();
 
-    expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.text('Find stays'), findsOneWidget);
     expect(find.text('Sign in'), findsOneWidget);
+  });
+
+  test('production environment rejects an insecure API URL', () {
+    expect(
+      () => AppEnvironment.fromValues(
+        flavor: AppFlavor.production,
+        apiBaseUrl: 'http://api.example.com',
+      ),
+      throwsArgumentError,
+    );
+  });
+
+  test('development environment accepts and normalizes a local API URL', () {
+    final environment = AppEnvironment.fromValues(
+      flavor: AppFlavor.development,
+      apiBaseUrl: 'http://10.0.2.2:5080/',
+    );
+
+    expect(environment.apiBaseUrl, 'http://10.0.2.2:5080');
   });
 }
 

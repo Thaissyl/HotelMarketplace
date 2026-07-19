@@ -55,6 +55,10 @@ final pendingHotelsProvider =
   return ref.watch(platformAdminApiProvider).getPendingHotels();
 });
 
+final adminHotelsProvider = FutureProvider.autoDispose<List<AdminHotel>>((ref) {
+  return ref.watch(platformAdminApiProvider).getHotels();
+});
+
 final settlementsProvider =
     FutureProvider.autoDispose<List<AdminSettlement>>((ref) {
   return ref.watch(platformAdminApiProvider).getSettlements();

@@ -134,7 +134,7 @@ class _HotelDetailScreenState extends ConsumerState<HotelDetailScreen> {
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go('/customer');
+              context.go('/marketplace');
             }
           },
           icon: const Icon(Icons.arrow_back_rounded),

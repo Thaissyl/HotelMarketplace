@@ -34,9 +34,45 @@ class AppEnvironment {
         ? configuredApiBaseUrl
         : _defaultLocalApiBaseUrl();
 
-    return AppEnvironment(
+    return fromValues(
       flavor: AppFlavor.fromName(configuredFlavor),
-      apiBaseUrl: _normalizeBaseUrl(apiBaseUrl),
+      apiBaseUrl: apiBaseUrl,
+    );
+  }
+
+  static AppEnvironment fromValues({
+    required AppFlavor flavor,
+    required String apiBaseUrl,
+  }) {
+    final normalizedApiBaseUrl = _normalizeBaseUrl(apiBaseUrl);
+    final uri = Uri.tryParse(normalizedApiBaseUrl);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+      throw ArgumentError.value(
+        apiBaseUrl,
+        'apiBaseUrl',
+        'API_BASE_URL must be an absolute HTTP or HTTPS URL.',
+      );
+    }
+
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      throw ArgumentError.value(
+        apiBaseUrl,
+        'apiBaseUrl',
+        'API_BASE_URL must use HTTP or HTTPS.',
+      );
+    }
+
+    if (flavor == AppFlavor.production && uri.scheme != 'https') {
+      throw ArgumentError.value(
+        apiBaseUrl,
+        'apiBaseUrl',
+        'Production API_BASE_URL must use HTTPS.',
+      );
+    }
+
+    return AppEnvironment(
+      flavor: flavor,
+      apiBaseUrl: normalizedApiBaseUrl,
     );
   }
 

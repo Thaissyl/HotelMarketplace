@@ -187,6 +187,17 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<AdminHotelDto>> GetHotelsAsync(CancellationToken cancellationToken)
+    {
+        return await _dbContext.HotelProperties
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .OrderBy(hotel => hotel.Name)
+            .ThenBy(hotel => hotel.Id)
+            .Select(hotel => ToHotelDto(hotel))
+            .ToListAsync(cancellationToken);
+    }
+
     private async Task<PlatformAdminUserResult> UpdateUserStatusAsync(
         Guid userId,
         Guid actorUserAccountId,
