@@ -105,7 +105,7 @@ internal sealed class CustomerAccountService : ICustomerAccountService
     private async Task<Result<UserAccount>> GetAuthorizedUserAsync(CancellationToken cancellationToken)
     {
         if (_currentUserService.UserId is null ||
-            !_currentUserService.Roles.Any(role => role is UserRoleCode.Customer or UserRoleCode.PlatformAdministrator))
+            !_currentUserService.Roles.Contains(UserRoleCode.Customer))
         {
             return Result.Failure<UserAccount>(CustomerAccountErrors.Forbidden);
         }

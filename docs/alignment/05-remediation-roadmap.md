@@ -9,6 +9,9 @@ acceptance tests pass.
 
 ### ALN-001 Hotel-Role Authorization Model
 
+Status: Implemented and verified on `fix/aln-001-hotel-role-authorization`.
+See [09-aln-001-hotel-role-authorization.md](09-aln-001-hotel-role-authorization.md).
+
 - Remove unconditional Platform Administrator access from
   `HotelAccessAuthorizer`, operational services, and operational controllers.
 - Represent active hotel assignments as `(hotelId, role)` claims or resolve them

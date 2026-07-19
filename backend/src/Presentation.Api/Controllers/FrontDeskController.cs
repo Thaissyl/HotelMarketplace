@@ -16,8 +16,7 @@ namespace HotelMarketplace.Presentation.Api.Controllers;
     Policy = AuthorizationPolicies.HotelScoped,
     Roles = nameof(UserRoleCode.Receptionist) + "," +
         nameof(UserRoleCode.HotelManager) + "," +
-        nameof(UserRoleCode.PropertyOwner) + "," +
-        nameof(UserRoleCode.PlatformAdministrator))]
+        nameof(UserRoleCode.PropertyOwner))]
 public sealed class FrontDeskController : ControllerBase
 {
     private readonly IFrontDeskService _frontDeskService;

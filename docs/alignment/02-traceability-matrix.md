@@ -47,7 +47,7 @@ branches, data fields, permissions, lifecycle states, or tests are absent.
 | NSF-001 | Idempotent payment result | Demo operation is transactionally idempotent but provider event history is incomplete | Demo only | Duplicate demo not explicitly tested | Partial under approved scope | Medium | WS-08 |
 | NSF-002 | Scheduled expiration | Hosted service and repository exist | Not applicable | Indirect only | Broadly aligned | Medium residual | WS-08 |
 | NSF-003 | Record notifications even when mocked | Entity exists; business flows do not create records | Local substitutes exist | Missing | Missing | High | WS-08, WS-09 |
-| NFR-SEC-002 | Role and hotel-scoped authorization | Platform bypass and role/hotel claim separation violate rule | Role routes exist | Cross-hotel test does not cover Platform Admin | Deviated | Critical | WS-01 |
+| NFR-SEC-002 | Role and hotel-scoped authorization | Active hotel-role access is resolved server-side; Platform Administrator has no implicit hotel operations access | Role-aware routes consume the same authorization policy | Forged header, unassigned Platform Administrator, mixed-role hotel, and revocation tests pass | Aligned | Low | WS-01, ALN-001 |
 | NFR-SEC-006 | Secure production transport | API can support HTTPS; deployment proof incomplete | Main Android manifest globally allows cleartext | Missing | Deviated | High | WS-08, WS-09 |
 | NFR-AUD-001 | Audit protected mutations | Mostly Platform Admin mutations only | Activity UI reads partial audit | Missing | Missing/partial | High | WS-08 |
 | NFR-MAINT-001 | Full requirement traceability | Source documents exist | Not applicable | Coverage is sparse | Partial | Medium | WS-08 |

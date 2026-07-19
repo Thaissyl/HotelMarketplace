@@ -30,7 +30,7 @@ internal sealed class BookingService : IBookingService
         CancellationToken cancellationToken)
     {
         if (_currentUserService.UserId is null ||
-            !_currentUserService.Roles.Any(role => role is UserRoleCode.Customer or UserRoleCode.PlatformAdministrator))
+            !_currentUserService.Roles.Contains(UserRoleCode.Customer))
         {
             return Result.Failure<BookingDto>(BookingErrors.Forbidden);
         }
@@ -70,7 +70,7 @@ internal sealed class BookingService : IBookingService
     public async Task<Result<IReadOnlyCollection<BookingDto>>> GetMyBookingsAsync(CancellationToken cancellationToken)
     {
         if (_currentUserService.UserId is null ||
-            !_currentUserService.Roles.Any(role => role is UserRoleCode.Customer or UserRoleCode.PlatformAdministrator))
+            !_currentUserService.Roles.Contains(UserRoleCode.Customer))
         {
             return Result.Failure<IReadOnlyCollection<BookingDto>>(BookingErrors.Forbidden);
         }

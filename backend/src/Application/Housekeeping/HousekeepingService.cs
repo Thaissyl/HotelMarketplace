@@ -15,11 +15,11 @@ internal sealed class HousekeepingService : IHousekeepingService
     {
         UserRoleCode.HousekeepingStaff,
         UserRoleCode.HotelManager,
-        UserRoleCode.PropertyOwner,
-        UserRoleCode.PlatformAdministrator
+        UserRoleCode.PropertyOwner
     };
 
     private readonly ICurrentUserService _currentUserService;
+    private readonly IHotelAccessAuthorizer _hotelAccessAuthorizer;
     private readonly IHousekeepingRepository _housekeepingRepository;
     private readonly IValidator<HousekeepingTaskQueryRequest> _queryValidator;
     private readonly IValidator<UpdateHousekeepingTaskStatusRequest> _updateValidator;
@@ -27,12 +27,14 @@ internal sealed class HousekeepingService : IHousekeepingService
 
     public HousekeepingService(
         ICurrentUserService currentUserService,
+        IHotelAccessAuthorizer hotelAccessAuthorizer,
         IHousekeepingRepository housekeepingRepository,
         IValidator<HousekeepingTaskQueryRequest> queryValidator,
         IValidator<UpdateHousekeepingTaskStatusRequest> updateValidator,
         IValidator<AssignHousekeepingTaskRequest> assignValidator)
     {
         _currentUserService = currentUserService;
+        _hotelAccessAuthorizer = hotelAccessAuthorizer;
         _housekeepingRepository = housekeepingRepository;
         _queryValidator = queryValidator;
         _updateValidator = updateValidator;
@@ -44,7 +46,7 @@ internal sealed class HousekeepingService : IHousekeepingService
         HousekeepingTaskQueryRequest request,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = ValidateAuthorization(hotelId);
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, AllowedRoles, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<IReadOnlyCollection<HousekeepingTaskDto>>(authorizationFailure.Error);
@@ -71,7 +73,7 @@ internal sealed class HousekeepingService : IHousekeepingService
         UpdateHousekeepingTaskStatusRequest request,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = ValidateAuthorization(hotelId);
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, AllowedRoles, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<HousekeepingTaskDto>(authorizationFailure.Error);
@@ -109,15 +111,11 @@ internal sealed class HousekeepingService : IHousekeepingService
         AssignHousekeepingTaskRequest request,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = ValidateAuthorization(hotelId);
+        UserRoleCode[] assignmentRoles = { UserRoleCode.HotelManager, UserRoleCode.PropertyOwner };
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, assignmentRoles, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<HousekeepingTaskDto>(authorizationFailure.Error);
-        }
-
-        if (!_currentUserService.Roles.Any(role => role is UserRoleCode.HotelManager or UserRoleCode.PropertyOwner or UserRoleCode.PlatformAdministrator))
-        {
-            return Result.Failure<HousekeepingTaskDto>(HousekeepingErrors.Forbidden);
         }
 
         ValidationResult validationResult = await _assignValidator.ValidateAsync(request, cancellationToken);
@@ -144,20 +142,17 @@ internal sealed class HousekeepingService : IHousekeepingService
         };
     }
 
-    private Result? ValidateAuthorization(Guid hotelId)
+    private async Task<Result?> ValidateAuthorizationAsync(
+        Guid hotelId,
+        IReadOnlyCollection<UserRoleCode> allowedRoles,
+        CancellationToken cancellationToken)
     {
-        if (_currentUserService.UserId is null ||
-            !_currentUserService.Roles.Any(role => AllowedRoles.Contains(role)))
+        if (_currentUserService.UserId is null)
         {
             return Result.Failure(HousekeepingErrors.Forbidden);
         }
 
-        if (_currentUserService.Roles.Contains(UserRoleCode.PlatformAdministrator))
-        {
-            return null;
-        }
-
-        return _currentUserService.HotelIds.Contains(hotelId)
+        return await _hotelAccessAuthorizer.HasAccessAsync(hotelId, allowedRoles, cancellationToken)
             ? null
             : Result.Failure(HousekeepingErrors.Forbidden);
     }

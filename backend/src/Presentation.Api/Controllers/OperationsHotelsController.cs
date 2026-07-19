@@ -14,8 +14,7 @@ namespace HotelMarketplace.Presentation.Api.Controllers;
     nameof(UserRoleCode.HotelManager) + "," +
     nameof(UserRoleCode.Receptionist) + "," +
     nameof(UserRoleCode.HousekeepingStaff) + "," +
-    nameof(UserRoleCode.MaintenanceStaff) + "," +
-    nameof(UserRoleCode.PlatformAdministrator))]
+    nameof(UserRoleCode.MaintenanceStaff))]
 public sealed class OperationsHotelsController : ControllerBase
 {
     private readonly IHotelManagementService _hotelManagementService;
@@ -58,8 +57,7 @@ public sealed class OperationsHotelsController : ControllerBase
     [Authorize(
         Policy = AuthorizationPolicies.HotelScoped,
         Roles = nameof(UserRoleCode.PropertyOwner) + "," +
-            nameof(UserRoleCode.HotelManager) + "," +
-            nameof(UserRoleCode.PlatformAdministrator))]
+            nameof(UserRoleCode.HotelManager))]
     [ProducesResponseType(typeof(IReadOnlyCollection<HotelStaffMemberDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]

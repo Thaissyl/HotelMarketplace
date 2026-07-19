@@ -34,4 +34,9 @@ public sealed class HotelStaffAssignment : Entity, IHotelScopedEntity
     public bool IsActive { get; private set; }
 
     public DateTime AssignedAtUtc { get; private set; }
+
+    public void Revoke()
+    {
+        IsActive = false;
+    }
 }

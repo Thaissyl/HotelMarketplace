@@ -23,20 +23,19 @@ Date: 2026-07-19
 
 ## Backend Test Verification
 
-`dotnet test .\backend\HotelMarketplace.slnx --no-build --no-restore` discovered
-eight API integration tests. Domain.UnitTests and Application.UnitTests contain no
-authored tests. Docker Desktop was initially unavailable. After Docker Desktop was
-started, the SQL Server Testcontainer passed its readiness check, but all eight API
-tests still failed during fixture initialization before any business assertion ran.
+The test-host configuration defect was corrected during ALN-001. The integration
+factory now establishes an isolated `Testing` environment before creating the host,
+uses the dynamic SQL Server Testcontainer connection, disables booking expiration,
+and restores prior process environment values after the suite.
 
-The verified cause is configuration isolation: the test host attempted to migrate
-and query `HotelMarketplace` at `localhost,1433` instead of using the dynamic SQL
-Server connection string exposed by the ready Testcontainer. The same incorrect
-connection was used by the expired-booking background service. This is a test-host
-configuration defect, not evidence that all eight business scenarios failed.
+`dotnet test .\backend\HotelMarketplace.slnx --no-restore` completed successfully:
 
-The integration factory must remove or override local process environment settings,
-apply the Testcontainer connection string at the highest effective configuration
-precedence, and disable unrelated hosted services during API tests. The suite must
-then be rerun. Even after that correction, the current tests do not cover the 31
-registered gaps and cannot establish SRS/SDD conformance by themselves.
+- API integration tests: 11 passed, 0 failed, 0 skipped.
+- Domain.UnitTests: no authored tests discovered.
+- Application.UnitTests: no authored tests discovered.
+- The API suite includes forged-header, unassigned Platform Administrator,
+  mixed-role cross-hotel, and post-token assignment-revocation scenarios.
+
+This result verifies the current ALN-001 acceptance scope. It does not establish
+conformance for the remaining remediation packages or replace the missing Domain
+and Application test suites.

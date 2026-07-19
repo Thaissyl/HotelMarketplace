@@ -17,11 +17,11 @@ internal sealed class FrontDeskService : IFrontDeskService
     {
         UserRoleCode.Receptionist,
         UserRoleCode.HotelManager,
-        UserRoleCode.PropertyOwner,
-        UserRoleCode.PlatformAdministrator
+        UserRoleCode.PropertyOwner
     };
 
     private readonly ICurrentUserService _currentUserService;
+    private readonly IHotelAccessAuthorizer _hotelAccessAuthorizer;
     private readonly IFrontDeskRepository _frontDeskRepository;
     private readonly IValidator<CheckInBookingRequest> _checkInValidator;
     private readonly IValidator<CheckOutBookingRequest> _checkOutValidator;
@@ -29,12 +29,14 @@ internal sealed class FrontDeskService : IFrontDeskService
 
     public FrontDeskService(
         ICurrentUserService currentUserService,
+        IHotelAccessAuthorizer hotelAccessAuthorizer,
         IFrontDeskRepository frontDeskRepository,
         IValidator<CheckInBookingRequest> checkInValidator,
         IValidator<CheckOutBookingRequest> checkOutValidator,
         IValidator<CreateWalkInBookingRequest> walkInValidator)
     {
         _currentUserService = currentUserService;
+        _hotelAccessAuthorizer = hotelAccessAuthorizer;
         _frontDeskRepository = frontDeskRepository;
         _checkInValidator = checkInValidator;
         _checkOutValidator = checkOutValidator;
@@ -46,7 +48,7 @@ internal sealed class FrontDeskService : IFrontDeskService
         Guid? roomTypeId,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = ValidateAuthorization(hotelId);
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<IReadOnlyCollection<PhysicalRoomDto>>(authorizationFailure.Error);
@@ -72,7 +74,7 @@ internal sealed class FrontDeskService : IFrontDeskService
         DateOnly? toDate,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = ValidateAuthorization(hotelId);
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<IReadOnlyCollection<FrontDeskBookingSummaryDto>>(authorizationFailure.Error);
@@ -94,7 +96,7 @@ internal sealed class FrontDeskService : IFrontDeskService
         CheckInBookingRequest request,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = ValidateAuthorization(hotelId);
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<FrontDeskBookingDto>(authorizationFailure.Error);
@@ -123,7 +125,7 @@ internal sealed class FrontDeskService : IFrontDeskService
         CheckOutBookingRequest request,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = ValidateAuthorization(hotelId);
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<FrontDeskBookingDto>(authorizationFailure.Error);
@@ -151,7 +153,7 @@ internal sealed class FrontDeskService : IFrontDeskService
         CreateWalkInBookingRequest request,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = ValidateAuthorization(hotelId);
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<FrontDeskBookingDto>(authorizationFailure.Error);
@@ -173,20 +175,14 @@ internal sealed class FrontDeskService : IFrontDeskService
         return ToResult(result);
     }
 
-    private Result? ValidateAuthorization(Guid hotelId)
+    private async Task<Result?> ValidateAuthorizationAsync(Guid hotelId, CancellationToken cancellationToken)
     {
-        if (_currentUserService.UserId is null ||
-            !_currentUserService.Roles.Any(role => AllowedRoles.Contains(role)))
+        if (_currentUserService.UserId is null)
         {
             return Result.Failure(FrontDeskErrors.Forbidden);
         }
 
-        if (_currentUserService.Roles.Contains(UserRoleCode.PlatformAdministrator))
-        {
-            return null;
-        }
-
-        return _currentUserService.HotelIds.Contains(hotelId)
+        return await _hotelAccessAuthorizer.HasAccessAsync(hotelId, AllowedRoles, cancellationToken)
             ? null
             : Result.Failure(FrontDeskErrors.Forbidden);
     }

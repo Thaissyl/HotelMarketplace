@@ -85,7 +85,6 @@ try
     app.UseRouting();
     app.UseMiddleware<HotelContextMiddleware>();
     app.UseAuthentication();
-    app.UseMiddleware<HotelScopeAuthorizationMiddleware>();
     app.UseAuthorization();
 
     app.MapControllers();
@@ -258,6 +257,11 @@ static void AddAuthorization(WebApplicationBuilder builder)
 
 static void LoadLocalEnvironmentFile(WebApplicationBuilder builder)
 {
+    if (builder.Environment.IsEnvironment("Testing"))
+    {
+        return;
+    }
+
     string environmentFilePath = Path.Combine(builder.Environment.ContentRootPath, ".env");
 
     if (!File.Exists(environmentFilePath))

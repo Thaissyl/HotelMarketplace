@@ -12,7 +12,7 @@ namespace HotelMarketplace.Presentation.Api.Controllers;
 
 [ApiController]
 [Route("api/bookings")]
-[Authorize(Roles = nameof(UserRoleCode.Customer) + "," + nameof(UserRoleCode.PlatformAdministrator))]
+[Authorize(Roles = nameof(UserRoleCode.Customer))]
 public sealed class BookingsController : ControllerBase
 {
     private readonly IBookingService _bookingService;

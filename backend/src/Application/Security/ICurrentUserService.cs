@@ -13,4 +13,6 @@ public interface ICurrentUserService
     IReadOnlyCollection<UserRoleCode> Roles { get; }
 
     IReadOnlyCollection<Guid> HotelIds { get; }
+
+    IReadOnlyCollection<HotelRoleAccess> HotelRoleAccesses { get; }
 }

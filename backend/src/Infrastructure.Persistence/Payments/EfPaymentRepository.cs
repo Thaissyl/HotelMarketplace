@@ -30,7 +30,6 @@ internal sealed class EfPaymentRepository : IPaymentRepository
     public async Task<CreatePaymentLinkPersistenceResult> PreparePaymentLinkAsync(
         Guid bookingId,
         Guid currentUserId,
-        IReadOnlyCollection<UserRoleCode> currentUserRoles,
         CancellationToken cancellationToken)
     {
         IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
@@ -80,8 +79,7 @@ internal sealed class EfPaymentRepository : IPaymentRepository
                 return CreatePaymentLinkPersistenceResult.Failure(CreatePaymentLinkPersistenceStatus.BookingNotFound);
             }
 
-            if (booking.CustomerUserAccountId != currentUserId &&
-                !currentUserRoles.Contains(UserRoleCode.PlatformAdministrator))
+            if (booking.CustomerUserAccountId != currentUserId)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return CreatePaymentLinkPersistenceResult.Failure(CreatePaymentLinkPersistenceStatus.Forbidden);
@@ -307,7 +305,6 @@ internal sealed class EfPaymentRepository : IPaymentRepository
     public async Task<SimulatedPaymentPersistenceResult> SimulateSuccessfulPaymentAsync(
         Guid bookingId,
         Guid currentUserId,
-        IReadOnlyCollection<UserRoleCode> currentUserRoles,
         CancellationToken cancellationToken)
     {
         IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
@@ -338,8 +335,7 @@ internal sealed class EfPaymentRepository : IPaymentRepository
                 return SimulatedPaymentPersistenceResult.Failure(SimulatedPaymentPersistenceStatus.BookingNotFound, "Booking was not found.");
             }
 
-            if (booking.CustomerUserAccountId != currentUserId &&
-                !currentUserRoles.Contains(UserRoleCode.PlatformAdministrator))
+            if (booking.CustomerUserAccountId != currentUserId)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return SimulatedPaymentPersistenceResult.Failure(SimulatedPaymentPersistenceStatus.Forbidden, "Current user cannot confirm this booking.");

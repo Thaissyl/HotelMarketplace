@@ -16,8 +16,7 @@ internal sealed class MaintenanceService : IMaintenanceService
     {
         UserRoleCode.MaintenanceStaff,
         UserRoleCode.HotelManager,
-        UserRoleCode.PropertyOwner,
-        UserRoleCode.PlatformAdministrator
+        UserRoleCode.PropertyOwner
     };
 
     private static readonly UserRoleCode[] ReportIssueRoles =
@@ -25,11 +24,11 @@ internal sealed class MaintenanceService : IMaintenanceService
         UserRoleCode.HousekeepingStaff,
         UserRoleCode.MaintenanceStaff,
         UserRoleCode.HotelManager,
-        UserRoleCode.PropertyOwner,
-        UserRoleCode.PlatformAdministrator
+        UserRoleCode.PropertyOwner
     };
 
     private readonly ICurrentUserService _currentUserService;
+    private readonly IHotelAccessAuthorizer _hotelAccessAuthorizer;
     private readonly IMaintenanceRepository _maintenanceRepository;
     private readonly IValidator<MaintenanceRequestQueryRequest> _queryValidator;
     private readonly IValidator<ReportRoomIssueRequest> _reportValidator;
@@ -38,6 +37,7 @@ internal sealed class MaintenanceService : IMaintenanceService
 
     public MaintenanceService(
         ICurrentUserService currentUserService,
+        IHotelAccessAuthorizer hotelAccessAuthorizer,
         IMaintenanceRepository maintenanceRepository,
         IValidator<MaintenanceRequestQueryRequest> queryValidator,
         IValidator<ReportRoomIssueRequest> reportValidator,
@@ -45,6 +45,7 @@ internal sealed class MaintenanceService : IMaintenanceService
         IValidator<AssignMaintenanceRequestRequest> assignValidator)
     {
         _currentUserService = currentUserService;
+        _hotelAccessAuthorizer = hotelAccessAuthorizer;
         _maintenanceRepository = maintenanceRepository;
         _queryValidator = queryValidator;
         _reportValidator = reportValidator;
@@ -57,7 +58,7 @@ internal sealed class MaintenanceService : IMaintenanceService
         MaintenanceRequestQueryRequest request,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = ValidateAuthorization(hotelId, ViewAndUpdateRoles);
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, ViewAndUpdateRoles, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<IReadOnlyCollection<MaintenanceRequestDto>>(authorizationFailure.Error);
@@ -82,7 +83,7 @@ internal sealed class MaintenanceService : IMaintenanceService
         Guid hotelId,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = ValidateAuthorization(hotelId, ReportIssueRoles);
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, ReportIssueRoles, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<IReadOnlyCollection<PhysicalRoomDto>>(authorizationFailure.Error);
@@ -100,7 +101,7 @@ internal sealed class MaintenanceService : IMaintenanceService
         ReportRoomIssueRequest request,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = ValidateAuthorization(hotelId, ReportIssueRoles);
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, ReportIssueRoles, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<MaintenanceRequestDto>(authorizationFailure.Error);
@@ -128,15 +129,11 @@ internal sealed class MaintenanceService : IMaintenanceService
         AssignMaintenanceRequestRequest request,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = ValidateAuthorization(hotelId, ViewAndUpdateRoles);
+        UserRoleCode[] assignmentRoles = { UserRoleCode.HotelManager, UserRoleCode.PropertyOwner };
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, assignmentRoles, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<MaintenanceRequestDto>(authorizationFailure.Error);
-        }
-
-        if (!_currentUserService.Roles.Any(role => role is UserRoleCode.HotelManager or UserRoleCode.PropertyOwner or UserRoleCode.PlatformAdministrator))
-        {
-            return Result.Failure<MaintenanceRequestDto>(MaintenanceErrors.Forbidden);
         }
 
         ValidationResult validationResult = await _assignValidator.ValidateAsync(request, cancellationToken);
@@ -161,7 +158,7 @@ internal sealed class MaintenanceService : IMaintenanceService
         UpdateMaintenanceRequestStatusRequest request,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = ValidateAuthorization(hotelId, ViewAndUpdateRoles);
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, ViewAndUpdateRoles, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<MaintenanceRequestDto>(authorizationFailure.Error);
@@ -184,20 +181,17 @@ internal sealed class MaintenanceService : IMaintenanceService
         return ToResult(result);
     }
 
-    private Result? ValidateAuthorization(Guid hotelId, IReadOnlyCollection<UserRoleCode> allowedRoles)
+    private async Task<Result?> ValidateAuthorizationAsync(
+        Guid hotelId,
+        IReadOnlyCollection<UserRoleCode> allowedRoles,
+        CancellationToken cancellationToken)
     {
-        if (_currentUserService.UserId is null ||
-            !_currentUserService.Roles.Any(role => allowedRoles.Contains(role)))
+        if (_currentUserService.UserId is null)
         {
             return Result.Failure(MaintenanceErrors.Forbidden);
         }
 
-        if (_currentUserService.Roles.Contains(UserRoleCode.PlatformAdministrator))
-        {
-            return null;
-        }
-
-        return _currentUserService.HotelIds.Contains(hotelId)
+        return await _hotelAccessAuthorizer.HasAccessAsync(hotelId, allowedRoles, cancellationToken)
             ? null
             : Result.Failure(MaintenanceErrors.Forbidden);
     }

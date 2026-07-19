@@ -37,3 +37,10 @@ dependency order, not only user-interface visibility.
 | GAP-029 | Saved/notification behavior | Favorites and notification-like state are device-local | Add backend records and account synchronization if retained in product scope, or formally mark them as non-SRS convenience features | Medium | P3 |
 | GAP-030 | NFR-PER/REL/SEC/AUD | Eight integration tests and one Flutter widget test do not cover core negative invariants | Add domain, application, API, concurrency, authorization, finance, scheduler, and mobile contract tests | High | P0-P3 |
 | GAP-031 | NFR-BACK-001, NFR-MAINT-001 | SDK pin, compose references, scheduling dependency, and startup documentation have drifted | Align .NET SDK, project references, compose assets, backup/restore, and run documentation | Low | P3 |
+
+## Remediation Status
+
+| Gap | Status | Evidence |
+| --- | --- | --- |
+| GAP-001 | Remediated on `fix/aln-001-hotel-role-authorization` | Platform Administrator bypass removed from operational and customer routes; active hotel-role assignment is required server-side |
+| GAP-002 | Remediated on `fix/aln-001-hotel-role-authorization` | JWT now carries `hotel_role_access` tuples and authorization validates the active tuple against endpoint roles |

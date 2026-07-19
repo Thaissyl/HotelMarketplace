@@ -49,7 +49,6 @@ internal sealed class PaymentService : IPaymentService
         CreatePaymentLinkPersistenceResult persistenceResult = await _paymentRepository.PreparePaymentLinkAsync(
             bookingId,
             _currentUserService.UserId.Value,
-            _currentUserService.Roles,
             cancellationToken);
 
         if (persistenceResult.Status == CreatePaymentLinkPersistenceStatus.ExistingPaymentLink)
@@ -124,7 +123,6 @@ internal sealed class PaymentService : IPaymentService
         SimulatedPaymentPersistenceResult persistenceResult = await _paymentRepository.SimulateSuccessfulPaymentAsync(
             bookingId,
             _currentUserService.UserId.Value,
-            _currentUserService.Roles,
             cancellationToken);
 
         return persistenceResult.Status switch

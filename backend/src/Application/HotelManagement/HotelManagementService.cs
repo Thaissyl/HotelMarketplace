@@ -16,6 +16,7 @@ internal sealed class HotelManagementService : IHotelManagementService
 {
     private readonly IHotelManagementRepository _repository;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IHotelAccessAuthorizer _hotelAccessAuthorizer;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IValidator<RegisterHotelRequest> _registerHotelValidator;
@@ -29,6 +30,7 @@ internal sealed class HotelManagementService : IHotelManagementService
     public HotelManagementService(
         IHotelManagementRepository repository,
         ICurrentUserService currentUserService,
+        IHotelAccessAuthorizer hotelAccessAuthorizer,
         IDateTimeProvider dateTimeProvider,
         IPasswordHasher passwordHasher,
         IValidator<RegisterHotelRequest> registerHotelValidator,
@@ -41,6 +43,7 @@ internal sealed class HotelManagementService : IHotelManagementService
     {
         _repository = repository;
         _currentUserService = currentUserService;
+        _hotelAccessAuthorizer = hotelAccessAuthorizer;
         _dateTimeProvider = dateTimeProvider;
         _passwordHasher = passwordHasher;
         _registerHotelValidator = registerHotelValidator;
@@ -96,19 +99,34 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<IReadOnlyCollection<HotelDto>>> GetAccessibleOperationHotelsAsync(CancellationToken cancellationToken)
     {
-        if (_currentUserService.UserId is null ||
-            !_currentUserService.Roles.Any(role => role is UserRoleCode.PropertyOwner
-                or UserRoleCode.HotelManager
-                or UserRoleCode.Receptionist
-                or UserRoleCode.HousekeepingStaff
-                or UserRoleCode.MaintenanceStaff
-                or UserRoleCode.PlatformAdministrator))
+        if (_currentUserService.UserId is null)
+        {
+            return Result.Failure<IReadOnlyCollection<HotelDto>>(HotelManagementErrors.Forbidden);
+        }
+
+        UserRoleCode[] operationRoles =
+        {
+            UserRoleCode.PropertyOwner,
+            UserRoleCode.HotelManager,
+            UserRoleCode.Receptionist,
+            UserRoleCode.HousekeepingStaff,
+            UserRoleCode.MaintenanceStaff
+        };
+        IReadOnlyCollection<HotelRoleAccess> activeAccesses = await _hotelAccessAuthorizer
+            .GetActiveAccessesAsync(cancellationToken);
+        Guid[] accessibleHotelIds = activeAccesses
+            .Where(access => operationRoles.Contains(access.Role))
+            .Select(access => access.HotelId)
+            .Distinct()
+            .ToArray();
+
+        if (accessibleHotelIds.Length == 0)
         {
             return Result.Failure<IReadOnlyCollection<HotelDto>>(HotelManagementErrors.Forbidden);
         }
 
         IReadOnlyCollection<HotelProperty> hotels = await _repository.GetHotelsByIdsAsync(
-            _currentUserService.HotelIds,
+            accessibleHotelIds,
             cancellationToken);
 
         return Result.Success<IReadOnlyCollection<HotelDto>>(hotels.Select(ToHotelDto).ToArray());
@@ -170,15 +188,11 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<IReadOnlyCollection<HotelStaffMemberDto>>> GetOperationStaffAsync(Guid hotelId, CancellationToken cancellationToken)
     {
-        Result? accessFailure = EnsureHotelOperationAccess(hotelId);
+        UserRoleCode[] staffViewerRoles = { UserRoleCode.HotelManager, UserRoleCode.PropertyOwner };
+        Result? accessFailure = await EnsureHotelOperationAccessAsync(hotelId, staffViewerRoles, cancellationToken);
         if (accessFailure is not null)
         {
             return Result.Failure<IReadOnlyCollection<HotelStaffMemberDto>>(accessFailure.Error);
-        }
-
-        if (!_currentUserService.Roles.Any(role => role is UserRoleCode.HotelManager or UserRoleCode.PropertyOwner or UserRoleCode.PlatformAdministrator))
-        {
-            return Result.Failure<IReadOnlyCollection<HotelStaffMemberDto>>(HotelManagementErrors.Forbidden);
         }
 
         IReadOnlyCollection<HotelStaffMemberDto> staff = await _repository.GetStaffAsync(hotelId, cancellationToken);
@@ -273,7 +287,15 @@ internal sealed class HotelManagementService : IHotelManagementService
 
     public async Task<Result<IReadOnlyCollection<RoomTypeDto>>> GetOperationRoomTypesAsync(Guid hotelId, CancellationToken cancellationToken)
     {
-        Result? accessFailure = EnsureHotelOperationAccess(hotelId);
+        UserRoleCode[] operationRoles =
+        {
+            UserRoleCode.PropertyOwner,
+            UserRoleCode.HotelManager,
+            UserRoleCode.Receptionist,
+            UserRoleCode.HousekeepingStaff,
+            UserRoleCode.MaintenanceStaff
+        };
+        Result? accessFailure = await EnsureHotelOperationAccessAsync(hotelId, operationRoles, cancellationToken);
         if (accessFailure is not null)
         {
             return Result.Failure<IReadOnlyCollection<RoomTypeDto>>(accessFailure.Error);
@@ -418,30 +440,19 @@ internal sealed class HotelManagementService : IHotelManagementService
         return ownsHotel ? null : Result.Failure(HotelManagementErrors.Forbidden);
     }
 
-    private Result? EnsureHotelOperationAccess(Guid hotelId)
+    private async Task<Result?> EnsureHotelOperationAccessAsync(
+        Guid hotelId,
+        IReadOnlyCollection<UserRoleCode> allowedRoles,
+        CancellationToken cancellationToken)
     {
         if (_currentUserService.UserId is null)
         {
             return Result.Failure(HotelManagementErrors.Forbidden);
         }
 
-        if (_currentUserService.Roles.Contains(UserRoleCode.PlatformAdministrator))
-        {
-            return null;
-        }
-
-        bool hasAllowedRole = _currentUserService.Roles.Any(role => role is UserRoleCode.PropertyOwner
-            or UserRoleCode.HotelManager
-            or UserRoleCode.Receptionist
-            or UserRoleCode.HousekeepingStaff
-            or UserRoleCode.MaintenanceStaff);
-
-        if (!hasAllowedRole || !_currentUserService.HotelIds.Contains(hotelId))
-        {
-            return Result.Failure(HotelManagementErrors.Forbidden);
-        }
-
-        return null;
+        return await _hotelAccessAuthorizer.HasAccessAsync(hotelId, allowedRoles, cancellationToken)
+            ? null
+            : Result.Failure(HotelManagementErrors.Forbidden);
     }
 
     private static HotelDto ToHotelDto(HotelProperty hotel)

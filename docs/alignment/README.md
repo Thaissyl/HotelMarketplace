@@ -40,6 +40,7 @@ to the canonical SRS and SDD.
 | [06-approved-scope-decisions.md](06-approved-scope-decisions.md) | Approved project-specific behavior that constrains remediation |
 | [07-audit-summary.md](07-audit-summary.md) | Consolidated conformance assessment and release position |
 | [08-verification-log.md](08-verification-log.md) | Commands executed and reproducible verification results |
+| [09-aln-001-hotel-role-authorization.md](09-aln-001-hotel-role-authorization.md) | ALN-001 implementation evidence and acceptance results |
 | [workstreams](workstreams/README.md) | Detailed reviews by business capability |
 
 ## Completion Criteria

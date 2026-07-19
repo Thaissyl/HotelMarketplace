@@ -69,7 +69,12 @@ internal sealed class AuthService : IAuthService
 
         await _authUserRepository.AddUserWithRoleAsync(userAccount, role.Id, cancellationToken);
 
-        CurrentUser currentUser = new(userAccount.Id, userAccount.Email, new[] { request.Role }, Array.Empty<Guid>());
+        CurrentUser currentUser = new(
+            userAccount.Id,
+            userAccount.Email,
+            new[] { request.Role },
+            Array.Empty<Guid>(),
+            Array.Empty<HotelRoleAccess>());
         GeneratedJwtToken token = _jwtTokenGenerator.Generate(currentUser);
 
         return new AuthResponse(
@@ -103,7 +108,12 @@ internal sealed class AuthService : IAuthService
             return Result.Failure<AuthResponse>(AuthenticationErrors.InactiveAccount);
         }
 
-        CurrentUser currentUser = new(user.UserId, user.Email, user.Roles, user.HotelIds);
+        CurrentUser currentUser = new(
+            user.UserId,
+            user.Email,
+            user.Roles,
+            user.HotelIds,
+            user.HotelRoleAccesses);
         GeneratedJwtToken token = _jwtTokenGenerator.Generate(currentUser);
 
         return new AuthResponse(

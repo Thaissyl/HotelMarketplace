@@ -1,4 +1,5 @@
 using HotelMarketplace.Application.Authentication;
+using HotelMarketplace.Application.Security;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -70,19 +71,28 @@ internal sealed class EfAuthUserRepository : IAuthUserRepository
                 (_, role) => role.Code)
             .ToListAsync(cancellationToken);
 
+        var staffAccessRows = await (
+            from assignment in _dbContext.HotelStaffAssignments.IgnoreQueryFilters().AsNoTracking()
+            join role in _dbContext.UserRoles.IgnoreQueryFilters().AsNoTracking()
+                on assignment.RoleId equals role.Id
+            where assignment.UserAccountId == user.Id && assignment.IsActive
+            select new { assignment.HotelId, role.Code })
+            .ToListAsync(cancellationToken);
+
+        List<HotelRoleAccess> staffAccesses = staffAccessRows
+            .Select(row => new { row.HotelId, Role = ParseRoleCode(row.Code) })
+            .Where(row => row.Role.HasValue)
+            .Select(row => new HotelRoleAccess(row.HotelId, row.Role!.Value))
+            .Distinct()
+            .ToList();
+
         List<UserRoleCode> roles = roleCodes
+            .Concat(staffAccesses.Select(access => access.Role.ToString()))
             .Select(ParseRoleCode)
             .Where(role => role.HasValue)
             .Select(role => role!.Value)
             .Distinct()
             .ToList();
-
-        List<Guid> staffHotelIds = await _dbContext.HotelStaffAssignments
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .Where(assignment => assignment.UserAccountId == user.Id && assignment.IsActive)
-            .Select(assignment => assignment.HotelId)
-            .ToListAsync(cancellationToken);
 
         List<Guid> ownedHotelIds = await _dbContext.HotelProperties
             .IgnoreQueryFilters()
@@ -91,8 +101,13 @@ internal sealed class EfAuthUserRepository : IAuthUserRepository
             .Select(hotel => hotel.Id)
             .ToListAsync(cancellationToken);
 
-        List<Guid> hotelIds = staffHotelIds
-            .Concat(ownedHotelIds)
+        List<HotelRoleAccess> hotelRoleAccesses = staffAccesses
+            .Concat(ownedHotelIds.Select(hotelId => new HotelRoleAccess(hotelId, UserRoleCode.PropertyOwner)))
+            .Distinct()
+            .ToList();
+
+        List<Guid> hotelIds = hotelRoleAccesses
+            .Select(access => access.HotelId)
             .Distinct()
             .ToList();
 
@@ -102,7 +117,8 @@ internal sealed class EfAuthUserRepository : IAuthUserRepository
             user.PasswordHash,
             user.Status,
             roles,
-            hotelIds);
+            hotelIds,
+            hotelRoleAccesses);
     }
 
     private static UserRoleCode? ParseRoleCode(string roleCode)

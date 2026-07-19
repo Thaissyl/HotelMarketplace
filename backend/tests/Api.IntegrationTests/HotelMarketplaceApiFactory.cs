@@ -24,12 +24,14 @@ public sealed class HotelMarketplaceApiFactory : WebApplicationFactory<Program>,
     private readonly MsSqlContainer _sqlServer = new MsSqlBuilder()
         .WithPassword("Your_password123")
         .Build();
+    private readonly Dictionary<string, string?> _originalEnvironmentValues = new(StringComparer.Ordinal);
 
     public string ConnectionString => _sqlServer.GetConnectionString();
 
     public async Task InitializeAsync()
     {
         await _sqlServer.StartAsync();
+        ConfigureTestEnvironment();
 
         using IServiceScope scope = Services.CreateScope();
         HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
@@ -38,12 +40,13 @@ public sealed class HotelMarketplaceApiFactory : WebApplicationFactory<Program>,
 
     public new async Task DisposeAsync()
     {
+        RestoreEnvironment();
         await _sqlServer.DisposeAsync();
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development");
+        builder.UseEnvironment("Testing");
 
         builder.ConfigureLogging(logging =>
         {
@@ -99,5 +102,40 @@ public sealed class HotelMarketplaceApiFactory : WebApplicationFactory<Program>,
                 };
             });
         });
+    }
+
+    private void ConfigureTestEnvironment()
+    {
+        Dictionary<string, string> testValues = new(StringComparer.Ordinal)
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Testing",
+            ["ConnectionStrings__DefaultConnection"] = ConnectionString,
+            ["Jwt__Issuer"] = TestIssuer,
+            ["Jwt__Audience"] = TestAudience,
+            ["Jwt__SigningKey"] = TestSigningKey,
+            ["Scheduling__BookingExpiration__Enabled"] = "false",
+            ["PayOs__ClientId"] = "test-client-id",
+            ["PayOs__ApiKey"] = "test-api-key",
+            ["PayOs__ChecksumKey"] = "test-checksum-key",
+            ["PayOs__BaseUrl"] = "https://example.invalid",
+            ["PayOs__ReturnUrl"] = "https://example.invalid/return",
+            ["PayOs__CancelUrl"] = "https://example.invalid/cancel"
+        };
+
+        foreach ((string key, string value) in testValues)
+        {
+            _originalEnvironmentValues[key] = Environment.GetEnvironmentVariable(key, EnvironmentVariableTarget.Process);
+            Environment.SetEnvironmentVariable(key, value, EnvironmentVariableTarget.Process);
+        }
+    }
+
+    private void RestoreEnvironment()
+    {
+        foreach ((string key, string? value) in _originalEnvironmentValues)
+        {
+            Environment.SetEnvironmentVariable(key, value, EnvironmentVariableTarget.Process);
+        }
+
+        _originalEnvironmentValues.Clear();
     }
 }

@@ -296,6 +296,118 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
     }
 
     [Fact]
+    public async Task UnassignedPlatformAdministratorCannotAccessHotelOperations()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse administrator = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.PlatformAdministrator,
+            "unassigned-platform-administrator");
+
+        using HttpRequestMessage request = new(
+            HttpMethod.Get,
+            $"/api/hotels/{hotel.HotelId}/front-desk/physical-rooms");
+        request.Headers.Authorization = Bearer(administrator.AccessToken);
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task HotelScopedRoleMustMatchTheRoleAssignedAtTheRequestedHotel()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel receptionistHotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        SeededHotel managerHotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        string suffix = Guid.NewGuid().ToString("N");
+        string email = $"mixed-role-{suffix}@example.com";
+        const string password = "IntegrationPassword123!";
+
+        using (IServiceScope scope = _factory.Services.CreateScope())
+        {
+            HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+            HotelMarketplace.Application.Authentication.IPasswordHasher passwordHasher =
+                scope.ServiceProvider.GetRequiredService<HotelMarketplace.Application.Authentication.IPasswordHasher>();
+
+            UserAccount user = new(
+                Guid.NewGuid(),
+                email,
+                passwordHasher.HashPassword(password),
+                "Mixed Role User");
+
+            dbContext.UserAccounts.Add(user);
+            dbContext.UserAccountRoles.AddRange(
+                new UserAccountRole(Guid.NewGuid(), user.Id, SeededRoleIds.Receptionist),
+                new UserAccountRole(Guid.NewGuid(), user.Id, SeededRoleIds.HotelManager));
+            dbContext.HotelStaffAssignments.AddRange(
+                new HotelStaffAssignment(
+                    Guid.NewGuid(),
+                    user.Id,
+                    receptionistHotel.HotelId,
+                    SeededRoleIds.Receptionist,
+                    user.Id),
+                new HotelStaffAssignment(
+                    Guid.NewGuid(),
+                    user.Id,
+                    managerHotel.HotelId,
+                    SeededRoleIds.HotelManager,
+                    user.Id));
+            await dbContext.SaveChangesAsync();
+        }
+
+        TestAuthResponse userSession = await LoginAsync(client, email, password);
+
+        using HttpRequestMessage receptionistHotelRequest = new(
+            HttpMethod.Get,
+            $"/api/operations/hotels/{receptionistHotel.HotelId}/staff");
+        receptionistHotelRequest.Headers.Authorization = Bearer(userSession.AccessToken);
+        using HttpResponseMessage receptionistHotelResponse = await client.SendAsync(receptionistHotelRequest);
+
+        using HttpRequestMessage managerHotelRequest = new(
+            HttpMethod.Get,
+            $"/api/operations/hotels/{managerHotel.HotelId}/staff");
+        managerHotelRequest.Headers.Authorization = Bearer(userSession.AccessToken);
+        using HttpResponseMessage managerHotelResponse = await client.SendAsync(managerHotelRequest);
+
+        receptionistHotelResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        managerHotelResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task RevokedHotelAssignmentInvalidatesAccessBeforeJwtExpires()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse receptionist = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Receptionist,
+            "revoked-receptionist",
+            hotel.HotelId);
+
+        using (IServiceScope scope = _factory.Services.CreateScope())
+        {
+            HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+            HotelStaffAssignment assignment = await dbContext.HotelStaffAssignments
+                .IgnoreQueryFilters()
+                .SingleAsync(item => item.UserAccountId == receptionist.UserId && item.HotelId == hotel.HotelId);
+
+            assignment.Revoke();
+            await dbContext.SaveChangesAsync();
+        }
+
+        using HttpRequestMessage request = new(
+            HttpMethod.Get,
+            $"/api/hotels/{hotel.HotelId}/front-desk/physical-rooms");
+        request.Headers.Authorization = Bearer(receptionist.AccessToken);
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task ConcurrentCheckInRequestsAssignPhysicalRoomOnlyOnce()
     {
         using HttpClient client = _factory.CreateClient();

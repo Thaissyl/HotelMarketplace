@@ -65,4 +65,35 @@ internal sealed class HttpContextCurrentUserService : ICurrentUserService
                 .ToArray();
         }
     }
+
+    public IReadOnlyCollection<HotelRoleAccess> HotelRoleAccesses
+    {
+        get
+        {
+            ClaimsPrincipal? user = _httpContextAccessor.HttpContext?.User;
+
+            if (user is null)
+            {
+                return Array.Empty<HotelRoleAccess>();
+            }
+
+            return user.FindAll(SecurityClaimTypes.HotelRoleAccess)
+                .Select(claim => ParseHotelRoleAccess(claim.Value))
+                .Where(access => access is not null)
+                .Select(access => access!)
+                .Distinct()
+                .ToArray();
+        }
+    }
+
+    private static HotelRoleAccess? ParseHotelRoleAccess(string value)
+    {
+        string[] parts = value.Split('|', 2, StringSplitOptions.TrimEntries);
+
+        return parts.Length == 2 &&
+            Guid.TryParse(parts[0], out Guid hotelId) &&
+            Enum.TryParse(parts[1], ignoreCase: false, out UserRoleCode role)
+                ? new HotelRoleAccess(hotelId, role)
+                : null;
+    }
 }

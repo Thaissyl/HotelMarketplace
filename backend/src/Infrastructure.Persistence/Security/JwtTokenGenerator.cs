@@ -34,6 +34,9 @@ internal sealed class JwtTokenGenerator : IJwtTokenGenerator
 
         claims.AddRange(user.Roles.Select(role => new Claim(SecurityClaimTypes.Role, role.ToString())));
         claims.AddRange(user.HotelIds.Select(hotelId => new Claim(SecurityClaimTypes.HotelId, hotelId.ToString())));
+        claims.AddRange(user.HotelRoleAccesses.Select(access => new Claim(
+            SecurityClaimTypes.HotelRoleAccess,
+            $"{access.HotelId:N}|{access.Role}")));
 
         JwtSecurityToken token = new(
             issuer: _jwtOptions.Issuer,

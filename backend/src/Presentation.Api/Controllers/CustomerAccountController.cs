@@ -10,7 +10,7 @@ namespace HotelMarketplace.Presentation.Api.Controllers;
 
 [ApiController]
 [Route("api/customer/account")]
-[Authorize(Roles = nameof(UserRoleCode.Customer) + "," + nameof(UserRoleCode.PlatformAdministrator))]
+[Authorize(Roles = nameof(UserRoleCode.Customer))]
 public sealed class CustomerAccountController : ControllerBase
 {
     private readonly ICustomerAccountService _customerAccountService;

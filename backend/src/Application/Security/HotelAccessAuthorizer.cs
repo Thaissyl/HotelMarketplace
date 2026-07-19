@@ -5,24 +5,43 @@ namespace HotelMarketplace.Application.Security;
 internal sealed class HotelAccessAuthorizer : IHotelAccessAuthorizer
 {
     private readonly ICurrentUserService _currentUserService;
+    private readonly IHotelAccessRepository _hotelAccessRepository;
 
-    public HotelAccessAuthorizer(ICurrentUserService currentUserService)
+    public HotelAccessAuthorizer(
+        ICurrentUserService currentUserService,
+        IHotelAccessRepository hotelAccessRepository)
     {
         _currentUserService = currentUserService;
+        _hotelAccessRepository = hotelAccessRepository;
     }
 
-    public bool HasAccess(Guid hotelId)
+    public Task<bool> HasAccessAsync(
+        Guid hotelId,
+        IReadOnlyCollection<UserRoleCode>? allowedRoles = null,
+        CancellationToken cancellationToken = default)
     {
-        if (!_currentUserService.IsAuthenticated)
+        if (!_currentUserService.IsAuthenticated || _currentUserService.UserId is null)
         {
-            return false;
+            return Task.FromResult(false);
         }
 
-        if (_currentUserService.Roles.Contains(UserRoleCode.PlatformAdministrator))
+        return _hotelAccessRepository.HasActiveAccessAsync(
+            _currentUserService.UserId.Value,
+            hotelId,
+            allowedRoles,
+            cancellationToken);
+    }
+
+    public Task<IReadOnlyCollection<HotelRoleAccess>> GetActiveAccessesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!_currentUserService.IsAuthenticated || _currentUserService.UserId is null)
         {
-            return true;
+            return Task.FromResult<IReadOnlyCollection<HotelRoleAccess>>(Array.Empty<HotelRoleAccess>());
         }
 
-        return _currentUserService.HotelIds.Contains(hotelId);
+        return _hotelAccessRepository.GetActiveAccessesAsync(
+            _currentUserService.UserId.Value,
+            cancellationToken);
     }
 }

@@ -15,8 +15,7 @@ namespace HotelMarketplace.Presentation.Api.Controllers;
     Policy = AuthorizationPolicies.HotelScoped,
     Roles = nameof(UserRoleCode.HousekeepingStaff) + "," +
         nameof(UserRoleCode.HotelManager) + "," +
-        nameof(UserRoleCode.PropertyOwner) + "," +
-        nameof(UserRoleCode.PlatformAdministrator))]
+        nameof(UserRoleCode.PropertyOwner))]
 public sealed class HousekeepingController : ControllerBase
 {
     private readonly IHousekeepingService _housekeepingService;
@@ -70,8 +69,7 @@ public sealed class HousekeepingController : ControllerBase
 
     [HttpPatch("tasks/{taskId:guid}/assignee")]
     [Authorize(Roles = nameof(UserRoleCode.HotelManager) + "," +
-        nameof(UserRoleCode.PropertyOwner) + "," +
-        nameof(UserRoleCode.PlatformAdministrator))]
+        nameof(UserRoleCode.PropertyOwner))]
     [ProducesResponseType(typeof(HousekeepingTaskDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]

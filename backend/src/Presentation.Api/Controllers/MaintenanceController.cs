@@ -26,8 +26,7 @@ public sealed class MaintenanceController : ControllerBase
     [Authorize(Roles = nameof(UserRoleCode.HousekeepingStaff) + "," +
         nameof(UserRoleCode.MaintenanceStaff) + "," +
         nameof(UserRoleCode.HotelManager) + "," +
-        nameof(UserRoleCode.PropertyOwner) + "," +
-        nameof(UserRoleCode.PlatformAdministrator))]
+        nameof(UserRoleCode.PropertyOwner))]
     [ProducesResponseType(typeof(IReadOnlyCollection<PhysicalRoomDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
@@ -45,8 +44,7 @@ public sealed class MaintenanceController : ControllerBase
     [HttpGet("requests")]
     [Authorize(Roles = nameof(UserRoleCode.MaintenanceStaff) + "," +
         nameof(UserRoleCode.HotelManager) + "," +
-        nameof(UserRoleCode.PropertyOwner) + "," +
-        nameof(UserRoleCode.PlatformAdministrator))]
+        nameof(UserRoleCode.PropertyOwner))]
     [ProducesResponseType(typeof(IReadOnlyCollection<MaintenanceRequestDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -69,8 +67,7 @@ public sealed class MaintenanceController : ControllerBase
     [Authorize(Roles = nameof(UserRoleCode.HousekeepingStaff) + "," +
         nameof(UserRoleCode.MaintenanceStaff) + "," +
         nameof(UserRoleCode.HotelManager) + "," +
-        nameof(UserRoleCode.PropertyOwner) + "," +
-        nameof(UserRoleCode.PlatformAdministrator))]
+        nameof(UserRoleCode.PropertyOwner))]
     [ProducesResponseType(typeof(MaintenanceRequestDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -96,8 +93,7 @@ public sealed class MaintenanceController : ControllerBase
     [HttpPatch("requests/{requestId:guid}/status")]
     [Authorize(Roles = nameof(UserRoleCode.MaintenanceStaff) + "," +
         nameof(UserRoleCode.HotelManager) + "," +
-        nameof(UserRoleCode.PropertyOwner) + "," +
-        nameof(UserRoleCode.PlatformAdministrator))]
+        nameof(UserRoleCode.PropertyOwner))]
     [ProducesResponseType(typeof(MaintenanceRequestDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -122,8 +118,7 @@ public sealed class MaintenanceController : ControllerBase
 
     [HttpPatch("requests/{requestId:guid}/assignee")]
     [Authorize(Roles = nameof(UserRoleCode.HotelManager) + "," +
-        nameof(UserRoleCode.PropertyOwner) + "," +
-        nameof(UserRoleCode.PlatformAdministrator))]
+        nameof(UserRoleCode.PropertyOwner))]
     [ProducesResponseType(typeof(MaintenanceRequestDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]

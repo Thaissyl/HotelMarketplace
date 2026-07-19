@@ -6,4 +6,5 @@ public sealed record CurrentUser(
     Guid UserId,
     string Email,
     IReadOnlyCollection<UserRoleCode> Roles,
-    IReadOnlyCollection<Guid> HotelIds);
+    IReadOnlyCollection<Guid> HotelIds,
+    IReadOnlyCollection<HotelRoleAccess> HotelRoleAccesses);
