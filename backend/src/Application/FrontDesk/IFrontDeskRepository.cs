@@ -39,6 +39,18 @@ public interface IFrontDeskRepository
         CreateWalkInBookingRequest request,
         CancellationToken cancellationToken);
 
+    Task<PaymentCollectionPersistenceResult> GetPaymentCollectionSummaryAsync(
+        Guid hotelId,
+        Guid bookingId,
+        CancellationToken cancellationToken);
+
+    Task<PaymentCollectionPersistenceResult> RecordPaymentCollectionAsync(
+        Guid hotelId,
+        Guid bookingId,
+        Guid actorUserAccountId,
+        RecordPaymentCollectionRequest request,
+        CancellationToken cancellationToken);
+
     Task<FrontDeskPersistenceResult> MarkBookingNoShowAsync(
         Guid hotelId,
         Guid bookingId,

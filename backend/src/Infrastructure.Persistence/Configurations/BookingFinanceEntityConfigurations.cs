@@ -88,6 +88,8 @@ internal sealed class PaymentTransactionConfiguration : IEntityTypeConfiguration
         builder.Property(entity => entity.Amount).HasPrecision(18, 2);
         builder.Property(entity => entity.Status).HasEnumConversion();
         builder.Property(entity => entity.ReconciliationStatus).HasEnumConversion();
+        builder.Property(entity => entity.ReconciliationNote).HasMaxLength(1000);
+        builder.Property(entity => entity.ReconciledAtUtc).HasPrecision(3);
         builder.Property(entity => entity.CreatedAtUtc).HasPrecision(3);
         builder.Property(entity => entity.PaidAtUtc).HasPrecision(3);
         builder.HasIndex(entity => entity.GatewayReference).IsUnique().HasFilter("[GatewayReference] IS NOT NULL");
@@ -105,8 +107,16 @@ internal sealed class PaymentCollectionRecordConfiguration : IEntityTypeConfigur
     {
         builder.ConfigureEntity("PaymentCollectionRecords");
         builder.Property(entity => entity.Amount).HasPrecision(18, 2);
+        builder.Property(entity => entity.BalanceBefore).HasPrecision(18, 2);
+        builder.Property(entity => entity.BalanceAfter).HasPrecision(18, 2);
+        builder.Property(entity => entity.Method).HasEnumConversion();
+        builder.Property(entity => entity.Reference).HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.Note).HasMaxLength(500);
         builder.Property(entity => entity.Status).HasEnumConversion();
         builder.Property(entity => entity.CollectedAtUtc).HasPrecision(3);
+        builder.Property(entity => entity.VoidedAtUtc).HasPrecision(3);
+        builder.Property(entity => entity.CorrectionNote).HasMaxLength(500);
+        builder.HasIndex(entity => entity.Reference).IsUnique();
         builder.HasIndex(entity => new { entity.BookingId, entity.Status });
         builder.HasOne<HotelProperty>().WithMany().HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Booking>().WithMany().HasForeignKey(entity => entity.BookingId).OnDelete(DeleteBehavior.Restrict);
@@ -145,8 +155,11 @@ internal sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
         builder.Property(entity => entity.InvoiceNumber).HasMaxLength(32).IsRequired();
         builder.Property(entity => entity.RoomAmount).HasPrecision(18, 2);
         builder.Property(entity => entity.PaidAmount).HasPrecision(18, 2);
+        builder.Property(entity => entity.RefundAmount).HasPrecision(18, 2);
+        builder.Property(entity => entity.BalanceAmount).HasPrecision(18, 2);
         builder.Property(entity => entity.Status).HasEnumConversion();
         builder.Property(entity => entity.IssuedAtUtc).HasPrecision(3);
+        builder.Property(entity => entity.FinalizedAtUtc).HasPrecision(3);
         builder.HasIndex(entity => entity.InvoiceNumber).IsUnique();
         builder.HasIndex(entity => entity.BookingId).IsUnique();
         builder.HasOne<HotelProperty>().WithMany().HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Restrict);
@@ -155,6 +168,8 @@ internal sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
         {
             table.HasCheckConstraint("CK_Invoices_RoomAmount", "[RoomAmount] >= 0");
             table.HasCheckConstraint("CK_Invoices_PaidAmount", "[PaidAmount] >= 0");
+            table.HasCheckConstraint("CK_Invoices_RefundAmount", "[RefundAmount] >= 0");
+            table.HasCheckConstraint("CK_Invoices_BalanceAmount", "[BalanceAmount] >= 0");
         });
     }
 }
@@ -167,6 +182,7 @@ internal sealed class CommissionRecordConfiguration : IEntityTypeConfiguration<C
         builder.Property(entity => entity.BaseAmount).HasPrecision(18, 2);
         builder.Property(entity => entity.CommissionRate).HasPrecision(5, 4);
         builder.Property(entity => entity.CommissionAmount).HasPrecision(18, 2);
+        builder.Property(entity => entity.Status).HasEnumConversion();
         builder.Property(entity => entity.CreatedAtUtc).HasPrecision(3);
         builder.HasIndex(entity => entity.BookingId).IsUnique();
         builder.HasIndex(entity => entity.HotelId);
@@ -186,14 +202,22 @@ internal sealed class SettlementRecordConfiguration : IEntityTypeConfiguration<S
     public void Configure(EntityTypeBuilder<SettlementRecord> builder)
     {
         builder.ConfigureEntity("SettlementRecords");
-        builder.Property(entity => entity.SettlementType).HasMaxLength(64).IsRequired();
-        builder.Property(entity => entity.TotalAmount).HasPrecision(18, 2);
+        builder.Property(entity => entity.SettlementType).HasEnumConversion();
+        builder.Property(entity => entity.ExpectedAmount).HasPrecision(18, 2);
+        builder.Property(entity => entity.SettledAmount).HasPrecision(18, 2);
         builder.Property(entity => entity.Status).HasEnumConversion();
         builder.Property(entity => entity.AdminNote).HasMaxLength(1000);
         builder.Property(entity => entity.CreatedAtUtc).HasPrecision(3);
+        builder.Property(entity => entity.SettlementDateUtc).HasPrecision(3);
+        builder.Property(entity => entity.Reference).HasMaxLength(128).IsRequired();
+        builder.HasIndex(entity => entity.Reference).IsUnique().HasFilter("[Reference] <> ''");
         builder.HasIndex(entity => new { entity.HotelId, entity.Status });
         builder.HasOne<HotelProperty>().WithMany().HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Restrict);
-        builder.ToTable(table => table.HasCheckConstraint("CK_SettlementRecords_TotalAmount", "[TotalAmount] >= 0"));
+        builder.ToTable(table =>
+        {
+            table.HasCheckConstraint("CK_SettlementRecords_ExpectedAmount", "[ExpectedAmount] >= 0");
+            table.HasCheckConstraint("CK_SettlementRecords_SettledAmount", "[SettledAmount] IS NULL OR [SettledAmount] >= 0");
+        });
     }
 }
 
@@ -203,6 +227,11 @@ internal sealed class SettlementItemConfiguration : IEntityTypeConfiguration<Set
     {
         builder.ConfigureEntity("SettlementItems");
         builder.Property(entity => entity.Amount).HasPrecision(18, 2);
+        builder.Property(entity => entity.PaymentMode).HasEnumConversion();
+        builder.Property(entity => entity.BookingStatus).HasEnumConversion();
+        builder.Property(entity => entity.GrossAmount).HasPrecision(18, 2);
+        builder.Property(entity => entity.RefundAmount).HasPrecision(18, 2);
+        builder.Property(entity => entity.CommissionAmount).HasPrecision(18, 2);
         builder.Property(entity => entity.Status).HasEnumConversion();
         builder.HasIndex(entity => entity.SettlementRecordId);
         builder.HasOne<HotelProperty>().WithMany().HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Restrict);
@@ -210,6 +239,7 @@ internal sealed class SettlementItemConfiguration : IEntityTypeConfiguration<Set
         builder.HasOne<Booking>().WithMany().HasForeignKey(entity => entity.BookingId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<CommissionRecord>().WithMany().HasForeignKey(entity => entity.CommissionRecordId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<PaymentTransaction>().WithMany().HasForeignKey(entity => entity.PaymentTransactionId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<PaymentCollectionRecord>().WithMany().HasForeignKey(entity => entity.PaymentCollectionRecordId).OnDelete(DeleteBehavior.Restrict);
         builder.ToTable(table => table.HasCheckConstraint("CK_SettlementItems_Amount", "[Amount] >= 0"));
     }
 }

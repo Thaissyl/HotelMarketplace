@@ -1,6 +1,7 @@
 using FluentValidation;
 using HotelMarketplace.Application.Common.Validation;
 using HotelMarketplace.Application.FrontDesk.Requests;
+using HotelMarketplace.Domain.Enums;
 using HotelMarketplace.SharedKernel.Time;
 
 namespace HotelMarketplace.Application.FrontDesk.Validation;
@@ -24,6 +25,12 @@ internal sealed class CheckOutBookingRequestValidator : AbstractValidator<CheckO
     public CheckOutBookingRequestValidator()
     {
         RuleFor(request => request.CashCollectedAmount).GreaterThanOrEqualTo(0);
+        RuleFor(request => request.CollectionMethod).IsInEnum();
+        RuleFor(request => request.CollectionReference)
+            .NotEmpty()
+            .When(request => request.CashCollectedAmount > 0);
+        RuleFor(request => request.CollectionReference).SafeOptionalText(128, "Collection reference");
+        RuleFor(request => request.CollectionNote).SafeOptionalText(500, "Collection note");
     }
 }
 
@@ -63,6 +70,20 @@ internal sealed class CreateWalkInBookingRequestValidator : AbstractValidator<Cr
         RuleFor(request => request.GuestPhone).TenDigitPhone("Guest phone");
         RuleFor(request => request.IdentityDocumentNumber).SafeOptionalText(64, "Identity document number");
         RuleFor(request => request.CashCollectedAmount).GreaterThanOrEqualTo(0);
+    }
+}
+
+internal sealed class RecordPaymentCollectionRequestValidator : AbstractValidator<RecordPaymentCollectionRequest>
+{
+    public RecordPaymentCollectionRequestValidator()
+    {
+        RuleFor(request => request.Amount).GreaterThan(0);
+        RuleFor(request => request.Method).IsInEnum();
+        RuleFor(request => request.CollectedAtUtc)
+            .Must(value => value.Kind != DateTimeKind.Local)
+            .WithMessage("Collection time must be expressed in UTC.");
+        RuleFor(request => request.Reference).SafeRequiredText(128, "Collection reference");
+        RuleFor(request => request.Note).SafeOptionalText(500, "Collection note");
     }
 }
 

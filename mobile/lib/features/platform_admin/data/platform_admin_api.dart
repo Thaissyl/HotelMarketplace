@@ -114,15 +114,70 @@ class PlatformAdminApi {
     );
   }
 
+  Future<AdminSettlement> createSettlement({
+    required String hotelId,
+    required String paymentMode,
+    required DateTime fromDate,
+    required DateTime toDate,
+    String? adminNote,
+  }) {
+    String apiDate(DateTime value) =>
+        '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+    return _apiClient.post<AdminSettlement>(
+      '/api/platform-admin/settlements',
+      data: {
+        'hotelId': hotelId,
+        'paymentMode': paymentMode,
+        'fromDate': apiDate(fromDate),
+        'toDate': apiDate(toDate),
+        'adminNote': adminNote?.trim(),
+      },
+      decoder: AdminSettlement.fromJson,
+    );
+  }
+
+  Future<List<AdminPaymentTransaction>> getPaymentTransactions({
+    String? reconciliationStatus,
+  }) {
+    return _apiClient.get<List<AdminPaymentTransaction>>(
+      '/api/platform-admin/payments',
+      queryParameters: {
+        if (reconciliationStatus != null)
+          'reconciliationStatus': reconciliationStatus,
+      },
+      decoder: (data) => data is List
+          ? data.map(AdminPaymentTransaction.fromJson).toList(growable: false)
+          : const <AdminPaymentTransaction>[],
+    );
+  }
+
+  Future<AdminPaymentTransaction> updatePaymentReconciliation({
+    required String paymentTransactionId,
+    required String status,
+    String? note,
+  }) {
+    return _apiClient.patch<AdminPaymentTransaction>(
+      '/api/platform-admin/payments/$paymentTransactionId/reconciliation',
+      data: {'status': status, 'note': note?.trim()},
+      decoder: AdminPaymentTransaction.fromJson,
+    );
+  }
+
   Future<AdminSettlement> updateSettlementStatus({
     required String settlementId,
     required String status,
+    double? settledAmount,
+    DateTime? settlementDateUtc,
+    String? reference,
     String? adminNote,
   }) {
     return _apiClient.patch<AdminSettlement>(
       '/api/platform-admin/settlements/$settlementId/status',
       data: {
         'status': status,
+        'settledAmount': settledAmount,
+        'settlementDateUtc': settlementDateUtc?.toUtc().toIso8601String(),
+        'reference': reference?.trim(),
         'adminNote': adminNote?.trim(),
       },
       decoder: AdminSettlement.fromJson,

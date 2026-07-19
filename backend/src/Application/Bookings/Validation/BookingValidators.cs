@@ -1,6 +1,7 @@
 using FluentValidation;
 using HotelMarketplace.Application.Common.Validation;
 using HotelMarketplace.Application.Bookings.Requests;
+using HotelMarketplace.Domain.Enums;
 using HotelMarketplace.SharedKernel.Time;
 
 namespace HotelMarketplace.Application.Bookings.Validation;
@@ -28,5 +29,8 @@ internal sealed class CreateBookingRequestValidator : AbstractValidator<CreateBo
         RuleFor(request => request.GuestCount).InclusiveBetween(1, 30);
         RuleFor(request => request.GuestFullName).SafeRequiredText(200, "Guest full name");
         RuleFor(request => request.GuestPhone).TenDigitPhone("Guest phone");
+        RuleFor(request => request.PaymentMode)
+            .Must(mode => mode is PaymentMode.PlatformCollect or PaymentMode.PayAtProperty)
+            .WithMessage("Payment mode must be PlatformCollect or PayAtProperty.");
     }
 }

@@ -14,6 +14,7 @@ public sealed record BookingDto(
     int Nights,
     decimal UnitPricePerNight,
     decimal TotalAmount,
+    PaymentMode PaymentMode,
     BookingStatus Status,
     DateTime CreatedAtUtc,
     DateTime? PaymentExpiresAtUtc,

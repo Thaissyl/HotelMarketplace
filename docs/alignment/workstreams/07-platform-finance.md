@@ -1,6 +1,6 @@
 # WS-07 Platform Administration and Finance
 
-Status: Approval is aligned; finance lifecycle is partial and sometimes unsafe
+Status: Core dual-collection, reconciliation, and settlement integrity aligned by ALN-007; commission administration UI remains partial
 
 ## Aligned Evidence
 
@@ -8,17 +8,19 @@ Status: Approval is aligned; finance lifecycle is partial and sometimes unsafe
 - Hotel approve/reject and commission-rate update are transactional and audited.
 - Finance reads use no-tracking projections.
 - Settlement and refund entities and admin list/status endpoints exist.
+- Customer Pay at Property and Platform Collect demo use distinct collection and
+  commission lifecycles.
+- Settlement creation and finalization enforce collection-type eligibility,
+  refund outcomes, reconciliation evidence, exact amounts, and immutable items.
+- Mobile Admin exposes reconciliation and settlement creation/finalization.
 
 ## Verified Gaps
 
 | Requirement | Finding | Gap |
 | --- | --- | --- |
-| UC-019 | Mobile has no commission management client or screen behavior | GAP-026 |
-| UC-020 | Reconciliation exception request cannot store the required note | GAP-010, GAP-026 |
-| UC-021 | No cancellation path creates RefundRecord; tests seed it directly | GAP-006, GAP-011 |
-| UC-022 | Platform Collect eligibility permits Unreconciled and ignores refund outcome/amount | GAP-010 |
-| UC-030 | Pay-at-Property commission lifecycle lacks Receivable/Collected/Exception state | GAP-009, GAP-012 |
-| ENT-019 to ENT-022 | Invoice, commission, settlement header/item evidence is incomplete | GAP-013, GAP-024 |
+| UC-019 | Mobile still lacks dedicated commission-rate management | GAP-026 |
+| UC-030 | Mobile does not yet expose independent partial collection before checkout | Residual ALN-007 UX |
+| ENT-019 to ENT-022 | Service-charge folio detail is not modeled beyond booking amount/refund/balance | GAP-013, GAP-024 |
 
 ## Required Design
 

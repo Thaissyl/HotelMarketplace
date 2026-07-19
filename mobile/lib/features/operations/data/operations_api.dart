@@ -219,6 +219,9 @@ class OperationsApi {
     required String bookingId,
     required bool confirmPayAtPropertyCollection,
     required double cashCollectedAmount,
+    required String collectionMethod,
+    required String collectionReference,
+    required String collectionNote,
   }) {
     return _apiClient.post<FrontDeskBookingResult>(
       '/api/hotels/$hotelId/front-desk/bookings/$bookingId/check-out',
@@ -226,6 +229,12 @@ class OperationsApi {
       data: {
         'confirmPayAtPropertyCollection': confirmPayAtPropertyCollection,
         'cashCollectedAmount': cashCollectedAmount,
+        'collectionMethod': collectionMethod,
+        'collectionReference': collectionReference.trim().isEmpty
+            ? null
+            : collectionReference.trim(),
+        'collectionNote':
+            collectionNote.trim().isEmpty ? null : collectionNote.trim(),
       },
       decoder: FrontDeskBookingResult.fromJson,
     );

@@ -54,7 +54,8 @@ internal sealed class BookingService : IBookingService
             request.RoomCount,
             request.GuestCount,
             request.GuestFullName,
-            request.GuestPhone);
+            request.GuestPhone,
+            request.PaymentMode);
 
         CreateBookingRepositoryResult reservationResult = await _bookingRepository.CreatePendingBookingAsync(repositoryRequest, cancellationToken);
 

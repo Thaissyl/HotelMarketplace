@@ -357,20 +357,64 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
             decimal alreadyCollected = await _dbContext.PaymentCollectionRecords
                 .IgnoreQueryFilters()
                 .AsNoTracking()
-                .Where(payment => payment.BookingId == booking.Id && payment.Status == PaymentStatus.Paid)
+                .Where(payment => payment.BookingId == booking.Id &&
+                    (payment.Status == PaymentCollectionStatus.Partial ||
+                        payment.Status == PaymentCollectionStatus.Completed))
                 .SumAsync(payment => (decimal?)payment.Amount, cancellationToken) ?? 0;
 
+            decimal outstandingBalance = booking.TotalAmount - alreadyCollected;
+            if (outstandingBalance < 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.IncorrectCashAmount);
+            }
+
             if (booking.PaymentMode == PaymentMode.PayAtProperty &&
-                (!request.ConfirmPayAtPropertyCollection || alreadyCollected + request.CashCollectedAmount < booking.TotalAmount))
+                (!request.ConfirmPayAtPropertyCollection || request.CashCollectedAmount != outstandingBalance))
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.PaymentCollectionRequired);
             }
 
+            if (booking.PaymentMode == PaymentMode.PlatformCollect)
+            {
+                bool platformPaymentConfirmed = await _dbContext.PaymentTransactions
+                    .IgnoreQueryFilters()
+                    .AsNoTracking()
+                    .AnyAsync(payment => payment.BookingId == booking.Id && payment.Status == PaymentStatus.Paid, cancellationToken);
+                if (!platformPaymentConfirmed || request.CashCollectedAmount != 0)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.IncorrectCashAmount);
+                }
+            }
+
             if (request.CashCollectedAmount > 0)
             {
+                string collectionReference = request.CollectionReference!.Trim();
+#pragma warning disable CA1862
+                bool duplicateReference = await _dbContext.PaymentCollectionRecords
+                    .IgnoreQueryFilters()
+                    .AnyAsync(collection => collection.Reference == collectionReference.ToUpperInvariant(), cancellationToken);
+#pragma warning restore CA1862
+                if (duplicateReference)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.IncorrectCashAmount);
+                }
+
                 await _dbContext.PaymentCollectionRecords.AddAsync(
-                    new PaymentCollectionRecord(Guid.NewGuid(), hotelId, booking.Id, actorUserAccountId, request.CashCollectedAmount),
+                    new PaymentCollectionRecord(
+                        Guid.NewGuid(),
+                        hotelId,
+                        booking.Id,
+                        actorUserAccountId,
+                        request.CashCollectedAmount,
+                        outstandingBalance,
+                        request.CollectionMethod,
+                        collectionReference,
+                        _dateTimeProvider.UtcNow,
+                        request.CollectionNote),
                     cancellationToken);
             }
 
@@ -439,9 +483,21 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
                 booking.Id,
                 GenerateInvoiceNumber(_dateTimeProvider.UtcNow),
                 booking.TotalAmount,
-                alreadyCollected + request.CashCollectedAmount);
+                booking.TotalAmount,
+                0,
+                _dateTimeProvider.UtcNow);
 
             await _dbContext.Invoices.AddAsync(invoice, cancellationToken);
+            await _dbContext.AuditRecords.AddAsync(
+                new AuditRecord(
+                    Guid.NewGuid(),
+                    actorUserAccountId,
+                    "CheckOutBooking",
+                    nameof(Booking),
+                    booking.Id,
+                    $"Booking {booking.BookingCode} checked out with a finalized zero-balance invoice.",
+                    booking.HotelId),
+                cancellationToken);
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
@@ -619,14 +675,164 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
             if (request.CashCollectedAmount > 0)
             {
                 await _dbContext.PaymentCollectionRecords.AddAsync(
-                    new PaymentCollectionRecord(Guid.NewGuid(), hotelId, booking.Id, actorUserAccountId, request.CashCollectedAmount),
+                    new PaymentCollectionRecord(
+                        Guid.NewGuid(),
+                        hotelId,
+                        booking.Id,
+                        actorUserAccountId,
+                        request.CashCollectedAmount,
+                        totalAmount,
+                        PaymentCollectionMethod.Cash,
+                        $"WALKIN-{booking.Id:N}",
+                        utcNow,
+                        "Cash collected during walk-in booking creation."),
                     cancellationToken);
             }
+
+            decimal commissionRate = await _dbContext.HotelProperties
+                .IgnoreQueryFilters()
+                .Where(hotel => hotel.Id == hotelId)
+                .Select(hotel => hotel.DefaultCommissionRate)
+                .SingleAsync(cancellationToken);
+            await _dbContext.CommissionRecords.AddAsync(
+                new CommissionRecord(
+                    Guid.NewGuid(),
+                    hotelId,
+                    booking.Id,
+                    booking.TotalAmount,
+                    commissionRate,
+                    CommissionStatus.Receivable),
+                cancellationToken);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
             return FrontDeskPersistenceResult.Success(await ToFrontDeskBookingDtoAsync(booking.Id, stayRecord?.Id, null, cancellationToken));
+        });
+    }
+
+    public async Task<PaymentCollectionPersistenceResult> GetPaymentCollectionSummaryAsync(
+        Guid hotelId,
+        Guid bookingId,
+        CancellationToken cancellationToken)
+    {
+        PaymentCollectionSummaryDto? summary = await BuildPaymentCollectionSummaryAsync(
+            hotelId,
+            bookingId,
+            cancellationToken);
+        if (summary is null)
+        {
+            return PaymentCollectionPersistenceResult.Failure(PaymentCollectionPersistenceStatus.BookingNotFound);
+        }
+
+        return summary.PaymentMode == PaymentMode.PayAtProperty
+            ? PaymentCollectionPersistenceResult.Success(summary)
+            : PaymentCollectionPersistenceResult.Failure(PaymentCollectionPersistenceStatus.WrongPaymentMode);
+    }
+
+    public async Task<PaymentCollectionPersistenceResult> RecordPaymentCollectionAsync(
+        Guid hotelId,
+        Guid bookingId,
+        Guid actorUserAccountId,
+        RecordPaymentCollectionRequest request,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            if (!await SqlApplicationLock.AcquireBookingLockAsync(_dbContext, bookingId, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PaymentCollectionPersistenceResult.Failure(PaymentCollectionPersistenceStatus.LockUnavailable);
+            }
+
+            Booking? booking = await _dbContext.Bookings
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(entity => entity.Id == bookingId && entity.HotelId == hotelId, cancellationToken);
+            if (booking is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PaymentCollectionPersistenceResult.Failure(PaymentCollectionPersistenceStatus.BookingNotFound);
+            }
+
+            if (booking.PaymentMode != PaymentMode.PayAtProperty)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PaymentCollectionPersistenceResult.Failure(PaymentCollectionPersistenceStatus.WrongPaymentMode);
+            }
+
+            string normalizedReference = request.Reference.Trim().ToUpperInvariant();
+            PaymentCollectionRecord? existingReference = await _dbContext.PaymentCollectionRecords
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(collection => collection.Reference == normalizedReference, cancellationToken);
+            if (existingReference is not null)
+            {
+                if (existingReference.BookingId != booking.Id ||
+                    existingReference.Amount != request.Amount ||
+                    existingReference.Method != request.Method)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return PaymentCollectionPersistenceResult.Failure(
+                        PaymentCollectionPersistenceStatus.DuplicateCollectionReference);
+                }
+
+                await transaction.CommitAsync(cancellationToken);
+                return PaymentCollectionPersistenceResult.Success((await BuildPaymentCollectionSummaryAsync(
+                    hotelId,
+                    bookingId,
+                    cancellationToken))!);
+            }
+
+            decimal collectedAmount = await _dbContext.PaymentCollectionRecords
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(collection => collection.BookingId == booking.Id &&
+                    (collection.Status == PaymentCollectionStatus.Partial ||
+                        collection.Status == PaymentCollectionStatus.Completed))
+                .SumAsync(collection => (decimal?)collection.Amount, cancellationToken) ?? 0m;
+            decimal remainingBalance = booking.TotalAmount - collectedAmount;
+            if (request.Amount <= 0 || request.Amount > remainingBalance ||
+                booking.Status is not BookingStatus.Confirmed and not BookingStatus.CheckedIn)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return PaymentCollectionPersistenceResult.Failure(PaymentCollectionPersistenceStatus.InvalidCollectionAmount);
+            }
+
+            PaymentCollectionRecord collection = new(
+                Guid.NewGuid(),
+                hotelId,
+                booking.Id,
+                actorUserAccountId,
+                request.Amount,
+                remainingBalance,
+                request.Method,
+                normalizedReference,
+                request.CollectedAtUtc,
+                request.Note);
+            await _dbContext.PaymentCollectionRecords.AddAsync(collection, cancellationToken);
+            await _dbContext.AuditRecords.AddAsync(
+                new AuditRecord(
+                    Guid.NewGuid(),
+                    actorUserAccountId,
+                    "RecordPaymentCollection",
+                    nameof(PaymentCollectionRecord),
+                    collection.Id,
+                    $"Recorded {collection.Amount:0.00} against booking {booking.BookingCode}; remaining balance {collection.BalanceAfter:0.00}.",
+                    hotelId),
+                cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return PaymentCollectionPersistenceResult.Success((await BuildPaymentCollectionSummaryAsync(
+                hotelId,
+                bookingId,
+                cancellationToken))!);
         });
     }
 
@@ -838,6 +1044,67 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
     {
         string suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..10].ToUpperInvariant();
         return $"WI{utcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture)}{suffix}";
+    }
+
+    private async Task<PaymentCollectionSummaryDto?> BuildPaymentCollectionSummaryAsync(
+        Guid hotelId,
+        Guid bookingId,
+        CancellationToken cancellationToken)
+    {
+        var booking = await _dbContext.Bookings
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(entity => entity.Id == bookingId && entity.HotelId == hotelId)
+            .Select(entity => new
+            {
+                entity.Id,
+                entity.BookingCode,
+                entity.PaymentMode,
+                entity.TotalAmount
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (booking is null)
+        {
+            return null;
+        }
+
+        List<PaymentCollectionDto> collections = await _dbContext.PaymentCollectionRecords
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(collection => collection.BookingId == booking.Id)
+            .OrderBy(collection => collection.CollectedAtUtc)
+            .Select(collection => new PaymentCollectionDto(
+                collection.Id,
+                collection.Amount,
+                collection.BalanceBefore,
+                collection.BalanceAfter,
+                collection.Method,
+                collection.Reference,
+                collection.Note,
+                collection.Status,
+                collection.CollectedAtUtc,
+                collection.VoidedAtUtc,
+                collection.CorrectionNote))
+            .ToListAsync(cancellationToken);
+        decimal collectedAmount = collections
+            .Where(collection => collection.Status is PaymentCollectionStatus.Partial or PaymentCollectionStatus.Completed)
+            .Sum(collection => collection.Amount);
+        decimal remainingBalance = booking.TotalAmount - collectedAmount;
+        PaymentCollectionStatus status = remainingBalance == 0
+            ? PaymentCollectionStatus.Completed
+            : collectedAmount > 0
+                ? PaymentCollectionStatus.Partial
+                : PaymentCollectionStatus.Pending;
+
+        return new PaymentCollectionSummaryDto(
+            booking.Id,
+            booking.BookingCode,
+            booking.PaymentMode,
+            booking.TotalAmount,
+            collectedAmount,
+            remainingBalance,
+            status,
+            collections);
     }
 
     private static string GenerateInvoiceNumber(DateTime utcNow)

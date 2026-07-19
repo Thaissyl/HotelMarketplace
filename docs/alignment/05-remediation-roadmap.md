@@ -93,6 +93,9 @@ limited Receptionist permissions, and mobile calendar behavior.
 
 ### ALN-007 Dual Collection and Finance Invariants
 
+Status: Implemented and verified on `fix/aln-007-dual-collection-finance`.
+See [15-aln-007-dual-collection-finance.md](15-aln-007-dual-collection-finance.md).
+
 Add Customer Pay at Property, collection-specific lifecycle, commission
 receivable/deducted states, type-specific settlement eligibility, refund-aware
 amounts, reconciliation exception notes, immutable settlement evidence, and

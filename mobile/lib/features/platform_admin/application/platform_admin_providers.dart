@@ -60,6 +60,13 @@ final settlementsProvider =
   return ref.watch(platformAdminApiProvider).getSettlements();
 });
 
+final unreconciledPaymentsProvider =
+    FutureProvider.autoDispose<List<AdminPaymentTransaction>>((ref) {
+  return ref
+      .watch(platformAdminApiProvider)
+      .getPaymentTransactions(reconciliationStatus: 'Unreconciled');
+});
+
 final pendingRefundsProvider =
     FutureProvider.autoDispose<List<AdminRefund>>((ref) {
   return ref

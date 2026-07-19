@@ -46,6 +46,10 @@ public sealed class PaymentTransaction : Entity, IHotelScopedEntity
 
     public DateTime? PaidAtUtc { get; private set; }
 
+    public string? ReconciliationNote { get; private set; }
+
+    public DateTime? ReconciledAtUtc { get; private set; }
+
     public void ReserveGatewayReference(string gatewayReference)
     {
         if (Status != PaymentStatus.Pending)
@@ -85,18 +89,57 @@ public sealed class PaymentTransaction : Entity, IHotelScopedEntity
         Status = PaymentStatus.Failed;
     }
 
-    public void MarkReconciled()
+    public void MarkReconciled(DateTime reconciledAtUtc, string? note)
     {
         if (Status != PaymentStatus.Paid)
         {
             throw new DomainException("PaymentTransaction.InvalidStatusForReconciliation", "Only paid transactions can be reconciled.");
         }
 
+        if (ReconciliationStatus == ReconciliationStatus.Reconciled)
+        {
+            return;
+        }
+
+        if (ReconciliationStatus != ReconciliationStatus.Unreconciled)
+        {
+            throw new DomainException("PaymentTransaction.ReconciliationFinalized", "A finalized reconciliation result cannot be changed.");
+        }
+
         ReconciliationStatus = ReconciliationStatus.Reconciled;
+        ReconciliationNote = Guard.Optional(note, nameof(ReconciliationNote), 1000);
+        ReconciledAtUtc = EnsureUtc(reconciledAtUtc);
     }
 
-    public void MarkReconciliationException()
+    public void MarkReconciliationException(string note, DateTime reconciledAtUtc)
     {
+        if (Status != PaymentStatus.Paid)
+        {
+            throw new DomainException("PaymentTransaction.InvalidStatusForReconciliation", "Only paid transactions can be reviewed for reconciliation.");
+        }
+
+        if (ReconciliationStatus == ReconciliationStatus.Exception)
+        {
+            return;
+        }
+
+        if (ReconciliationStatus != ReconciliationStatus.Unreconciled)
+        {
+            throw new DomainException("PaymentTransaction.ReconciliationFinalized", "A finalized reconciliation result cannot be changed.");
+        }
+
         ReconciliationStatus = ReconciliationStatus.Exception;
+        ReconciliationNote = Guard.NotBlank(note, nameof(ReconciliationNote), 1000);
+        ReconciledAtUtc = EnsureUtc(reconciledAtUtc);
+    }
+
+    private static DateTime EnsureUtc(DateTime value)
+    {
+        if (value.Kind == DateTimeKind.Local)
+        {
+            throw new DomainException("PaymentTransaction.InvalidUtcTimestamp", "Reconciliation time must be expressed in UTC.");
+        }
+
+        return DateTime.SpecifyKind(value, DateTimeKind.Utc);
     }
 }

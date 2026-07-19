@@ -27,6 +27,7 @@ internal sealed class FrontDeskService : IFrontDeskService
     private readonly IValidator<CheckOutBookingRequest> _checkOutValidator;
     private readonly IValidator<CreateWalkInBookingRequest> _walkInValidator;
     private readonly IValidator<MarkBookingNoShowRequest> _noShowValidator;
+    private readonly IValidator<RecordPaymentCollectionRequest> _paymentCollectionValidator;
 
     public FrontDeskService(
         ICurrentUserService currentUserService,
@@ -35,7 +36,8 @@ internal sealed class FrontDeskService : IFrontDeskService
         IValidator<CheckInBookingRequest> checkInValidator,
         IValidator<CheckOutBookingRequest> checkOutValidator,
         IValidator<CreateWalkInBookingRequest> walkInValidator,
-        IValidator<MarkBookingNoShowRequest> noShowValidator)
+        IValidator<MarkBookingNoShowRequest> noShowValidator,
+        IValidator<RecordPaymentCollectionRequest> paymentCollectionValidator)
     {
         _currentUserService = currentUserService;
         _hotelAccessAuthorizer = hotelAccessAuthorizer;
@@ -44,6 +46,7 @@ internal sealed class FrontDeskService : IFrontDeskService
         _checkOutValidator = checkOutValidator;
         _walkInValidator = walkInValidator;
         _noShowValidator = noShowValidator;
+        _paymentCollectionValidator = paymentCollectionValidator;
     }
 
     public async Task<Result<IReadOnlyCollection<PhysicalRoomDto>>> GetPhysicalRoomsAsync(
@@ -178,6 +181,50 @@ internal sealed class FrontDeskService : IFrontDeskService
         return ToResult(result);
     }
 
+    public async Task<Result<PaymentCollectionSummaryDto>> GetPaymentCollectionSummaryAsync(
+        Guid hotelId,
+        Guid bookingId,
+        CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, cancellationToken);
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<PaymentCollectionSummaryDto>(authorizationFailure.Error);
+        }
+
+        return ToPaymentCollectionResult(await _frontDeskRepository.GetPaymentCollectionSummaryAsync(
+            hotelId,
+            bookingId,
+            cancellationToken));
+    }
+
+    public async Task<Result<PaymentCollectionSummaryDto>> RecordPaymentCollectionAsync(
+        Guid hotelId,
+        Guid bookingId,
+        RecordPaymentCollectionRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, cancellationToken);
+        if (authorizationFailure is not null)
+        {
+            return Result.Failure<PaymentCollectionSummaryDto>(authorizationFailure.Error);
+        }
+
+        ValidationResult validationResult = await _paymentCollectionValidator.ValidateAsync(request, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return Result.Failure<PaymentCollectionSummaryDto>(
+                ValidationErrorFormatter.ToResultError("FrontDesk.InvalidPaymentCollectionRequest", validationResult));
+        }
+
+        return ToPaymentCollectionResult(await _frontDeskRepository.RecordPaymentCollectionAsync(
+            hotelId,
+            bookingId,
+            _currentUserService.UserId!.Value,
+            request,
+            cancellationToken));
+    }
+
     public async Task<Result<FrontDeskBookingDto>> MarkBookingNoShowAsync(
         Guid hotelId,
         Guid bookingId,
@@ -238,6 +285,21 @@ internal sealed class FrontDeskService : IFrontDeskService
             FrontDeskPersistenceStatus.InvalidBookingStatusForNoShow => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.InvalidBookingStatusForNoShow),
             FrontDeskPersistenceStatus.NoShowWindowNotReached => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.NoShowWindowNotReached),
             _ => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.InvalidRoomAssignment)
+        };
+    }
+
+    private static Result<PaymentCollectionSummaryDto> ToPaymentCollectionResult(
+        PaymentCollectionPersistenceResult result)
+    {
+        return result.Status switch
+        {
+            PaymentCollectionPersistenceStatus.Success => Result.Success(result.Summary!),
+            PaymentCollectionPersistenceStatus.BookingNotFound => Result.Failure<PaymentCollectionSummaryDto>(FrontDeskErrors.BookingNotFound),
+            PaymentCollectionPersistenceStatus.WrongPaymentMode => Result.Failure<PaymentCollectionSummaryDto>(FrontDeskErrors.WrongPaymentMode),
+            PaymentCollectionPersistenceStatus.InvalidCollectionAmount => Result.Failure<PaymentCollectionSummaryDto>(FrontDeskErrors.InvalidCollectionAmount),
+            PaymentCollectionPersistenceStatus.DuplicateCollectionReference => Result.Failure<PaymentCollectionSummaryDto>(FrontDeskErrors.DuplicateCollectionReference),
+            PaymentCollectionPersistenceStatus.LockUnavailable => Result.Failure<PaymentCollectionSummaryDto>(FrontDeskErrors.LockUnavailable),
+            _ => Result.Failure<PaymentCollectionSummaryDto>(FrontDeskErrors.InvalidCollectionAmount)
         };
     }
 }

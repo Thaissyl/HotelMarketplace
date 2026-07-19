@@ -10,6 +10,7 @@ class CreateBookingRequest {
     required this.guestCount,
     required this.guestFullName,
     required this.guestPhone,
+    required this.paymentMode,
   });
 
   final String hotelId;
@@ -20,6 +21,7 @@ class CreateBookingRequest {
   final int guestCount;
   final String guestFullName;
   final String guestPhone;
+  final String paymentMode;
 
   Map<String, dynamic> toJson() {
     return {
@@ -31,6 +33,7 @@ class CreateBookingRequest {
       'guestCount': guestCount,
       'guestFullName': guestFullName.trim(),
       'guestPhone': guestPhone.trim(),
+      'paymentMode': paymentMode,
     };
   }
 }
@@ -48,6 +51,7 @@ class Booking {
     required this.nights,
     required this.unitPricePerNight,
     required this.totalAmount,
+    required this.paymentMode,
     required this.status,
     required this.createdAtUtc,
     required this.paymentExpiresAtUtc,
@@ -68,6 +72,7 @@ class Booking {
   final int nights;
   final double unitPricePerNight;
   final double totalAmount;
+  final String paymentMode;
   final String status;
   final DateTime createdAtUtc;
   final DateTime? paymentExpiresAtUtc;
@@ -94,6 +99,7 @@ class Booking {
       nights: nights,
       unitPricePerNight: unitPricePerNight,
       totalAmount: totalAmount,
+      paymentMode: paymentMode,
       status: status ?? this.status,
       createdAtUtc: createdAtUtc,
       paymentExpiresAtUtc: paymentExpiresAtUtc ?? this.paymentExpiresAtUtc,
@@ -119,6 +125,7 @@ class Booking {
       nights: (json['nights'] as num?)?.toInt() ?? 1,
       unitPricePerNight: (json['unitPricePerNight'] as num?)?.toDouble() ?? 0,
       totalAmount: (json['totalAmount'] as num?)?.toDouble() ?? 0,
+      paymentMode: json['paymentMode']?.toString() ?? 'PlatformCollect',
       status: json['status']?.toString() ?? '',
       createdAtUtc: DateTime.tryParse(
             json['createdAtUtc']?.toString() ?? '',

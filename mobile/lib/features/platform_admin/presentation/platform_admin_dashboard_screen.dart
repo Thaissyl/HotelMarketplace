@@ -23,7 +23,7 @@ class PlatformAdminDashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Platform Admin'),
@@ -47,6 +47,10 @@ class PlatformAdminDashboardScreen extends ConsumerWidget {
               ),
               Tab(
                 icon: Icon(Icons.account_balance_wallet_rounded),
+                text: 'Reconciliation',
+              ),
+              Tab(
+                icon: Icon(Icons.account_balance_wallet_rounded),
                 text: 'Settlements',
               ),
               Tab(
@@ -62,6 +66,7 @@ class PlatformAdminDashboardScreen extends ConsumerWidget {
               _AnalyticsTab(),
               _UsersTab(),
               _HotelReviewTab(),
+              _ReconciliationTab(),
               _SettlementsTab(),
               _RefundsTab(),
             ],
@@ -806,6 +811,175 @@ class _HotelReviewTabState extends ConsumerState<_HotelReviewTab> {
   }
 }
 
+class _ReconciliationTab extends ConsumerWidget {
+  const _ReconciliationTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final payments = ref.watch(unreconciledPaymentsProvider);
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(unreconciledPaymentsProvider),
+      child: payments.when(
+        loading: () => const _PaddedShimmer(),
+        error: (error, _) => _AdminErrorCard(
+          message: 'Unable to load payment reconciliation.',
+          error: error,
+          onRetry: () => ref.invalidate(unreconciledPaymentsProvider),
+        ),
+        data: (items) => items.isEmpty
+            ? ListView(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                children: const [
+                  _EmptyAdminCard(
+                    message:
+                        'No payments are waiting for review. Paid Demo transactions appear here before settlement.',
+                  ),
+                ],
+              )
+            : ListView.separated(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                itemCount: items.length,
+                separatorBuilder: (_, __) =>
+                    const SizedBox(height: AppSpacing.sm),
+                itemBuilder: (context, index) =>
+                    _PaymentTransactionCard(item: items[index]),
+              ),
+      ),
+    );
+  }
+}
+
+class _PaymentTransactionCard extends ConsumerStatefulWidget {
+  const _PaymentTransactionCard({required this.item});
+
+  final AdminPaymentTransaction item;
+
+  @override
+  ConsumerState<_PaymentTransactionCard> createState() =>
+      _PaymentTransactionCardState();
+}
+
+class _PaymentTransactionCardState
+    extends ConsumerState<_PaymentTransactionCard> {
+  bool _loading = false;
+
+  Future<void> _review(String status) async {
+    final noteController = TextEditingController();
+    final exception = status == 'Exception';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          exception
+              ? 'Flag reconciliation exception'
+              : 'Confirm reconciliation',
+        ),
+        content: TextField(
+          controller: noteController,
+          maxLength: 1000,
+          decoration: InputDecoration(
+            labelText:
+                exception ? 'Exception reason' : 'Review note (optional)',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (exception && noteController.text.trim().isEmpty) {
+                return;
+              }
+              Navigator.of(context).pop(true);
+            },
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    final note = noteController.text.trim();
+    noteController.dispose();
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      await ref.read(platformAdminApiProvider).updatePaymentReconciliation(
+            paymentTransactionId: widget.item.id,
+            status: status,
+            note: note,
+          );
+      ref.invalidate(unreconciledPaymentsProvider);
+    } catch (error) {
+      if (mounted) {
+        await AppErrorPresenter.showBottomSheet(context, error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    item.hotelName,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                Text(AppFormatters.money(item.amount)),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text('${item.provider} payment · ${item.status}'),
+            Text('Reference: ${item.gatewayReference ?? 'Not recorded'}'),
+            Text(
+              'Booking: ${item.bookingId.length >= 8 ? item.bookingId.substring(0, 8).toUpperCase() : item.bookingId}',
+            ),
+            const SizedBox(height: AppSpacing.md),
+            if (_loading)
+              const LinearProgressIndicator()
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _review('Exception'),
+                      icon: const Icon(Icons.report_problem_outlined),
+                      label: const Text('Exception'),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _review('Reconciled'),
+                      icon: const Icon(Icons.fact_check_outlined),
+                      label: const Text('Reconcile'),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SettlementsTab extends ConsumerStatefulWidget {
   const _SettlementsTab();
 
@@ -817,11 +991,126 @@ class _SettlementsTabState extends ConsumerState<_SettlementsTab> {
   static const int _pageSize = 5;
 
   int _pageIndex = 0;
+  bool _creating = false;
 
   void _goToPage(int pageIndex, int pageCount) {
     setState(() {
       _pageIndex = pageIndex.clamp(0, pageCount - 1);
     });
+  }
+
+  Future<void> _createSettlement() async {
+    final hotels = ref.read(adminFinanceSummaryProvider).asData?.value ??
+        const <AdminFinanceSummary>[];
+    if (hotels.isEmpty) {
+      await AppErrorPresenter.showBottomSheet(
+        context,
+        StateError('No hotel finance records are available.'),
+      );
+      return;
+    }
+
+    final today = DateTime.now();
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(today.year - 2),
+      lastDate: today,
+      initialDateRange: DateTimeRange(
+        start: today.subtract(const Duration(days: 30)),
+        end: today,
+      ),
+    );
+    if (range == null || !mounted) {
+      return;
+    }
+
+    String hotelId = hotels.first.hotelId;
+    String paymentMode = 'PlatformCollect';
+    final noteController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Create finance batch'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: hotelId,
+                decoration: const InputDecoration(labelText: 'Hotel'),
+                items: hotels
+                    .map(
+                      (hotel) => DropdownMenuItem(
+                        value: hotel.hotelId,
+                        child: Text(hotel.hotelName),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) => setDialogState(() => hotelId = value!),
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: paymentMode,
+                decoration:
+                    const InputDecoration(labelText: 'Finance batch type'),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'PlatformCollect',
+                    child: Text('Hotel payout'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'PayAtProperty',
+                    child: Text('Commission collection'),
+                  ),
+                ],
+                onChanged: (value) =>
+                    setDialogState(() => paymentMode = value!),
+              ),
+              TextField(
+                controller: noteController,
+                maxLength: 1000,
+                decoration:
+                    const InputDecoration(labelText: 'Batch note (optional)'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final note = noteController.text.trim();
+    noteController.dispose();
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() => _creating = true);
+    try {
+      await ref.read(platformAdminApiProvider).createSettlement(
+            hotelId: hotelId,
+            paymentMode: paymentMode,
+            fromDate: range.start,
+            toDate: range.end,
+            adminNote: note,
+          );
+      ref.invalidate(settlementsProvider);
+    } catch (error) {
+      if (mounted) {
+        await AppErrorPresenter.showBottomSheet(context, error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _creating = false);
+      }
+    }
   }
 
   @override
@@ -834,13 +1123,29 @@ class _SettlementsTabState extends ConsumerState<_SettlementsTab> {
         data: (items) => ListView(
           padding: const EdgeInsets.all(AppSpacing.xl),
           children: [
-            Text(
-              'Settlements',
-              style: Theme.of(context).textTheme.headlineSmall,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Settlements',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: _creating ? null : _createSettlement,
+                  icon: _creating
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.add_rounded),
+                  label: const Text('Create'),
+                ),
+              ],
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              'Track money owed to each hotel after customer payments. A settlement groups confirmed booking revenue, subtracts platform commission, and marks the payout to the hotel as settled or exception.',
+              'Hotel payouts use reconciled Demo payments after refunds. Commission collections track what Pay-at-Property hotels owe the platform.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: AppSpacing.xl),
@@ -1033,13 +1338,22 @@ class _SettlementCard extends ConsumerStatefulWidget {
 
 class _SettlementCardState extends ConsumerState<_SettlementCard> {
   bool _loading = false;
-  Future<void> _setStatus(String status) async {
+  Future<void> _setStatus(
+    String status, {
+    required String reference,
+    required String note,
+  }) async {
     setState(() => _loading = true);
     try {
       await ref.read(platformAdminApiProvider).updateSettlementStatus(
             settlementId: widget.item.id,
             status: status,
-            adminNote: 'Updated from mobile admin dashboard',
+            settledAmount:
+                status == 'Settled' ? widget.item.expectedAmount : null,
+            settlementDateUtc:
+                status == 'Settled' ? DateTime.now().toUtc() : null,
+            reference: status == 'Settled' ? reference : null,
+            adminNote: note,
           );
       ref.invalidate(settlementsProvider);
     } catch (error) {
@@ -1053,10 +1367,72 @@ class _SettlementCardState extends ConsumerState<_SettlementCard> {
     }
   }
 
+  Future<void> _showAction(String status) async {
+    final referenceController = TextEditingController(
+      text: 'SET-${widget.item.id.replaceAll('-', '').toUpperCase()}',
+    );
+    final noteController = TextEditingController();
+    final isException = status == 'Exception';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          isException ? 'Record finance exception' : 'Finalize settlement',
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!isException)
+              TextField(
+                controller: referenceController,
+                decoration: const InputDecoration(
+                  labelText: 'Bank or collection reference',
+                ),
+              ),
+            TextField(
+              controller: noteController,
+              maxLength: 1000,
+              decoration: InputDecoration(
+                labelText:
+                    isException ? 'Exception reason' : 'Admin note (optional)',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if ((isException && noteController.text.trim().isEmpty) ||
+                  (!isException && referenceController.text.trim().isEmpty)) {
+                return;
+              }
+              Navigator.of(context).pop(true);
+            },
+            child: Text(isException ? 'Record exception' : 'Confirm'),
+          ),
+        ],
+      ),
+    );
+    final reference = referenceController.text.trim();
+    final note = noteController.text.trim();
+    referenceController.dispose();
+    noteController.dispose();
+    if (confirmed == true && mounted) {
+      await _setStatus(status, reference: reference, note: note);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
     final isPending = item.status == 'Pending';
+    final typeLabel = item.settlementType == 'HotelPayable'
+        ? 'Hotel payout'
+        : 'Platform commission collection';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -1069,13 +1445,40 @@ class _SettlementCardState extends ConsumerState<_SettlementCard> {
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              '${item.settlementType} · ${item.status} · ${item.items.length} items',
+              '$typeLabel · ${item.status} · ${item.items.length} items',
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
               AppFormatters.money(item.totalAmount),
               style: Theme.of(context).textTheme.titleLarge,
             ),
+            const Text('Expected amount from immutable booking evidence'),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('View calculation evidence'),
+              children: item.items
+                  .map(
+                    (evidence) => Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${evidence.paymentMode} · ${evidence.bookingStatus}',
+                          ),
+                          Text(
+                            'Gross ${AppFormatters.money(evidence.grossAmount)} · Refund ${AppFormatters.money(evidence.refundAmount)} · Commission ${AppFormatters.money(evidence.commissionAmount)}',
+                          ),
+                          Text(
+                            'Eligible amount ${AppFormatters.money(evidence.amount)}',
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+            if (item.reference.isNotEmpty) Text('Reference: ${item.reference}'),
             const SizedBox(height: AppSpacing.lg),
             if (_loading)
               const LinearProgressIndicator()
@@ -1086,7 +1489,7 @@ class _SettlementCardState extends ConsumerState<_SettlementCard> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => _setStatus('Exception'),
+                      onPressed: () => _showAction('Exception'),
                       icon: const Icon(Icons.report_problem_outlined),
                       label: const Text('Exception'),
                     ),
@@ -1094,7 +1497,7 @@ class _SettlementCardState extends ConsumerState<_SettlementCard> {
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: () => _setStatus('Settled'),
+                      onPressed: () => _showAction('Settled'),
                       icon: const Icon(Icons.check_circle_outline_rounded),
                       label: const Text('Mark settled'),
                     ),
@@ -1115,7 +1518,7 @@ class _ProcessedSettlementBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isSettled = status == 'Settled';
+    final isSettled = status == 'Settled' || status == 'Collected';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.md),

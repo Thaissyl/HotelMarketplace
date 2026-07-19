@@ -231,6 +231,97 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
     }
 
     [Fact]
+    public async Task PayAtPropertyBookingIsConfirmedAndConcurrentCollectionsCannotExceedBalance()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "pay-at-property-customer");
+        TestAuthResponse receptionist = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Receptionist,
+            "pay-at-property-receptionist",
+            hotel.HotelId);
+        DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(5);
+
+        BookingDto booking = await PostJsonAsync<BookingDto>(
+            client,
+            "/api/bookings",
+            new
+            {
+                hotelId = hotel.HotelId,
+                roomTypeId = hotel.RoomTypeId,
+                checkInDate,
+                checkOutDate = checkInDate.AddDays(2),
+                roomCount = 1,
+                guestCount = 1,
+                guestFullName = "Property Payment Guest",
+                guestPhone = "0901234567",
+                paymentMode = PaymentMode.PayAtProperty
+            },
+            HttpStatusCode.Created,
+            customer.AccessToken);
+
+        booking.Status.Should().Be(BookingStatus.Confirmed);
+        booking.PaymentMode.Should().Be(PaymentMode.PayAtProperty);
+        booking.PaymentExpiresAtUtc.Should().BeNull();
+
+        using (IServiceScope scope = _factory.Services.CreateScope())
+        {
+            HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+            (await dbContext.PaymentTransactions.IgnoreQueryFilters().CountAsync(payment => payment.BookingId == booking.Id))
+                .Should().Be(0);
+            CommissionRecord commission = await dbContext.CommissionRecords
+                .IgnoreQueryFilters()
+                .SingleAsync(record => record.BookingId == booking.Id);
+            commission.Status.Should().Be(CommissionStatus.Receivable);
+        }
+
+        decimal firstAmount = decimal.Round(booking.TotalAmount / 2m, 2, MidpointRounding.AwayFromZero);
+        PaymentCollectionSummaryDto partial = await PostJsonAsync<PaymentCollectionSummaryDto>(
+            client,
+            $"/api/hotels/{hotel.HotelId}/front-desk/bookings/{booking.Id}/payment-collections",
+            new
+            {
+                amount = firstAmount,
+                method = PaymentCollectionMethod.Cash,
+                collectedAtUtc = DateTime.UtcNow,
+                reference = $"PARTIAL-{booking.Id:N}",
+                note = "First partial collection"
+            },
+            HttpStatusCode.Created,
+            receptionist.AccessToken);
+        partial.Status.Should().Be(PaymentCollectionStatus.Partial);
+
+        decimal remaining = booking.TotalAmount - firstAmount;
+        Task<HttpResponseMessage>[] attempts = Enumerable.Range(1, 2)
+            .Select(index => SendPaymentCollectionAttemptAsync(
+                client,
+                receptionist.AccessToken,
+                hotel.HotelId,
+                booking.Id,
+                remaining,
+                $"FINAL-{index}-{booking.Id:N}"))
+            .ToArray();
+        HttpResponseMessage[] responses = await Task.WhenAll(attempts);
+        responses.Count(response => response.StatusCode == HttpStatusCode.Created).Should().Be(1);
+        responses.Count(response => response.StatusCode is HttpStatusCode.BadRequest or (HttpStatusCode)423).Should().Be(1);
+        foreach (HttpResponseMessage response in responses)
+        {
+            response.Dispose();
+        }
+
+        PaymentCollectionSummaryDto completed = await GetJsonAsync<PaymentCollectionSummaryDto>(
+            client,
+            $"/api/hotels/{hotel.HotelId}/front-desk/bookings/{booking.Id}/payment-collections",
+            HttpStatusCode.OK,
+            receptionist.AccessToken);
+        completed.Status.Should().Be(PaymentCollectionStatus.Completed);
+        completed.CollectedAmount.Should().Be(booking.TotalAmount);
+        completed.RemainingBalance.Should().Be(0);
+        completed.Collections.Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task DemoPaymentRejectsAmountMismatchAndForeignCustomer()
     {
         using HttpClient client = _factory.CreateClient();
@@ -887,7 +978,8 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
                 roomCount = 1,
                 guestCount = 1,
                 guestFullName = "Blocked Room Guest",
-                guestPhone = "0900000000"
+                guestPhone = "0900000000",
+                paymentMode = PaymentMode.PlatformCollect
             },
             options: JsonOptions);
 
@@ -1603,7 +1695,8 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
                 roomCount = 1,
                 guestCount = 2,
                 guestFullName = "Smoke Booking Guest",
-                guestPhone = "0912345678"
+                guestPhone = "0912345678",
+                paymentMode = PaymentMode.PlatformCollect
             },
             HttpStatusCode.Created,
             customer.AccessToken);
@@ -1846,6 +1939,9 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             new
             {
                 status = SettlementStatus.Settled,
+                settledAmount = settlement.ExpectedAmount,
+                settlementDateUtc = DateTime.UtcNow,
+                reference = $"SMOKE-{settlement.Id:N}",
                 adminNote = "Smoke settled"
             },
             HttpStatusCode.OK,
@@ -1931,7 +2027,8 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
                 roomCount = 1,
                 guestCount = 2,
                 guestFullName = "Booking Guest",
-                guestPhone = "0900000000"
+                guestPhone = "0900000000",
+                paymentMode = PaymentMode.PlatformCollect
             },
             HttpStatusCode.Created,
             accessToken);
@@ -1973,7 +2070,8 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
                 roomCount = 1,
                 guestCount = 1,
                 guestFullName = "Concurrent Guest",
-                guestPhone = "0911111111"
+                guestPhone = "0911111111",
+                paymentMode = PaymentMode.PlatformCollect
             },
             options: JsonOptions);
 
@@ -1992,6 +2090,32 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             $"/api/bookings/{bookingId}/demo-payment");
         request.Headers.Authorization = Bearer(accessToken);
         request.Content = JsonContent.Create(new { amount }, options: JsonOptions);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> SendPaymentCollectionAttemptAsync(
+        HttpClient client,
+        string accessToken,
+        Guid hotelId,
+        Guid bookingId,
+        decimal amount,
+        string reference)
+    {
+        using HttpRequestMessage request = new(
+            HttpMethod.Post,
+            $"/api/hotels/{hotelId}/front-desk/bookings/{bookingId}/payment-collections");
+        request.Headers.Authorization = Bearer(accessToken);
+        request.Content = JsonContent.Create(
+            new
+            {
+                amount,
+                method = PaymentCollectionMethod.Cash,
+                collectedAtUtc = DateTime.UtcNow,
+                reference,
+                note = "Concurrent final collection"
+            },
+            options: JsonOptions);
+
         return await client.SendAsync(request);
     }
 

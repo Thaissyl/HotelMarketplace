@@ -793,6 +793,9 @@ class _CheckOutSheet extends ConsumerStatefulWidget {
 
 class _CheckOutSheetState extends ConsumerState<_CheckOutSheet> {
   late final TextEditingController _cashAmount;
+  late final TextEditingController _collectionReference;
+  final _collectionNote = TextEditingController();
+  String _collectionMethod = 'Cash';
   bool _confirmCash = true;
   bool _loading = false;
 
@@ -800,13 +803,23 @@ class _CheckOutSheetState extends ConsumerState<_CheckOutSheet> {
   void initState() {
     super.initState();
     _cashAmount = TextEditingController(
-      text: widget.booking.totalAmount.toStringAsFixed(0),
+      text: widget.booking.paymentMode == 'PayAtProperty'
+          ? widget.booking.totalAmount.toStringAsFixed(0)
+          : '0',
     );
+    _collectionReference = TextEditingController(
+      text: widget.booking.paymentMode == 'PayAtProperty'
+          ? 'CASH-${widget.booking.bookingCode}'
+          : '',
+    );
+    _confirmCash = widget.booking.paymentMode == 'PayAtProperty';
   }
 
   @override
   void dispose() {
     _cashAmount.dispose();
+    _collectionReference.dispose();
+    _collectionNote.dispose();
     super.dispose();
   }
 
@@ -818,6 +831,9 @@ class _CheckOutSheetState extends ConsumerState<_CheckOutSheet> {
             bookingId: widget.booking.bookingId,
             confirmPayAtPropertyCollection: _confirmCash,
             cashCollectedAmount: double.tryParse(_cashAmount.text) ?? 0,
+            collectionMethod: _collectionMethod,
+            collectionReference: _collectionReference.text,
+            collectionNote: _collectionNote.text,
           );
 
       if (mounted) {
@@ -840,21 +856,61 @@ class _CheckOutSheetState extends ConsumerState<_CheckOutSheet> {
       title: 'Checkout ${widget.booking.guestFullName}',
       children: [
         _BookingDetailGrid(booking: widget.booking),
-        TextField(
-          controller: _cashAmount,
-          keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          decoration: const InputDecoration(
-            labelText: 'Cash collected amount',
-            prefixIcon: Icon(Icons.payments_outlined),
+        if (widget.booking.paymentMode == 'PayAtProperty') ...[
+          TextField(
+            controller: _cashAmount,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: const InputDecoration(
+              labelText: 'Amount collected now',
+              prefixIcon: Icon(Icons.payments_outlined),
+            ),
           ),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          value: _confirmCash,
-          onChanged: (value) => setState(() => _confirmCash = value),
-          title: const Text('Confirm pay-at-property collection'),
-        ),
+          DropdownButtonFormField<String>(
+            initialValue: _collectionMethod,
+            decoration: const InputDecoration(labelText: 'Collection method'),
+            items: const [
+              DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+              DropdownMenuItem(value: 'Card', child: Text('Card at property')),
+              DropdownMenuItem(
+                value: 'BankTransfer',
+                child: Text('Bank transfer to hotel'),
+              ),
+              DropdownMenuItem(value: 'Other', child: Text('Other')),
+            ],
+            onChanged: _loading
+                ? null
+                : (value) => setState(() => _collectionMethod = value!),
+          ),
+          TextField(
+            controller: _collectionReference,
+            decoration: const InputDecoration(
+              labelText: 'Receipt or collection reference',
+              prefixIcon: Icon(Icons.tag_rounded),
+            ),
+          ),
+          TextField(
+            controller: _collectionNote,
+            maxLength: 500,
+            decoration: const InputDecoration(
+              labelText: 'Collection note (optional)',
+              prefixIcon: Icon(Icons.notes_rounded),
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _confirmCash,
+            onChanged: (value) => setState(() => _confirmCash = value),
+            title: const Text('I confirm the remaining balance was collected'),
+          ),
+        ] else
+          const ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.verified_rounded),
+            title: Text('Platform payment verified by the system'),
+            subtitle:
+                Text('Front desk staff cannot record or change this payment.'),
+          ),
         FilledButton.icon(
           onPressed: _loading ? null : _submit,
           icon: _loading

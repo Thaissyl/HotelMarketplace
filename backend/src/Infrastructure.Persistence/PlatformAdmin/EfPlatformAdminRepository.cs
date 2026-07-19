@@ -6,6 +6,7 @@ using HotelMarketplace.Application.PlatformAdmin.Dtos;
 using HotelMarketplace.Application.PlatformAdmin.Requests;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.SharedKernel.Time;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -17,14 +18,18 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
     {
         BookingStatus.Confirmed,
         BookingStatus.CheckedIn,
-        BookingStatus.CheckedOut
+        BookingStatus.CheckedOut,
+        BookingStatus.Cancelled,
+        BookingStatus.NoShow
     };
 
     private readonly HotelMarketplaceDbContext _dbContext;
+    private readonly IDateTimeProvider _dateTimeProvider;
 
-    public EfPlatformAdminRepository(HotelMarketplaceDbContext dbContext)
+    public EfPlatformAdminRepository(HotelMarketplaceDbContext dbContext, IDateTimeProvider dateTimeProvider)
     {
         _dbContext = dbContext;
+        _dateTimeProvider = dateTimeProvider;
     }
 
     public async Task<IReadOnlyCollection<AdminUserDto>> GetUsersAsync(
@@ -338,23 +343,89 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
             bookingQuery = bookingQuery.Where(booking => booking.CheckOutDate <= toDate.Value);
         }
 
-        return await (
+        List<FinanceBookingRow> bookings = await (
             from booking in bookingQuery
             join hotel in _dbContext.HotelProperties.IgnoreQueryFilters().AsNoTracking()
                 on booking.HotelId equals hotel.Id
             join commission in _dbContext.CommissionRecords.IgnoreQueryFilters().AsNoTracking()
                 on booking.Id equals commission.BookingId into commissionGroup
             from commission in commissionGroup.DefaultIfEmpty()
-            group new { booking, hotel, commission } by new { booking.HotelId, hotel.Name } into hotelGroup
-            orderby hotelGroup.Key.Name
-            select new AdminFinanceSummaryDto(
-                hotelGroup.Key.HotelId,
-                hotelGroup.Key.Name,
-                hotelGroup.Sum(row => row.booking.TotalAmount),
-                hotelGroup.Sum(row => row.commission == null ? 0m : row.commission.CommissionAmount),
-                hotelGroup.Sum(row => row.booking.TotalAmount) - hotelGroup.Sum(row => row.commission == null ? 0m : row.commission.CommissionAmount),
-                hotelGroup.Count()))
+            select new FinanceBookingRow(
+                booking.Id,
+                booking.HotelId,
+                hotel.Name,
+                booking.PaymentMode,
+                commission == null ? 0m : commission.CommissionAmount))
             .ToListAsync(cancellationToken);
+
+        if (bookings.Count == 0)
+        {
+            return Array.Empty<AdminFinanceSummaryDto>();
+        }
+
+        Dictionary<Guid, decimal> platformCollections = await (
+            from payment in _dbContext.PaymentTransactions.IgnoreQueryFilters().AsNoTracking()
+            join booking in bookingQuery on payment.BookingId equals booking.Id
+            where payment.Status == PaymentStatus.Paid
+            group payment by payment.BookingId into paymentGroup
+            select new
+            {
+                BookingId = paymentGroup.Key,
+                Amount = paymentGroup.Sum(payment => payment.Amount)
+            })
+            .ToDictionaryAsync(row => row.BookingId, row => row.Amount, cancellationToken);
+
+        Dictionary<Guid, decimal> propertyCollections = await (
+            from collection in _dbContext.PaymentCollectionRecords.IgnoreQueryFilters().AsNoTracking()
+            join booking in bookingQuery on collection.BookingId equals booking.Id
+            where collection.Status == PaymentCollectionStatus.Partial ||
+                collection.Status == PaymentCollectionStatus.Completed
+            group collection by collection.BookingId into collectionGroup
+            select new
+            {
+                BookingId = collectionGroup.Key,
+                Amount = collectionGroup.Sum(collection => collection.Amount)
+            })
+            .ToDictionaryAsync(row => row.BookingId, row => row.Amount, cancellationToken);
+
+        Dictionary<Guid, decimal> processedRefunds = await (
+            from refund in _dbContext.RefundRecords.IgnoreQueryFilters().AsNoTracking()
+            join booking in bookingQuery on refund.BookingId equals booking.Id
+            where refund.Status == RefundStatus.Processed
+            group refund by refund.BookingId into refundGroup
+            select new
+            {
+                BookingId = refundGroup.Key,
+                Amount = refundGroup.Sum(refund => refund.ApprovedAmount)
+            })
+            .ToDictionaryAsync(row => row.BookingId, row => row.Amount, cancellationToken);
+
+        return bookings
+            .Select(booking =>
+            {
+                Dictionary<Guid, decimal> collectionSource = booking.PaymentMode == PaymentMode.PlatformCollect
+                    ? platformCollections
+                    : propertyCollections;
+                collectionSource.TryGetValue(booking.BookingId, out decimal collectedAmount);
+                processedRefunds.TryGetValue(booking.BookingId, out decimal refundAmount);
+
+                return new FinanceSummaryRow(
+                    booking.HotelId,
+                    booking.HotelName,
+                    collectedAmount - refundAmount,
+                    booking.CommissionAmount);
+            })
+            .Where(row => row.NetRevenue > 0m)
+            .GroupBy(row => new { row.HotelId, row.HotelName })
+            .OrderBy(group => group.Key.HotelName)
+            .Select(group => new AdminFinanceSummaryDto(
+                group.Key.HotelId,
+                group.Key.HotelName,
+                group.Sum(row => row.NetRevenue),
+                group.Sum(row => row.CommissionAmount),
+                group.Sum(row => row.NetRevenue) - group.Sum(row => row.CommissionAmount),
+                group.Count()))
+            .ToArray();
     }
 
     public async Task<IReadOnlyCollection<AdminPaymentTransactionDto>> GetPaymentTransactionsAsync(
@@ -386,6 +457,8 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                 payment.Amount,
                 payment.Status,
                 payment.ReconciliationStatus,
+                payment.ReconciliationNote,
+                payment.ReconciledAtUtc,
                 payment.CreatedAtUtc,
                 payment.PaidAtUtc))
             .ToListAsync(cancellationToken);
@@ -426,11 +499,11 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
             {
                 if (request.Status == ReconciliationStatus.Reconciled)
                 {
-                    payment.MarkReconciled();
+                    payment.MarkReconciled(_dateTimeProvider.UtcNow, request.Note);
                 }
                 else if (request.Status == ReconciliationStatus.Exception)
                 {
-                    payment.MarkReconciliationException();
+                    payment.MarkReconciliationException(request.Note!, _dateTimeProvider.UtcNow);
                 }
                 else
                 {
@@ -529,11 +602,11 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
             }
 
             decimal totalAmount = eligibleItems.Sum(item => item.Amount);
-            string settlementType = request.PaymentMode == PaymentMode.PlatformCollect
-                ? "HotelPayable"
-                : "CommissionCollection";
+            SettlementType settlementType = request.PaymentMode == PaymentMode.PlatformCollect
+                ? SettlementType.HotelPayable
+                : SettlementType.CommissionCollection;
 
-            SettlementRecord settlement = new(Guid.NewGuid(), request.HotelId, settlementType, totalAmount);
+            SettlementRecord settlement = new(Guid.NewGuid(), request.HotelId, settlementType, totalAmount, request.AdminNote);
             await _dbContext.SettlementRecords.AddAsync(settlement, cancellationToken);
 
             foreach (EligibleSettlementItem item in eligibleItems)
@@ -543,10 +616,16 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                         Guid.NewGuid(),
                         request.HotelId,
                         settlement.Id,
-                        item.Amount,
                         item.BookingId,
                         item.CommissionRecordId,
-                        item.PaymentTransactionId),
+                        item.PaymentMode,
+                        item.BookingStatus,
+                        item.GrossAmount,
+                        item.RefundAmount,
+                        item.CommissionAmount,
+                        item.Amount,
+                        item.PaymentTransactionId,
+                        item.PaymentCollectionRecordId),
                     cancellationToken);
             }
 
@@ -608,10 +687,54 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
             {
                 if (request.Status == SettlementStatus.Settled)
                 {
-                    settlement.MarkSettled(request.AdminNote);
+                    string normalizedReference = request.Reference!.Trim().ToUpperInvariant();
+                    bool referenceExists = await _dbContext.SettlementRecords
+                        .IgnoreQueryFilters()
+                        .AnyAsync(record => record.Id != settlement.Id && record.Reference == normalizedReference, cancellationToken);
+                    if (referenceExists)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return PlatformAdminSettlementResult.Failure(PlatformAdminPersistenceStatus.InvalidSettlementStatus);
+                    }
+
+                    if (!await AreSettlementItemsStillEligibleAsync(settlement, items, cancellationToken))
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return PlatformAdminSettlementResult.Failure(PlatformAdminPersistenceStatus.SettlementNotEligible);
+                    }
+
+                    settlement.MarkSettled(
+                        request.SettledAmount!.Value,
+                        request.SettlementDateUtc!.Value,
+                        request.Reference!,
+                        request.AdminNote);
                     foreach (SettlementItem item in items)
                     {
-                        item.MarkSettled();
+                        if (settlement.SettlementType == SettlementType.HotelPayable)
+                        {
+                            item.MarkSettled();
+                        }
+                        else
+                        {
+                            item.MarkCollected();
+                        }
+                    }
+
+                    List<Guid> commissionIds = items.Select(item => item.CommissionRecordId!.Value).ToList();
+                    List<CommissionRecord> commissions = await _dbContext.CommissionRecords
+                        .IgnoreQueryFilters()
+                        .Where(commission => commissionIds.Contains(commission.Id))
+                        .ToListAsync(cancellationToken);
+                    foreach (CommissionRecord commission in commissions)
+                    {
+                        if (settlement.SettlementType == SettlementType.HotelPayable)
+                        {
+                            commission.MarkSettled();
+                        }
+                        else
+                        {
+                            commission.MarkCollected();
+                        }
                     }
                 }
                 else if (request.Status == SettlementStatus.Exception)
@@ -828,20 +951,44 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                 on booking.Id equals payment.BookingId
             where booking.HotelId == request.HotelId &&
                 booking.PaymentMode == PaymentMode.PlatformCollect &&
-                SuccessfulBookingStatuses.Contains(booking.Status) &&
+                (booking.Status == BookingStatus.CheckedOut ||
+                    booking.Status == BookingStatus.Cancelled ||
+                    booking.Status == BookingStatus.NoShow) &&
                 booking.CheckOutDate >= request.FromDate &&
                 booking.CheckOutDate <= request.ToDate &&
                 payment.Status == PaymentStatus.Paid &&
-                payment.ReconciliationStatus != ReconciliationStatus.Exception &&
-                payment.Amount - commission.CommissionAmount >= 0m &&
+                payment.ReconciliationStatus == ReconciliationStatus.Reconciled &&
+                commission.Status == CommissionStatus.Deductible &&
+                !_dbContext.RefundRecords.IgnoreQueryFilters().Any(refund =>
+                    refund.BookingId == booking.Id &&
+                    (refund.Status == RefundStatus.PendingReview ||
+                        refund.Status == RefundStatus.Approved ||
+                        refund.Status == RefundStatus.Failed)) &&
+                payment.Amount -
+                    (_dbContext.RefundRecords.IgnoreQueryFilters()
+                        .Where(refund => refund.BookingId == booking.Id && refund.Status == RefundStatus.Processed)
+                        .Sum(refund => (decimal?)refund.ApprovedAmount) ?? 0m) -
+                    commission.CommissionAmount >= 0m &&
                 !_dbContext.SettlementItems.IgnoreQueryFilters().Any(item =>
                     item.BookingId == booking.Id &&
                     item.Status != SettlementStatus.Exception)
             select new EligibleSettlementItem(
                 booking.Id,
                 commission.Id,
+                booking.PaymentMode,
+                booking.Status,
+                payment.Amount,
+                _dbContext.RefundRecords.IgnoreQueryFilters()
+                    .Where(refund => refund.BookingId == booking.Id && refund.Status == RefundStatus.Processed)
+                    .Sum(refund => (decimal?)refund.ApprovedAmount) ?? 0m,
+                commission.CommissionAmount,
                 payment.Id,
-                payment.Amount - commission.CommissionAmount))
+                null,
+                payment.Amount -
+                    (_dbContext.RefundRecords.IgnoreQueryFilters()
+                        .Where(refund => refund.BookingId == booking.Id && refund.Status == RefundStatus.Processed)
+                        .Sum(refund => (decimal?)refund.ApprovedAmount) ?? 0m) -
+                    commission.CommissionAmount))
             .ToListAsync(cancellationToken);
     }
 
@@ -855,17 +1002,42 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                 on booking.Id equals commission.BookingId
             where booking.HotelId == request.HotelId &&
                 booking.PaymentMode == PaymentMode.PayAtProperty &&
-                SuccessfulBookingStatuses.Contains(booking.Status) &&
+                booking.Status == BookingStatus.CheckedOut &&
                 booking.CheckOutDate >= request.FromDate &&
                 booking.CheckOutDate <= request.ToDate &&
+                commission.Status == CommissionStatus.Receivable &&
                 commission.CommissionAmount > 0m &&
+                !_dbContext.RefundRecords.IgnoreQueryFilters().Any(refund =>
+                    refund.BookingId == booking.Id &&
+                    (refund.Status == RefundStatus.PendingReview ||
+                        refund.Status == RefundStatus.Approved ||
+                        refund.Status == RefundStatus.Failed)) &&
+                _dbContext.PaymentCollectionRecords.IgnoreQueryFilters()
+                    .Where(collection => collection.BookingId == booking.Id &&
+                        (collection.Status == PaymentCollectionStatus.Partial ||
+                            collection.Status == PaymentCollectionStatus.Completed))
+                    .Sum(collection => (decimal?)collection.Amount) == booking.TotalAmount &&
                 !_dbContext.SettlementItems.IgnoreQueryFilters().Any(item =>
                     item.BookingId == booking.Id &&
                     item.Status != SettlementStatus.Exception)
             select new EligibleSettlementItem(
                 booking.Id,
                 commission.Id,
+                booking.PaymentMode,
+                booking.Status,
+                booking.TotalAmount,
+                _dbContext.RefundRecords.IgnoreQueryFilters()
+                    .Where(refund => refund.BookingId == booking.Id && refund.Status == RefundStatus.Processed)
+                    .Sum(refund => (decimal?)refund.ApprovedAmount) ?? 0m,
+                commission.CommissionAmount,
                 null,
+                _dbContext.PaymentCollectionRecords.IgnoreQueryFilters()
+                    .Where(collection => collection.BookingId == booking.Id &&
+                        (collection.Status == PaymentCollectionStatus.Partial ||
+                            collection.Status == PaymentCollectionStatus.Completed))
+                    .OrderByDescending(collection => collection.CollectedAtUtc)
+                    .Select(collection => (Guid?)collection.Id)
+                    .FirstOrDefault(),
                 commission.CommissionAmount))
             .ToListAsync(cancellationToken);
     }
@@ -899,10 +1071,13 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                 settlement.HotelId,
                 hotelNames.GetValueOrDefault(settlement.HotelId, string.Empty),
                 settlement.SettlementType,
-                settlement.TotalAmount,
+                settlement.ExpectedAmount,
+                settlement.SettledAmount,
                 settlement.Status,
                 settlement.AdminNote,
                 settlement.CreatedAtUtc,
+                settlement.SettlementDateUtc,
+                settlement.Reference,
                 items
                     .Where(item => item.SettlementRecordId == settlement.Id)
                     .Select(item => new AdminSettlementItemDto(
@@ -910,10 +1085,128 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                         item.BookingId,
                         item.CommissionRecordId,
                         item.PaymentTransactionId,
+                        item.PaymentCollectionRecordId,
+                        item.PaymentMode,
+                        item.BookingStatus,
+                        item.GrossAmount,
+                        item.RefundAmount,
+                        item.CommissionAmount,
                         item.Amount,
                         item.Status))
                     .ToList()))
             .ToList();
+    }
+
+    private async Task<bool> AreSettlementItemsStillEligibleAsync(
+        SettlementRecord settlement,
+        List<SettlementItem> items,
+        CancellationToken cancellationToken)
+    {
+        if (items.Count == 0 || items.Any(item =>
+                item.Status != SettlementStatus.Pending ||
+                !item.BookingId.HasValue ||
+                !item.CommissionRecordId.HasValue))
+        {
+            return false;
+        }
+
+        List<Guid> bookingIds = items.Select(item => item.BookingId!.Value).Distinct().ToList();
+        List<Guid> commissionIds = items.Select(item => item.CommissionRecordId!.Value).Distinct().ToList();
+        Dictionary<Guid, Booking> bookings = await _dbContext.Bookings
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(booking => bookingIds.Contains(booking.Id))
+            .ToDictionaryAsync(booking => booking.Id, cancellationToken);
+        Dictionary<Guid, CommissionRecord> commissions = await _dbContext.CommissionRecords
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(commission => commissionIds.Contains(commission.Id))
+            .ToDictionaryAsync(commission => commission.Id, cancellationToken);
+
+        if (bookings.Count != bookingIds.Count || commissions.Count != commissionIds.Count)
+        {
+            return false;
+        }
+
+        HashSet<Guid> unresolvedRefundBookings = (await _dbContext.RefundRecords
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(refund => bookingIds.Contains(refund.BookingId) &&
+                    (refund.Status == RefundStatus.PendingReview ||
+                        refund.Status == RefundStatus.Approved ||
+                        refund.Status == RefundStatus.Failed))
+                .Select(refund => refund.BookingId)
+                .ToListAsync(cancellationToken))
+            .ToHashSet();
+        Dictionary<Guid, decimal> processedRefundTotals = await _dbContext.RefundRecords
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(refund => bookingIds.Contains(refund.BookingId) && refund.Status == RefundStatus.Processed)
+            .GroupBy(refund => refund.BookingId)
+            .ToDictionaryAsync(
+                group => group.Key,
+                group => group.Sum(refund => refund.ApprovedAmount),
+                cancellationToken);
+
+        if (settlement.SettlementType == SettlementType.HotelPayable)
+        {
+            List<Guid> paymentIds = items
+                .Where(item => item.PaymentTransactionId.HasValue)
+                .Select(item => item.PaymentTransactionId!.Value)
+                .Distinct()
+                .ToList();
+            Dictionary<Guid, PaymentTransaction> payments = await _dbContext.PaymentTransactions
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(payment => paymentIds.Contains(payment.Id))
+                .ToDictionaryAsync(payment => payment.Id, cancellationToken);
+            return paymentIds.Count == items.Count &&
+                payments.Count == paymentIds.Count &&
+                items.All(item =>
+                {
+                    Booking booking = bookings[item.BookingId!.Value];
+                    CommissionRecord commission = commissions[item.CommissionRecordId!.Value];
+                    PaymentTransaction payment = payments[item.PaymentTransactionId!.Value];
+                    return booking.PaymentMode == PaymentMode.PlatformCollect &&
+                        booking.Status == item.BookingStatus &&
+                        booking.Status is BookingStatus.CheckedOut or BookingStatus.Cancelled or BookingStatus.NoShow &&
+                        commission.Status == CommissionStatus.Deductible &&
+                        commission.CommissionAmount == item.CommissionAmount &&
+                        payment.Status == PaymentStatus.Paid &&
+                        payment.ReconciliationStatus == ReconciliationStatus.Reconciled &&
+                        payment.Amount == item.GrossAmount &&
+                        processedRefundTotals.GetValueOrDefault(booking.Id) == item.RefundAmount &&
+                        item.Amount == item.GrossAmount - item.RefundAmount - item.CommissionAmount &&
+                        !unresolvedRefundBookings.Contains(booking.Id);
+                });
+        }
+
+        Dictionary<Guid, decimal> collectionTotals = await _dbContext.PaymentCollectionRecords
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(collection => bookingIds.Contains(collection.BookingId) &&
+                (collection.Status == PaymentCollectionStatus.Partial ||
+                    collection.Status == PaymentCollectionStatus.Completed))
+            .GroupBy(collection => collection.BookingId)
+            .ToDictionaryAsync(
+                group => group.Key,
+                group => group.Sum(collection => collection.Amount),
+                cancellationToken);
+
+        return items.All(item =>
+        {
+            Booking booking = bookings[item.BookingId!.Value];
+            CommissionRecord commission = commissions[item.CommissionRecordId!.Value];
+            return booking.PaymentMode == PaymentMode.PayAtProperty &&
+                booking.Status == BookingStatus.CheckedOut &&
+                commission.Status == CommissionStatus.Receivable &&
+                commission.CommissionAmount == item.CommissionAmount &&
+                booking.TotalAmount == item.GrossAmount &&
+                processedRefundTotals.GetValueOrDefault(booking.Id) == item.RefundAmount &&
+                item.Amount == item.CommissionAmount &&
+                collectionTotals.GetValueOrDefault(booking.Id) == booking.TotalAmount &&
+                !unresolvedRefundBookings.Contains(booking.Id);
+        });
     }
 
     private async Task<AdminPaymentTransactionDto> ToPaymentDtoAsync(Guid paymentTransactionId, CancellationToken cancellationToken)
@@ -934,6 +1227,8 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
                 payment.Amount,
                 payment.Status,
                 payment.ReconciliationStatus,
+                payment.ReconciliationNote,
+                payment.ReconciledAtUtc,
                 payment.CreatedAtUtc,
                 payment.PaidAtUtc))
             .FirstAsync(cancellationToken);
@@ -1009,8 +1304,27 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
     private sealed record EligibleSettlementItem(
         Guid BookingId,
         Guid CommissionRecordId,
+        PaymentMode PaymentMode,
+        BookingStatus BookingStatus,
+        decimal GrossAmount,
+        decimal RefundAmount,
+        decimal CommissionAmount,
         Guid? PaymentTransactionId,
+        Guid? PaymentCollectionRecordId,
         decimal Amount);
+
+    private sealed record FinanceBookingRow(
+        Guid BookingId,
+        Guid HotelId,
+        string HotelName,
+        PaymentMode PaymentMode,
+        decimal CommissionAmount);
+
+    private sealed record FinanceSummaryRow(
+        Guid HotelId,
+        string HotelName,
+        decimal NetRevenue,
+        decimal CommissionAmount);
 
     private sealed record UserRoleProjection(Guid UserAccountId, string RoleCode);
 

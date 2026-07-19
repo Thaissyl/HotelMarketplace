@@ -1,3 +1,5 @@
+using HotelMarketplace.Domain.Enums;
+
 namespace HotelMarketplace.Application.Bookings;
 
 public sealed record CreateBookingRepositoryRequest(
@@ -9,4 +11,5 @@ public sealed record CreateBookingRepositoryRequest(
     int RoomCount,
     int GuestCount,
     string GuestFullName,
-    string GuestPhone);
+    string GuestPhone,
+    PaymentMode PaymentMode);

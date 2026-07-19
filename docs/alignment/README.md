@@ -46,6 +46,7 @@ to the canonical SRS and SDD.
 | [12-aln-004-explicit-demo-payment.md](12-aln-004-explicit-demo-payment.md) | ALN-004 explicit demo payment contract, atomicity, and audit evidence |
 | [13-aln-005-cancellation-refund-no-show.md](13-aln-005-cancellation-refund-no-show.md) | ALN-005 cancellation, refund initiation, no-show, and lock-order evidence |
 | [14-aln-006-availability-calendar.md](14-aln-006-availability-calendar.md) | ALN-006 availability calendar, permissions, interval, marketplace, and concurrency evidence |
+| [15-aln-007-dual-collection-finance.md](15-aln-007-dual-collection-finance.md) | ALN-007 dual collection, reconciliation, settlement, and invoice invariants |
 | [workstreams](workstreams/README.md) | Detailed reviews by business capability |
 
 ## Completion Criteria

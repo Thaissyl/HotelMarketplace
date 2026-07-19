@@ -13,5 +13,7 @@ public sealed record AdminPaymentTransactionDto(
     decimal Amount,
     PaymentStatus Status,
     ReconciliationStatus ReconciliationStatus,
+    string? ReconciliationNote,
+    DateTime? ReconciledAtUtc,
     DateTime CreatedAtUtc,
     DateTime? PaidAtUtc);

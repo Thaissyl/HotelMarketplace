@@ -41,7 +41,9 @@ internal sealed class EfBookingRepository : IBookingRepository
                 cancellationToken);
 
             DateTime utcNow = _dateTimeProvider.UtcNow;
-            DateTime paymentExpiresAtUtc = utcNow.AddMinutes(15);
+            DateTime? paymentExpiresAtUtc = request.PaymentMode == PaymentMode.PlatformCollect
+                ? utcNow.AddMinutes(15)
+                : null;
 
             bool hotelIsBookable = await _dbContext.HotelProperties
                 .IgnoreQueryFilters()
@@ -117,13 +119,16 @@ internal sealed class EfBookingRepository : IBookingRepository
                 request.HotelId,
                 request.CheckInDate,
                 request.CheckOutDate,
-                PaymentMode.PlatformCollect,
+                request.PaymentMode,
                 BookingSource.Marketplace,
                 totalAmount,
                 request.GuestFullName,
                 request.GuestPhone);
 
-            booking.SetPaymentExpiration(paymentExpiresAtUtc);
+            if (paymentExpiresAtUtc.HasValue)
+            {
+                booking.SetPaymentExpiration(paymentExpiresAtUtc.Value);
+            }
             booking.AddRoom(new BookingRoom(
                 Guid.NewGuid(),
                 bookingId,
@@ -133,6 +138,46 @@ internal sealed class EfBookingRepository : IBookingRepository
                 nights));
 
             await _dbContext.Bookings.AddAsync(booking, cancellationToken);
+            if (request.PaymentMode == PaymentMode.PayAtProperty)
+            {
+                decimal commissionRate = await _dbContext.HotelProperties
+                    .IgnoreQueryFilters()
+                    .Where(hotel => hotel.Id == request.HotelId)
+                    .Select(hotel => hotel.DefaultCommissionRate)
+                    .SingleAsync(cancellationToken);
+                await _dbContext.CommissionRecords.AddAsync(
+                    new CommissionRecord(
+                        Guid.NewGuid(),
+                        request.HotelId,
+                        booking.Id,
+                        booking.TotalAmount,
+                        commissionRate,
+                        CommissionStatus.Receivable),
+                    cancellationToken);
+            }
+
+            await _dbContext.AuditRecords.AddAsync(
+                new AuditRecord(
+                    Guid.NewGuid(),
+                    request.CustomerUserAccountId,
+                    "CreateBooking",
+                    nameof(Booking),
+                    booking.Id,
+                    $"Marketplace booking {booking.BookingCode} created with {booking.PaymentMode}.",
+                    booking.HotelId),
+                cancellationToken);
+            await _dbContext.NotificationRecords.AddAsync(
+                new NotificationRecord(
+                    Guid.NewGuid(),
+                    request.CustomerUserAccountId,
+                    "BookingCreated",
+                    nameof(Booking),
+                    booking.Id,
+                    request.PaymentMode == PaymentMode.PayAtProperty
+                        ? $"Booking {booking.BookingCode} is confirmed. Payment is due at the property."
+                        : $"Booking {booking.BookingCode} is awaiting demo payment.",
+                    booking.HotelId),
+                cancellationToken);
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
@@ -148,6 +193,7 @@ internal sealed class EfBookingRepository : IBookingRepository
                 nights,
                 roomType.BasePricePerNight,
                 booking.TotalAmount,
+                booking.PaymentMode,
                 booking.Status,
                 booking.CreatedAtUtc,
                 booking.PaymentExpiresAtUtc,
@@ -182,6 +228,7 @@ internal sealed class EfBookingRepository : IBookingRepository
                 bookingRoom.Nights,
                 bookingRoom.UnitPricePerNight,
                 booking.TotalAmount,
+                booking.PaymentMode,
                 booking.Status,
                 booking.CreatedAtUtc,
                 booking.PaymentExpiresAtUtc,
@@ -204,6 +251,7 @@ internal sealed class EfBookingRepository : IBookingRepository
                 row.Nights,
                 row.UnitPricePerNight,
                 row.TotalAmount,
+                row.PaymentMode,
                 row.Status,
                 row.CreatedAtUtc,
                 row.PaymentExpiresAtUtc,
@@ -544,6 +592,7 @@ internal sealed class EfBookingRepository : IBookingRepository
         int Nights,
         decimal UnitPricePerNight,
         decimal TotalAmount,
+        PaymentMode PaymentMode,
         BookingStatus Status,
         DateTime CreatedAtUtc,
         DateTime? PaymentExpiresAtUtc,

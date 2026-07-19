@@ -20,6 +20,27 @@ public enum FrontDeskPersistenceStatus
     NoShowWindowNotReached = 14
 }
 
+public enum PaymentCollectionPersistenceStatus
+{
+    Success = 1,
+    BookingNotFound = 2,
+    WrongPaymentMode = 3,
+    InvalidCollectionAmount = 4,
+    DuplicateCollectionReference = 5,
+    LockUnavailable = 6
+}
+
+public sealed record PaymentCollectionPersistenceResult(
+    PaymentCollectionPersistenceStatus Status,
+    PaymentCollectionSummaryDto? Summary)
+{
+    public static PaymentCollectionPersistenceResult Success(PaymentCollectionSummaryDto summary) =>
+        new(PaymentCollectionPersistenceStatus.Success, summary);
+
+    public static PaymentCollectionPersistenceResult Failure(PaymentCollectionPersistenceStatus status) =>
+        new(status, null);
+}
+
 public sealed record FrontDeskPersistenceResult(
     FrontDeskPersistenceStatus Status,
     FrontDeskBookingDto? Booking)

@@ -37,6 +37,7 @@ class _BookingConfirmationScreenState
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _guestNameController;
   final _guestPhoneController = TextEditingController();
+  String _paymentMode = 'PlatformCollect';
 
   @override
   void initState() {
@@ -71,6 +72,7 @@ class _BookingConfirmationScreenState
                 guestCount: widget.draft.query.guestCount,
                 guestFullName: _guestNameController.text,
                 guestPhone: _guestPhoneController.text,
+                paymentMode: _paymentMode,
               ),
             );
 
@@ -88,10 +90,33 @@ class _BookingConfirmationScreenState
 
     ref.read(customerStateProvider.notifier).addBooking(booking);
 
-    context.push(
-      PendingPaymentScreen.pathFor(booking.id),
-      extra: booking,
+    if (booking.paymentMode == 'PlatformCollect') {
+      context.push(
+        PendingPaymentScreen.pathFor(booking.id),
+        extra: booking,
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Reservation confirmed'),
+        content: Text(
+          'Booking ${booking.bookingCode} is confirmed. Pay ${AppFormatters.money(booking.totalAmount)} at the property.',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
     );
+    if (mounted) {
+      context.go('/customer');
+    }
   }
 
   @override
@@ -110,6 +135,49 @@ class _BookingConfirmationScreenState
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           children: [
             _BookingSummary(draft: draft),
+            const SizedBox(height: AppSpacing.xl),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.xl),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Payment option',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(
+                          value: 'PlatformCollect',
+                          icon: Icon(Icons.science_outlined),
+                          label: Text('Demo now'),
+                        ),
+                        ButtonSegment(
+                          value: 'PayAtProperty',
+                          icon: Icon(Icons.hotel_outlined),
+                          label: Text('At property'),
+                        ),
+                      ],
+                      selected: {_paymentMode},
+                      onSelectionChanged: isLoading
+                          ? null
+                          : (selection) => setState(
+                                () => _paymentMode = selection.single,
+                              ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      _paymentMode == 'PlatformCollect'
+                          ? 'Confirm in the app before the 15-minute hold expires. No real charge is made.'
+                          : 'The reservation is confirmed now and the hotel collects payment during your stay.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: AppSpacing.xl),
             Card(
               child: Padding(

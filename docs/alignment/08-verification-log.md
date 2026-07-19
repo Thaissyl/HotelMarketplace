@@ -119,3 +119,28 @@ The implementation intentionally uses a conservative conflict rule: a new close
 or block is rejected when any active room-type commitment overlaps the requested
 dates. A controlled exception or relocation workflow is not implemented. Setup
 status bypass and inspection/release policy remain assigned to ALN-008.
+
+## ALN-007 Verification
+
+The dual-collection finance model was verified through Domain invariants, SQL
+Server integration flows, migration consistency, and Mobile contract tests.
+
+| Command | Result |
+| --- | --- |
+| `dotnet build .\backend\HotelMarketplace.slnx --no-restore` | Passed; 0 warnings and 0 errors |
+| `dotnet test .\backend\HotelMarketplace.slnx --no-build` | Passed; 33 API integration tests and 12 Domain tests |
+| `dotnet ef migrations has-pending-model-changes` | Passed; model matches the latest migration |
+| `flutter analyze` | Passed; no issues found |
+| `flutter test` | Passed; 4 tests |
+| `flutter build apk --debug` | Passed; debug APK built successfully |
+
+ALN-007 coverage verifies immediate Pay-at-Property confirmation without an
+expiration, exact and partial property collection, concurrent attempts against
+the final balance, Demo reconciliation, finance summary projection, settlement
+creation and finalization evidence, and amount/state invariants for collection,
+invoice, commission, payment, and settlement entities.
+
+Residual work is intentionally recorded rather than hidden: Front Desk Mobile
+does not yet expose independent pre-checkout partial collection, dedicated Mobile
+commission-rate management remains pending, and Application.UnitTests still has
+no authored tests.

@@ -48,6 +48,17 @@ internal sealed class UpdateSettlementStatusRequestValidator : AbstractValidator
             .When(request => request.Status == SettlementStatus.Exception)
             .WithMessage("Admin note is required when marking settlement as exception.");
         RuleFor(request => request.AdminNote).SafeOptionalText(1000, "Admin note");
+        RuleFor(request => request.SettledAmount)
+            .NotNull()
+            .GreaterThanOrEqualTo(0)
+            .When(request => request.Status == SettlementStatus.Settled);
+        RuleFor(request => request.SettlementDateUtc)
+            .NotNull()
+            .When(request => request.Status == SettlementStatus.Settled);
+        RuleFor(request => request.Reference)
+            .NotEmpty()
+            .When(request => request.Status == SettlementStatus.Settled);
+        RuleFor(request => request.Reference).SafeOptionalText(128, "Settlement reference");
     }
 }
 
@@ -73,5 +84,9 @@ internal sealed class UpdatePaymentReconciliationRequestValidator : AbstractVali
         RuleFor(request => request.Status)
             .Must(status => status is ReconciliationStatus.Reconciled or ReconciliationStatus.Exception)
             .WithMessage("Payment transaction can only be marked as Reconciled or Exception.");
+        RuleFor(request => request.Note)
+            .NotEmpty()
+            .When(request => request.Status == ReconciliationStatus.Exception);
+        RuleFor(request => request.Note).SafeOptionalText(1000, "Reconciliation note");
     }
 }

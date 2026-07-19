@@ -158,10 +158,13 @@ class AdminSettlement {
     required this.hotelId,
     required this.hotelName,
     required this.settlementType,
-    required this.totalAmount,
+    required this.expectedAmount,
+    required this.settledAmount,
     required this.status,
     required this.adminNote,
     required this.createdAtUtc,
+    required this.settlementDateUtc,
+    required this.reference,
     required this.items,
   });
 
@@ -169,11 +172,16 @@ class AdminSettlement {
   final String hotelId;
   final String hotelName;
   final String settlementType;
-  final double totalAmount;
+  final double expectedAmount;
+  final double? settledAmount;
   final String status;
   final String? adminNote;
   final DateTime createdAtUtc;
+  final DateTime? settlementDateUtc;
+  final String reference;
   final List<AdminSettlementItem> items;
+
+  double get totalAmount => expectedAmount;
 
   static AdminSettlement fromJson(Object? data) {
     final json = _asMap(data);
@@ -183,15 +191,77 @@ class AdminSettlement {
       hotelId: json['hotelId']?.toString() ?? '',
       hotelName: json['hotelName']?.toString() ?? '',
       settlementType: json['settlementType']?.toString() ?? '',
-      totalAmount: (json['totalAmount'] as num?)?.toDouble() ?? 0,
+      expectedAmount: (json['expectedAmount'] as num?)?.toDouble() ?? 0,
+      settledAmount: (json['settledAmount'] as num?)?.toDouble(),
       status: json['status']?.toString() ?? '',
       adminNote: json['adminNote']?.toString(),
       createdAtUtc:
           DateTime.tryParse(json['createdAtUtc']?.toString() ?? '')?.toUtc() ??
               DateTime.now().toUtc(),
+      settlementDateUtc: DateTime.tryParse(
+        json['settlementDateUtc']?.toString() ?? '',
+      )?.toUtc(),
+      reference: json['reference']?.toString() ?? '',
       items: items is List
           ? items.map(AdminSettlementItem.fromJson).toList(growable: false)
           : const <AdminSettlementItem>[],
+    );
+  }
+}
+
+class AdminPaymentTransaction {
+  const AdminPaymentTransaction({
+    required this.id,
+    required this.hotelId,
+    required this.hotelName,
+    required this.bookingId,
+    required this.provider,
+    required this.gatewayReference,
+    required this.amount,
+    required this.status,
+    required this.reconciliationStatus,
+    required this.reconciliationNote,
+    required this.reconciledAtUtc,
+    required this.createdAtUtc,
+    required this.paidAtUtc,
+  });
+
+  final String id;
+  final String hotelId;
+  final String hotelName;
+  final String bookingId;
+  final String provider;
+  final String? gatewayReference;
+  final double amount;
+  final String status;
+  final String reconciliationStatus;
+  final String? reconciliationNote;
+  final DateTime? reconciledAtUtc;
+  final DateTime createdAtUtc;
+  final DateTime? paidAtUtc;
+
+  static AdminPaymentTransaction fromJson(Object? data) {
+    final json = _asMap(data);
+    return AdminPaymentTransaction(
+      id: json['id']?.toString() ?? '',
+      hotelId: json['hotelId']?.toString() ?? '',
+      hotelName: json['hotelName']?.toString() ?? '',
+      bookingId: json['bookingId']?.toString() ?? '',
+      provider: json['provider']?.toString() ?? '',
+      gatewayReference: json['gatewayReference']?.toString(),
+      amount: (json['amount'] as num?)?.toDouble() ?? 0,
+      status: json['status']?.toString() ?? '',
+      reconciliationStatus: json['reconciliationStatus']?.toString() ?? '',
+      reconciliationNote: json['reconciliationNote']?.toString(),
+      reconciledAtUtc: DateTime.tryParse(
+        json['reconciledAtUtc']?.toString() ?? '',
+      )?.toUtc(),
+      createdAtUtc:
+          DateTime.tryParse(json['createdAtUtc']?.toString() ?? '')?.toUtc() ??
+              DateTime.now().toUtc(),
+      paidAtUtc: DateTime.tryParse(
+        json['paidAtUtc']?.toString() ?? '',
+      )?.toUtc(),
     );
   }
 }
@@ -201,11 +271,21 @@ class AdminSettlementItem {
     required this.id,
     required this.amount,
     required this.status,
+    required this.paymentMode,
+    required this.bookingStatus,
+    required this.grossAmount,
+    required this.refundAmount,
+    required this.commissionAmount,
   });
 
   final String id;
   final double amount;
   final String status;
+  final String paymentMode;
+  final String bookingStatus;
+  final double grossAmount;
+  final double refundAmount;
+  final double commissionAmount;
 
   static AdminSettlementItem fromJson(Object? data) {
     final json = _asMap(data);
@@ -213,6 +293,11 @@ class AdminSettlementItem {
       id: json['id']?.toString() ?? '',
       amount: (json['amount'] as num?)?.toDouble() ?? 0,
       status: json['status']?.toString() ?? '',
+      paymentMode: json['paymentMode']?.toString() ?? '',
+      bookingStatus: json['bookingStatus']?.toString() ?? '',
+      grossAmount: (json['grossAmount'] as num?)?.toDouble() ?? 0,
+      refundAmount: (json['refundAmount'] as num?)?.toDouble() ?? 0,
+      commissionAmount: (json['commissionAmount'] as num?)?.toDouble() ?? 0,
     );
   }
 }
