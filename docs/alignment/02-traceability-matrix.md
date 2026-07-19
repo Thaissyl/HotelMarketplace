@@ -1,0 +1,53 @@
+# Requirement Traceability Matrix
+
+Assessment baseline: canonical SRS and SDD, approved scope decisions dated
+2026-07-19, backend and mobile code at commit `0681fb9`, and the current audit
+branch. `Partial` means that a main path exists but one or more documented
+branches, data fields, permissions, lifecycle states, or tests are absent.
+
+| Requirement | Required capability | Backend | Mobile | Tests | Status | Severity | Workstream |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| UC-001 | Public approved-hotel search | Public projected queries exist | Route redirects guests to login | Search not covered | Partial | High | WS-02, WS-09 |
+| UC-002 | Public hotel detail and availability | Public detail exists but omits documented content | Detail exists but requires Customer login | Not covered | Partial | High | WS-02, WS-09 |
+| UC-003 | Customer or Owner registration | Implemented with validation and hashing | Implemented | Invalid placeholder test exists | Aligned | Low residual | WS-01 |
+| UC-004 | Login and role-specific access | Implemented; hotel-role tuple is lost in JWT | Implemented role landing | Tenant assignment combinations not covered | Partial | Critical | WS-01 |
+| UC-005 | Instant Customer booking with payment-mode choice | Atomic Platform Collect creation only | Platform Collect only | Online concurrency covered | Partial | High | WS-02, WS-03 |
+| UC-006 | Approved demo payment | Simulation confirms owned eligible booking; real payOS code remains | Demo confirmation exists | Happy path only | Partial under approved scope | Medium | WS-02, WS-08 |
+| UC-007 | Customer cancellation and refund initiation | No endpoint, service, or domain transition | Missing | Missing | Missing | High | WS-02, WS-07 |
+| UC-008 | Customer booking list and detail | List exists; guest count is returned as one and detail is limited | Trips/detail equivalent exists | Happy path only | Partial | Medium | WS-02, WS-09 |
+| UC-009 | Owner hotel registration | Implemented | New Owner cannot register a hotel | Smoke test covers backend | Partial | High | WS-04, WS-09 |
+| UC-010 | Owner and Manager hotel profile management | Owner controller exists; Manager mutation scope is absent | Owner path exists; Manager path incomplete | Owner smoke path only | Partial | High | WS-04 |
+| UC-011 | Owner and Manager room-type management | Owner CRUD exists; Manager mutation scope is absent | Owner create path exists; full edit lifecycle incomplete | Owner smoke path only | Partial | High | WS-04 |
+| UC-012 | Owner and Manager physical-room management | Owner CRUD exists; floor/notes absent and status bypass possible | Partial | Owner smoke path only | Deviated | High | WS-03, WS-04 |
+| UC-013 | Date-range room availability management | Entity exists but no use-case API | Missing | Missing | Missing | High | WS-03, WS-09 |
+| UC-014 | Hotel booking list/detail | Query exists with hotel scoping | Front Desk panels exist | Smoke coverage only | Partial | Medium | WS-05 |
+| UC-015 | Check-in and room assignment | Transaction and locks exist; date and identity policy incomplete | Operational action exists | Expired and concurrent check-in covered | Partial | High | WS-05 |
+| UC-016 | Checkout, collection, invoice, housekeeping release | Transaction exists; payment and invoice invariants incomplete | Operational action exists | Happy path covered | Partial | High | WS-05, WS-07 |
+| UC-017 | No-show with financial trace | Enum exists; no operation | Missing | Missing | Missing | High | WS-05, WS-07 |
+| UC-018 | Hotel approve or reject with reason | Implemented and audited | Implemented | Smoke coverage exists | Aligned | Low residual | WS-07 |
+| UC-019 | Commission-rate management and snapshot behavior | Backend update exists | Admin client does not expose it | Not covered | Partial | Medium | WS-07, WS-09 |
+| UC-020 | Payment reconciliation and exception evidence | Update exists; exception note is not captured | Missing | Not covered | Partial | High | WS-07 |
+| UC-021 | Manual refund status processing | Update exists, but no production flow creates refund records | Admin list/update exists but normally has no records | Refund is manually seeded in smoke test | Missing end to end | High | WS-02, WS-07 |
+| UC-022 | Settlement and commission collection | Backend exists; eligibility and refund calculations are incomplete | List/status exists; create flow incomplete | Smoke-level only | Deviated | High | WS-07 |
+| UC-023 | Platform dashboard | Finance summary and user activity exist | Dashboard exists | Smoke-level only | Partial | Medium | WS-07, WS-09 |
+| UC-024 | Expire unpaid booking | Scheduler and transactional expiration exist | Countdown is local presentation only | Indirect coverage | Broadly aligned | Medium residual | WS-08 |
+| UC-025 | Own profile for every human role | API permits Customer and Platform Administrator only | Customer settings only | Customer path only | Partial | Medium | WS-01, WS-09 |
+| UC-026 | Invite/create/update/deactivate hotel staff | Create and list only | Create and list only | Smoke path only | Partial | High | WS-04 |
+| UC-027 | Hotel-scoped role assignment and lifecycle | Assignment is created with account; tuple lost in claims | No complete assignment management | Missing | Partial | Critical | WS-01, WS-04 |
+| UC-028 | Arrivals, departures, and no-show candidates | Filtered booking list exists; no no-show candidates | Panels exist; no complete operational summary | Smoke-level only | Partial | Medium | WS-05 |
+| UC-029 | Pre-assign or change physical room | Assignment exists only inside check-in/walk-in | No independent operation | Concurrent check-in only | Partial | Medium | WS-05 |
+| UC-030 | Pay-at-Property collection lifecycle | Checkout side effect uses PaymentStatus instead of collection lifecycle | Checkout amount input exists | Happy path only | Deviated | High | WS-05, WS-07 |
+| UC-031 | Approved Anonymous Walk-in flow | Uses staff actor as Customer and separate physical-room locks | Walk-in form exists | No cross-channel test | Deviated | Critical | WS-03, WS-05 |
+| UC-032 | Role-safe housekeeping task views | Query exists; privacy projection is limited | Task list exists | Smoke-level only | Partial | Medium | WS-06 |
+| UC-033 | Cleaning lifecycle and assignee ownership | Open/InProgress/Completed path exists; assignment and inspection states differ | Status action exists | Smoke-level only | Partial | High | WS-06 |
+| UC-034 | Report room issue with severity effect | Creation exists and blocks room; lifecycle is simplified | Creation exists | Smoke-level only | Partial | Medium | WS-06 |
+| UC-035 | Maintenance request views | Query exists | List exists | Smoke-level only | Broadly aligned | Medium residual | WS-06 |
+| UC-036 | Maintenance work lifecycle | Open/InProgress/Resolved only; notes and On Hold absent | Status action exists | Smoke-level only | Partial | High | WS-06 |
+| UC-037 | Controlled room release after maintenance | Resolve immediately returns room to Available | Same simplified action | Smoke-level only | Deviated | High | WS-06 |
+| NSF-001 | Idempotent payment result | Demo operation is transactionally idempotent but provider event history is incomplete | Demo only | Duplicate demo not explicitly tested | Partial under approved scope | Medium | WS-08 |
+| NSF-002 | Scheduled expiration | Hosted service and repository exist | Not applicable | Indirect only | Broadly aligned | Medium residual | WS-08 |
+| NSF-003 | Record notifications even when mocked | Entity exists; business flows do not create records | Local substitutes exist | Missing | Missing | High | WS-08, WS-09 |
+| NFR-SEC-002 | Role and hotel-scoped authorization | Platform bypass and role/hotel claim separation violate rule | Role routes exist | Cross-hotel test does not cover Platform Admin | Deviated | Critical | WS-01 |
+| NFR-SEC-006 | Secure production transport | API can support HTTPS; deployment proof incomplete | Main Android manifest globally allows cleartext | Missing | Deviated | High | WS-08, WS-09 |
+| NFR-AUD-001 | Audit protected mutations | Mostly Platform Admin mutations only | Activity UI reads partial audit | Missing | Missing/partial | High | WS-08 |
+| NFR-MAINT-001 | Full requirement traceability | Source documents exist | Not applicable | Coverage is sparse | Partial | Medium | WS-08 |
