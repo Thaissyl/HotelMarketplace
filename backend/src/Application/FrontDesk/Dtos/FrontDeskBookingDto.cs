@@ -11,6 +11,7 @@ public sealed record FrontDeskBookingDto(
     BookingSource Source,
     DateOnly CheckInDate,
     DateOnly CheckOutDate,
+    int GuestCount,
     decimal TotalAmount,
     string GuestFullName,
     string GuestPhone,

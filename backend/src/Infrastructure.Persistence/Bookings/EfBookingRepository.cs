@@ -122,8 +122,20 @@ internal sealed class EfBookingRepository : IBookingRepository
                 request.PaymentMode,
                 BookingSource.Marketplace,
                 totalAmount,
+                request.GuestCount,
                 request.GuestFullName,
                 request.GuestPhone);
+
+            CancellationPolicy? cancellationPolicy = await _dbContext.CancellationPolicies
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    policy => policy.HotelId == request.HotelId && policy.Status == RecordStatus.Active,
+                    cancellationToken);
+            if (cancellationPolicy is not null)
+            {
+                booking.ApplyCancellationPolicySnapshot(cancellationPolicy);
+            }
 
             if (paymentExpiresAtUtc.HasValue)
             {
@@ -224,6 +236,7 @@ internal sealed class EfBookingRepository : IBookingRepository
                 bookingRoom.RoomTypeId,
                 booking.CheckInDate,
                 booking.CheckOutDate,
+                booking.GuestCount,
                 bookingRoom.Quantity,
                 bookingRoom.Nights,
                 bookingRoom.UnitPricePerNight,
@@ -247,7 +260,7 @@ internal sealed class EfBookingRepository : IBookingRepository
                 row.CheckInDate,
                 row.CheckOutDate,
                 row.RoomCount,
-                1,
+                row.GuestCount,
                 row.Nights,
                 row.UnitPricePerNight,
                 row.TotalAmount,
@@ -283,9 +296,7 @@ internal sealed class EfBookingRepository : IBookingRepository
                 BookingCancellationPersistenceStatus.Forbidden);
         }
 
-        CancellationPolicyReadModel? policy = await GetCancellationPolicyAsync(
-            booking.HotelId,
-            cancellationToken);
+        CancellationPolicyReadModel? policy = await GetApplicableCancellationPolicyAsync(booking, cancellationToken);
         bool isPaid = await IsBookingPaidAsync(booking.Id, cancellationToken);
 
         return BookingCancellationQuotePersistenceResult.Success(
@@ -376,18 +387,11 @@ internal sealed class EfBookingRepository : IBookingRepository
                 .ToListAsync(cancellationToken);
 
             DateTime utcNow = _dateTimeProvider.UtcNow;
-            CancellationPolicyReadModel? policy = await GetCancellationPolicyAsync(
-                booking.HotelId,
+            CancellationBookingReadModel cancellationReadModel = ToCancellationReadModel(booking);
+            CancellationPolicyReadModel? policy = await GetApplicableCancellationPolicyAsync(
+                cancellationReadModel,
                 cancellationToken);
             bool isPaid = await IsBookingPaidAsync(booking.Id, cancellationToken);
-            CancellationBookingReadModel cancellationReadModel = new(
-                booking.Id,
-                booking.CustomerUserAccountId,
-                booking.HotelId,
-                booking.Status,
-                booking.PaymentMode,
-                booking.CheckInDate,
-                booking.TotalAmount);
             BookingCancellationQuoteDto quote = BuildCancellationQuote(
                 cancellationReadModel,
                 policy,
@@ -494,7 +498,10 @@ internal sealed class EfBookingRepository : IBookingRepository
                 booking.Status,
                 booking.PaymentMode,
                 booking.CheckInDate,
-                booking.TotalAmount))
+                booking.TotalAmount,
+                booking.CancellationPolicyName,
+                booking.CancellationPolicyFreeCancellationHours,
+                booking.CancellationPolicyRefundPercentage))
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -505,7 +512,7 @@ internal sealed class EfBookingRepository : IBookingRepository
         return await _dbContext.CancellationPolicies
             .IgnoreQueryFilters()
             .AsNoTracking()
-            .Where(policy => policy.HotelId == hotelId)
+            .Where(policy => policy.HotelId == hotelId && policy.Status == RecordStatus.Active)
             .OrderBy(policy => policy.Id)
             .Select(policy => new CancellationPolicyReadModel(
                 policy.Name,
@@ -513,6 +520,36 @@ internal sealed class EfBookingRepository : IBookingRepository
                 policy.RefundPercentage))
             .FirstOrDefaultAsync(cancellationToken);
     }
+
+    private async Task<CancellationPolicyReadModel?> GetApplicableCancellationPolicyAsync(
+        CancellationBookingReadModel booking,
+        CancellationToken cancellationToken)
+    {
+        if (booking.CancellationPolicyName is not null &&
+            booking.CancellationPolicyFreeCancellationHours.HasValue &&
+            booking.CancellationPolicyRefundPercentage.HasValue)
+        {
+            return new CancellationPolicyReadModel(
+                booking.CancellationPolicyName,
+                booking.CancellationPolicyFreeCancellationHours.Value,
+                booking.CancellationPolicyRefundPercentage.Value);
+        }
+
+        return await GetCancellationPolicyAsync(booking.HotelId, cancellationToken);
+    }
+
+    private static CancellationBookingReadModel ToCancellationReadModel(Booking booking) =>
+        new(
+            booking.Id,
+            booking.CustomerUserAccountId,
+            booking.HotelId,
+            booking.Status,
+            booking.PaymentMode,
+            booking.CheckInDate,
+            booking.TotalAmount,
+            booking.CancellationPolicyName,
+            booking.CancellationPolicyFreeCancellationHours,
+            booking.CancellationPolicyRefundPercentage);
 
     private async Task<bool> IsBookingPaidAsync(Guid bookingId, CancellationToken cancellationToken)
     {
@@ -588,6 +625,7 @@ internal sealed class EfBookingRepository : IBookingRepository
         Guid RoomTypeId,
         DateOnly CheckInDate,
         DateOnly CheckOutDate,
+        int GuestCount,
         int RoomCount,
         int Nights,
         decimal UnitPricePerNight,
@@ -608,7 +646,10 @@ internal sealed class EfBookingRepository : IBookingRepository
         BookingStatus Status,
         PaymentMode PaymentMode,
         DateOnly CheckInDate,
-        decimal TotalAmount);
+        decimal TotalAmount,
+        string? CancellationPolicyName,
+        int? CancellationPolicyFreeCancellationHours,
+        decimal? CancellationPolicyRefundPercentage);
 
     private sealed record CancellationPolicyReadModel(
         string Name,

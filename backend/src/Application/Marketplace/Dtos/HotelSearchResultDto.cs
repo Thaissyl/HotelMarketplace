@@ -6,5 +6,7 @@ public sealed record HotelSearchResultDto(
     string City,
     string AddressLine,
     string? Description,
+    string? CoverImageUrl,
+    IReadOnlyCollection<string> AmenityNames,
     decimal MinimumPricePerNight,
     int AvailableRoomTypeCount);

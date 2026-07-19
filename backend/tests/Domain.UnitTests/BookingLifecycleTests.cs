@@ -83,6 +83,7 @@ public sealed class BookingLifecycleTests
             paymentMode,
             BookingSource.Marketplace,
             200m,
+            2,
             "Test Guest",
             "0900000000");
 

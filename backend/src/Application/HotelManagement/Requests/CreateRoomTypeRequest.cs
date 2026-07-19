@@ -5,4 +5,5 @@ public sealed record CreateRoomTypeRequest(
     int AdultCapacity,
     int ChildCapacity,
     decimal BasePricePerNight,
-    string? Description);
+    string? Description,
+    string? Facilities = null);

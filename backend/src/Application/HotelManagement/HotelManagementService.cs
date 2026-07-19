@@ -21,6 +21,7 @@ internal sealed class HotelManagementService : IHotelManagementService
     private readonly IPasswordHasher _passwordHasher;
     private readonly IValidator<RegisterHotelRequest> _registerHotelValidator;
     private readonly IValidator<UpdateHotelProfileRequest> _updateHotelProfileValidator;
+    private readonly IValidator<UpdateHotelContentRequest> _updateHotelContentValidator;
     private readonly IValidator<CreateHotelStaffRequest> _createHotelStaffValidator;
     private readonly IValidator<AttachHotelStaffRequest> _attachHotelStaffValidator;
     private readonly IValidator<UpdateHotelStaffAssignmentRequest> _updateHotelStaffAssignmentValidator;
@@ -37,6 +38,7 @@ internal sealed class HotelManagementService : IHotelManagementService
         IPasswordHasher passwordHasher,
         IValidator<RegisterHotelRequest> registerHotelValidator,
         IValidator<UpdateHotelProfileRequest> updateHotelProfileValidator,
+        IValidator<UpdateHotelContentRequest> updateHotelContentValidator,
         IValidator<CreateHotelStaffRequest> createHotelStaffValidator,
         IValidator<AttachHotelStaffRequest> attachHotelStaffValidator,
         IValidator<UpdateHotelStaffAssignmentRequest> updateHotelStaffAssignmentValidator,
@@ -52,6 +54,7 @@ internal sealed class HotelManagementService : IHotelManagementService
         _passwordHasher = passwordHasher;
         _registerHotelValidator = registerHotelValidator;
         _updateHotelProfileValidator = updateHotelProfileValidator;
+        _updateHotelContentValidator = updateHotelContentValidator;
         _createHotelStaffValidator = createHotelStaffValidator;
         _attachHotelStaffValidator = attachHotelStaffValidator;
         _updateHotelStaffAssignmentValidator = updateHotelStaffAssignmentValidator;
@@ -181,6 +184,53 @@ internal sealed class HotelManagementService : IHotelManagementService
         await _repository.SaveChangesAsync(cancellationToken);
 
         return ToHotelDto(hotel);
+    }
+
+    public async Task<Result<HotelContentDto>> GetHotelContentAsync(Guid hotelId, CancellationToken cancellationToken)
+    {
+        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        if (accessFailure is not null)
+        {
+            return Result.Failure<HotelContentDto>(accessFailure.Error);
+        }
+
+        HotelContentDto? content = await _repository.GetHotelContentAsync(hotelId, cancellationToken);
+        return content is null
+            ? Result.Failure<HotelContentDto>(HotelManagementErrors.HotelNotFound)
+            : Result.Success(content);
+    }
+
+    public async Task<Result<HotelContentDto>> UpdateHotelContentAsync(
+        Guid hotelId,
+        UpdateHotelContentRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result? accessFailure = await EnsureOwnedHotelAsync(hotelId, cancellationToken);
+        if (accessFailure is not null)
+        {
+            return Result.Failure<HotelContentDto>(accessFailure.Error);
+        }
+
+        ValidationResult validationResult = await _updateHotelContentValidator.ValidateAsync(request, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return Result.Failure<HotelContentDto>(
+                ValidationErrorFormatter.ToResultError("HotelManagement.InvalidHotelContent", validationResult));
+        }
+
+        HotelContentPersistenceResult persistenceResult = await _repository.ReplaceHotelContentAsync(
+            hotelId,
+            request,
+            _currentUserService.UserId!.Value,
+            cancellationToken);
+
+        return persistenceResult.Status switch
+        {
+            HotelContentPersistenceStatus.Success => Result.Success(persistenceResult.Content!),
+            HotelContentPersistenceStatus.LockUnavailable =>
+                Result.Failure<HotelContentDto>(HotelManagementErrors.LockUnavailable),
+            _ => Result.Failure<HotelContentDto>(HotelManagementErrors.HotelNotFound)
+        };
     }
 
     public async Task<Result<IReadOnlyCollection<HotelStaffMemberDto>>> GetStaffAsync(Guid hotelId, CancellationToken cancellationToken)
@@ -367,7 +417,15 @@ internal sealed class HotelManagementService : IHotelManagementService
             return Result.Failure<RoomTypeDto>(ValidationErrorFormatter.ToResultError("HotelManagement.InvalidRoomType", validationResult));
         }
 
-        RoomType roomType = new(Guid.NewGuid(), hotelId, request.Name, request.AdultCapacity, request.ChildCapacity, request.BasePricePerNight, request.Description);
+        RoomType roomType = new(
+            Guid.NewGuid(),
+            hotelId,
+            request.Name,
+            request.AdultCapacity,
+            request.ChildCapacity,
+            request.BasePricePerNight,
+            request.Description,
+            request.Facilities);
         await _repository.AddRoomTypeAsync(roomType, cancellationToken);
 
         return ToRoomTypeDto(roomType);
@@ -427,7 +485,13 @@ internal sealed class HotelManagementService : IHotelManagementService
             return Result.Failure<RoomTypeDto>(HotelManagementErrors.RoomTypeNotFound);
         }
 
-        roomType.UpdateDetails(request.Name, request.AdultCapacity, request.ChildCapacity, request.BasePricePerNight, request.Description);
+        roomType.UpdateDetails(
+            request.Name,
+            request.AdultCapacity,
+            request.ChildCapacity,
+            request.BasePricePerNight,
+            request.Description,
+            request.Facilities);
         await _repository.SaveChangesAsync(cancellationToken);
 
         return ToRoomTypeDto(roomType);
@@ -477,6 +541,8 @@ internal sealed class HotelManagementService : IHotelManagementService
             request.RoomTypeId,
             request.RoomNumber,
             request.InitialStatus,
+            request.Floor,
+            request.Notes,
             cancellationToken);
 
         return ToPhysicalRoomResult(persistenceResult);
@@ -514,6 +580,8 @@ internal sealed class HotelManagementService : IHotelManagementService
             physicalRoomId,
             request.RoomNumber,
             request.Status,
+            request.Floor,
+            request.Notes,
             cancellationToken);
 
         return ToPhysicalRoomResult(persistenceResult);
@@ -640,6 +708,7 @@ internal sealed class HotelManagementService : IHotelManagementService
             roomType.ChildCapacity,
             roomType.BasePricePerNight,
             roomType.Description,
+            roomType.Facilities,
             roomType.Status);
     }
 
@@ -650,6 +719,8 @@ internal sealed class HotelManagementService : IHotelManagementService
             physicalRoom.HotelId,
             physicalRoom.RoomTypeId,
             physicalRoom.RoomNumber,
+            physicalRoom.Floor,
+            physicalRoom.Notes,
             physicalRoom.Status);
     }
 

@@ -10,7 +10,14 @@ public sealed class PhysicalRoom : Entity, IHotelScopedEntity
         RoomNumber = string.Empty;
     }
 
-    public PhysicalRoom(Guid id, Guid hotelId, Guid roomTypeId, string roomNumber, RoomOperationalStatus initialStatus = RoomOperationalStatus.Available)
+    public PhysicalRoom(
+        Guid id,
+        Guid hotelId,
+        Guid roomTypeId,
+        string roomNumber,
+        RoomOperationalStatus initialStatus = RoomOperationalStatus.Available,
+        string? floor = null,
+        string? notes = null)
         : base(id)
     {
         Guard.NotEmpty(hotelId, nameof(HotelId));
@@ -18,6 +25,8 @@ public sealed class PhysicalRoom : Entity, IHotelScopedEntity
         HotelId = hotelId;
         RoomTypeId = roomTypeId;
         RoomNumber = Guard.NotBlank(roomNumber, nameof(RoomNumber), 32);
+        Floor = Guard.Optional(floor, nameof(Floor), 20);
+        Notes = Guard.Optional(notes, nameof(Notes), 500);
         Status = initialStatus is RoomOperationalStatus.Available or RoomOperationalStatus.Inactive
             ? initialStatus
             : throw new SharedKernel.Exceptions.DomainException("PhysicalRoom.InvalidInitialStatus", "Initial room status must be Available or Inactive.");
@@ -29,11 +38,22 @@ public sealed class PhysicalRoom : Entity, IHotelScopedEntity
 
     public string RoomNumber { get; private set; }
 
+    public string? Floor { get; private set; }
+
+    public string? Notes { get; private set; }
+
     public RoomOperationalStatus Status { get; private set; }
 
     public void Rename(string roomNumber)
     {
         RoomNumber = Guard.NotBlank(roomNumber, nameof(RoomNumber), 32);
+    }
+
+    public void UpdateDetails(string roomNumber, string? floor, string? notes)
+    {
+        RoomNumber = Guard.NotBlank(roomNumber, nameof(RoomNumber), 32);
+        Floor = Guard.Optional(floor, nameof(Floor), 20);
+        Notes = Guard.Optional(notes, nameof(Notes), 500);
     }
 
     public void ChangeSetupStatus(RoomOperationalStatus status)

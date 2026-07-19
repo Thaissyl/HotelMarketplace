@@ -120,6 +120,8 @@ internal sealed class AmenityConfiguration : IEntityTypeConfiguration<Amenity>
         builder.ConfigureEntity("Amenities");
         builder.Property(entity => entity.Code).HasMaxLength(64).IsRequired();
         builder.Property(entity => entity.Name).HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.Type).HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.Status).HasEnumConversion();
         builder.HasIndex(entity => entity.Code).IsUnique();
     }
 }
@@ -142,6 +144,8 @@ internal sealed class CancellationPolicyConfiguration : IEntityTypeConfiguration
         builder.ConfigureEntity("CancellationPolicies");
         builder.Property(entity => entity.Name).HasMaxLength(128).IsRequired();
         builder.Property(entity => entity.RefundPercentage).HasPrecision(5, 2);
+        builder.Property(entity => entity.Description).HasMaxLength(1000);
+        builder.Property(entity => entity.Status).HasEnumConversion();
         builder.HasIndex(entity => entity.HotelId).IsUnique();
         builder.HasOne<HotelProperty>().WithMany().HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Cascade);
         builder.ToTable(table =>
@@ -190,6 +194,7 @@ internal sealed class RoomTypeConfiguration : IEntityTypeConfiguration<RoomType>
         builder.Property(entity => entity.Name).HasMaxLength(160).IsRequired();
         builder.Property(entity => entity.BasePricePerNight).HasPrecision(18, 2);
         builder.Property(entity => entity.Description).HasMaxLength(1000);
+        builder.Property(entity => entity.Facilities).HasMaxLength(2000);
         builder.Property(entity => entity.Status).HasEnumConversion();
         builder.HasIndex(entity => new { entity.HotelId, entity.Status });
         builder.HasOne<HotelProperty>().WithMany("RoomTypes").HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Restrict);
@@ -208,6 +213,8 @@ internal sealed class PhysicalRoomConfiguration : IEntityTypeConfiguration<Physi
     {
         builder.ConfigureEntity("PhysicalRooms");
         builder.Property(entity => entity.RoomNumber).HasMaxLength(32).IsRequired();
+        builder.Property(entity => entity.Floor).HasMaxLength(20);
+        builder.Property(entity => entity.Notes).HasMaxLength(500);
         builder.Property(entity => entity.Status).HasEnumConversion();
         builder.HasIndex(entity => new { entity.HotelId, entity.RoomNumber }).IsUnique();
         builder.HasIndex(entity => new { entity.HotelId, entity.RoomTypeId, entity.Status });

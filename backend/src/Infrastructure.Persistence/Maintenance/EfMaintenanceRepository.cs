@@ -37,6 +37,8 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
                 room.HotelId,
                 room.RoomTypeId,
                 room.RoomNumber,
+                room.Floor,
+                room.Notes,
                 room.Status))
             .ToArrayAsync(cancellationToken);
     }

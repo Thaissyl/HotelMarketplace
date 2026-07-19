@@ -20,7 +20,7 @@ Manager property and inventory setup remains partial
 | UC-010/011/012 | Owner-only controller prevents documented Hotel Manager management | GAP-019 |
 | UC-026 | Invitation-token delivery is not used because the MVP supports direct create and attach-existing flows | GAP-020 residual |
 | ENT-004 | StaffInvitation remains unused by the approved direct attach-existing flow | GAP-020 residual |
-| ENT-005 to ENT-012 | Images, amenities, policy, floor, notes, and facilities are incomplete in contracts | GAP-024 |
+| ENT-005 to ENT-012 | Core content contracts are complete; dedicated Mobile Owner gallery/amenity/policy editing remains pending | GAP-024 residual, ALN-011 |
 | BR-ROOM-002 | Setup status changes bypass operational dependency checks | GAP-016 |
 
 ## Required Design

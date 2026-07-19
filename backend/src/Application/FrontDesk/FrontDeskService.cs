@@ -73,6 +73,8 @@ internal sealed class FrontDeskService : IFrontDeskService
             room.HotelId,
             room.RoomTypeId,
             room.RoomNumber,
+            room.Floor,
+            room.Notes,
             room.Status)).ToArray();
     }
 

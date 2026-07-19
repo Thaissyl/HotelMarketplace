@@ -11,4 +11,5 @@ public sealed record AvailableRoomTypeDto(
     int RequestedRoomCount,
     int Nights,
     decimal TotalPriceForStay,
-    string? Description);
+    string? Description,
+    string? Facilities);

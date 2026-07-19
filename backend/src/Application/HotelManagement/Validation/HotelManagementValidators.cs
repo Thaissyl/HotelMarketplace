@@ -54,6 +54,49 @@ internal sealed class CreateHotelStaffRequestValidator : AbstractValidator<Creat
     }
 }
 
+internal sealed class UpdateHotelContentRequestValidator : AbstractValidator<UpdateHotelContentRequest>
+{
+    public UpdateHotelContentRequestValidator()
+    {
+        RuleFor(request => request.Images).NotNull().Must(images => images is not null && images.Count <= 20)
+            .WithMessage("A hotel gallery can contain at most 20 images.");
+        RuleForEach(request => request.Images).ChildRules(image =>
+        {
+            image.RuleFor(value => value.ImageUrl)
+                .NotEmpty()
+                .MaximumLength(1000)
+                .Must(value => Uri.TryCreate(value, UriKind.Absolute, out Uri? uri) &&
+                    (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
+                .WithMessage("Image URL must be an absolute HTTP or HTTPS URL.");
+            image.RuleFor(value => value.DisplayOrder).InclusiveBetween(0, 999);
+        });
+        RuleFor(request => request.Images)
+            .Must(images => images is not null && images.Select(image => image.DisplayOrder).Distinct().Count() == images.Count)
+            .WithMessage("Image display order must be unique.");
+
+        RuleFor(request => request.Amenities).NotNull().Must(amenities => amenities is not null && amenities.Count <= 50)
+            .WithMessage("A hotel can contain at most 50 amenities.");
+        RuleForEach(request => request.Amenities).ChildRules(amenity =>
+        {
+            amenity.RuleFor(value => value.Code).Matches("^[A-Za-z0-9_-]+$").MaximumLength(64);
+            amenity.RuleFor(value => value.Name).SafeRequiredText(128, "Amenity name");
+            amenity.RuleFor(value => value.Type).SafeRequiredText(64, "Amenity type");
+        });
+        RuleFor(request => request.Amenities)
+            .Must(amenities => amenities is not null && amenities.All(amenity => amenity is not null && amenity.Code is not null) &&
+                amenities.Select(amenity => amenity.Code.Trim().ToUpperInvariant()).Distinct().Count() == amenities.Count)
+            .WithMessage("Amenity codes must be unique.");
+
+        When(request => request.CancellationPolicy is not null, () =>
+        {
+            RuleFor(request => request.CancellationPolicy!.Name).SafeRequiredText(128, "Policy name");
+            RuleFor(request => request.CancellationPolicy!.FreeCancellationHours).InclusiveBetween(0, 8760);
+            RuleFor(request => request.CancellationPolicy!.RefundPercentage).InclusiveBetween(0, 100);
+            RuleFor(request => request.CancellationPolicy!.Description).SafeOptionalText(1000, "Policy description");
+        });
+    }
+}
+
 internal sealed class AttachHotelStaffRequestValidator : AbstractValidator<AttachHotelStaffRequest>
 {
     public AttachHotelStaffRequestValidator()
@@ -91,6 +134,7 @@ internal sealed class CreateRoomTypeRequestValidator : AbstractValidator<CreateR
         RuleFor(request => request.ChildCapacity).GreaterThanOrEqualTo(0);
         RuleFor(request => request.BasePricePerNight).GreaterThanOrEqualTo(0);
         RuleFor(request => request.Description).SafeOptionalText(1000, "Description");
+        RuleFor(request => request.Facilities).SafeOptionalText(2000, "Facilities");
     }
 }
 
@@ -103,6 +147,7 @@ internal sealed class UpdateRoomTypeRequestValidator : AbstractValidator<UpdateR
         RuleFor(request => request.ChildCapacity).GreaterThanOrEqualTo(0);
         RuleFor(request => request.BasePricePerNight).GreaterThanOrEqualTo(0);
         RuleFor(request => request.Description).SafeOptionalText(1000, "Description");
+        RuleFor(request => request.Facilities).SafeOptionalText(2000, "Facilities");
     }
 }
 
@@ -115,6 +160,8 @@ internal sealed class CreatePhysicalRoomRequestValidator : AbstractValidator<Cre
         RuleFor(request => request.InitialStatus)
             .Must(status => status is RoomOperationalStatus.Available or RoomOperationalStatus.Inactive)
             .WithMessage("Initial status must be Available or Inactive.");
+        RuleFor(request => request.Floor).SafeOptionalText(20, "Floor");
+        RuleFor(request => request.Notes).SafeOptionalText(500, "Room notes");
     }
 }
 
@@ -126,5 +173,7 @@ internal sealed class UpdatePhysicalRoomRequestValidator : AbstractValidator<Upd
         RuleFor(request => request.Status)
             .Must(status => status is RoomOperationalStatus.Available or RoomOperationalStatus.Inactive)
             .WithMessage("Setup status must be Available or Inactive.");
+        RuleFor(request => request.Floor).SafeOptionalText(20, "Floor");
+        RuleFor(request => request.Notes).SafeOptionalText(500, "Room notes");
     }
 }

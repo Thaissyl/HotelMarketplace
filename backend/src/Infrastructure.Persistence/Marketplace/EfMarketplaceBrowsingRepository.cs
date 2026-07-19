@@ -121,7 +121,7 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
                 EF.Functions.Like(hotel.Name, locationPattern, "\\"));
         }
 
-        IQueryable<HotelSearchResultDto> query =
+        IQueryable<HotelSearchBaseReadModel> query =
             from hotel in hotelQuery
             join availableRoomType in availableRoomTypes on hotel.Id equals availableRoomType.HotelId
             group availableRoomType by new
@@ -134,7 +134,7 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
             }
             into hotelGroup
             orderby hotelGroup.Min(roomType => roomType.BasePricePerNight), hotelGroup.Key.Name
-            select new HotelSearchResultDto(
+            select new HotelSearchBaseReadModel(
                 hotelGroup.Key.Id,
                 hotelGroup.Key.Name,
                 hotelGroup.Key.City,
@@ -143,7 +143,46 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
                 hotelGroup.Min(roomType => roomType.BasePricePerNight),
                 hotelGroup.Count());
 
-        return await query.ToArrayAsync(cancellationToken);
+        HotelSearchBaseReadModel[] hotels = await query.ToArrayAsync(cancellationToken);
+        if (hotels.Length == 0)
+        {
+            return Array.Empty<HotelSearchResultDto>();
+        }
+
+        List<Guid> hotelIds = hotels.Select(hotel => hotel.Id).ToList();
+        var imageRows = await _dbContext.HotelImages
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(image => hotelIds.Contains(image.HotelId) && image.Status == RecordStatus.Active)
+            .OrderBy(image => image.DisplayOrder)
+            .Select(image => new { image.HotelId, image.ImageUrl })
+            .ToArrayAsync(cancellationToken);
+        Dictionary<Guid, string> coverImages = imageRows
+            .GroupBy(image => image.HotelId)
+            .ToDictionary(group => group.Key, group => group.First().ImageUrl);
+
+        var amenityRows = await (
+            from mapping in _dbContext.HotelAmenities.IgnoreQueryFilters().AsNoTracking()
+            join amenity in _dbContext.Amenities.IgnoreQueryFilters().AsNoTracking()
+                on mapping.AmenityId equals amenity.Id
+            where hotelIds.Contains(mapping.HotelId) && amenity.Status == RecordStatus.Active
+            orderby amenity.Name
+            select new { mapping.HotelId, amenity.Name })
+            .ToArrayAsync(cancellationToken);
+        Dictionary<Guid, string[]> amenityNames = amenityRows
+            .GroupBy(amenity => amenity.HotelId)
+            .ToDictionary(group => group.Key, group => group.Select(amenity => amenity.Name).ToArray());
+
+        return hotels.Select(hotel => new HotelSearchResultDto(
+            hotel.Id,
+            hotel.Name,
+            hotel.City,
+            hotel.AddressLine,
+            hotel.Description,
+            coverImages.GetValueOrDefault(hotel.Id),
+            amenityNames.GetValueOrDefault(hotel.Id, Array.Empty<string>()),
+            hotel.MinimumPricePerNight,
+            hotel.AvailableRoomTypeCount)).ToArray();
     }
 
     public async Task<HotelDetailDto?> GetHotelDetailAsync(
@@ -230,7 +269,8 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
                 TotalGuestCapacity = totalGuestCapacity,
                 roomType.BasePricePerNight,
                 AvailableRoomCount = availableRoomCount,
-                roomType.Description
+                roomType.Description,
+                roomType.Facilities
             };
 
         AvailableRoomTypeDto[] roomTypes = await availableRoomTypeQuery
@@ -247,8 +287,38 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
                 request.RoomCount,
                 nights,
                 roomType.BasePricePerNight * request.RoomCount * nights,
-                roomType.Description))
+                roomType.Description,
+                roomType.Facilities))
             .ToArrayAsync(cancellationToken);
+
+        HotelImageDto[] images = await _dbContext.HotelImages
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(image => image.HotelId == hotelId && image.Status == RecordStatus.Active)
+            .OrderBy(image => image.DisplayOrder)
+            .Select(image => new HotelImageDto(image.Id, image.ImageUrl, image.DisplayOrder))
+            .ToArrayAsync(cancellationToken);
+
+        HotelAmenityDto[] amenities = await (
+            from mapping in _dbContext.HotelAmenities.IgnoreQueryFilters().AsNoTracking()
+            join amenity in _dbContext.Amenities.IgnoreQueryFilters().AsNoTracking()
+                on mapping.AmenityId equals amenity.Id
+            where mapping.HotelId == hotelId && amenity.Status == RecordStatus.Active
+            orderby amenity.Type, amenity.Name
+            select new HotelAmenityDto(amenity.Id, amenity.Code, amenity.Name, amenity.Type))
+            .ToArrayAsync(cancellationToken);
+
+        CancellationPolicyDto? cancellationPolicy = await _dbContext.CancellationPolicies
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(policy => policy.HotelId == hotelId && policy.Status == RecordStatus.Active)
+            .Select(policy => new CancellationPolicyDto(
+                policy.Id,
+                policy.Name,
+                policy.FreeCancellationHours,
+                policy.RefundPercentage,
+                policy.Description))
+            .FirstOrDefaultAsync(cancellationToken);
 
         return new HotelDetailDto(
             hotel.Id,
@@ -262,6 +332,9 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
             request.CheckOutDate,
             request.GuestCount,
             request.RoomCount,
+            images,
+            amenities,
+            cancellationPolicy,
             roomTypes);
     }
 
@@ -273,6 +346,15 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
         string? Description,
         string ContactEmail,
         string ContactPhone);
+
+    private sealed record HotelSearchBaseReadModel(
+        Guid Id,
+        string Name,
+        string City,
+        string AddressLine,
+        string? Description,
+        decimal MinimumPricePerNight,
+        int AvailableRoomTypeCount);
 
     private static string EscapeLikePattern(string value)
     {

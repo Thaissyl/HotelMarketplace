@@ -27,4 +27,6 @@ public sealed class HotelImage : Entity, IHotelScopedEntity
     public int DisplayOrder { get; private set; }
 
     public RecordStatus Status { get; private set; }
+
+    public void Deactivate() => Status = RecordStatus.Inactive;
 }

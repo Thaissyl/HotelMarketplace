@@ -250,6 +250,8 @@ class RoomInventoryItem {
     required this.hotelId,
     required this.roomTypeId,
     required this.roomNumber,
+    required this.floor,
+    required this.notes,
     required this.status,
   });
 
@@ -257,6 +259,8 @@ class RoomInventoryItem {
   final String hotelId;
   final String roomTypeId;
   final String roomNumber;
+  final String? floor;
+  final String? notes;
   final String status;
 
   bool get isAvailable => status == 'Available';
@@ -268,6 +272,8 @@ class RoomInventoryItem {
       hotelId: json['hotelId']?.toString() ?? '',
       roomTypeId: json['roomTypeId']?.toString() ?? '',
       roomNumber: json['roomNumber']?.toString() ?? '',
+      floor: json['floor']?.toString(),
+      notes: json['notes']?.toString(),
       status: json['status']?.toString() ?? '',
     );
   }
@@ -280,6 +286,8 @@ class RoomTypeInventoryItem {
     required this.adultCapacity,
     required this.childCapacity,
     required this.basePricePerNight,
+    required this.description,
+    required this.facilities,
     required this.status,
   });
 
@@ -288,6 +296,8 @@ class RoomTypeInventoryItem {
   final int adultCapacity;
   final int childCapacity;
   final double basePricePerNight;
+  final String? description;
+  final String? facilities;
   final String status;
 
   int get totalCapacity => adultCapacity + childCapacity;
@@ -310,6 +320,8 @@ class RoomTypeInventoryItem {
       adultCapacity: (json['adultCapacity'] as num?)?.toInt() ?? 0,
       childCapacity: (json['childCapacity'] as num?)?.toInt() ?? 0,
       basePricePerNight: (json['basePricePerNight'] as num?)?.toDouble() ?? 0,
+      description: json['description']?.toString(),
+      facilities: json['facilities']?.toString(),
       status: json['status']?.toString() ?? '',
     );
   }
@@ -322,6 +334,7 @@ class CreateRoomTypeRequest {
     required this.childCapacity,
     required this.basePricePerNight,
     required this.description,
+    required this.facilities,
   });
 
   final String name;
@@ -329,6 +342,7 @@ class CreateRoomTypeRequest {
   final int childCapacity;
   final double basePricePerNight;
   final String description;
+  final String facilities;
 
   Map<String, dynamic> toJson() {
     return {
@@ -337,6 +351,7 @@ class CreateRoomTypeRequest {
       'childCapacity': childCapacity,
       'basePricePerNight': basePricePerNight,
       'description': description.trim().isEmpty ? null : description.trim(),
+      'facilities': facilities.trim().isEmpty ? null : facilities.trim(),
     };
   }
 }
@@ -346,17 +361,23 @@ class CreatePhysicalRoomRequest {
     required this.roomTypeId,
     required this.roomNumber,
     required this.initialStatus,
+    required this.floor,
+    required this.notes,
   });
 
   final String roomTypeId;
   final String roomNumber;
   final String initialStatus;
+  final String floor;
+  final String notes;
 
   Map<String, dynamic> toJson() {
     return {
       'roomTypeId': roomTypeId,
       'roomNumber': roomNumber.trim(),
       'initialStatus': initialStatus,
+      'floor': floor.trim().isEmpty ? null : floor.trim(),
+      'notes': notes.trim().isEmpty ? null : notes.trim(),
     };
   }
 }

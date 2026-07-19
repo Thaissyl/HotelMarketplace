@@ -870,6 +870,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
                 PaymentMode.PayAtProperty,
                 BookingSource.Marketplace,
                 100m,
+                1,
                 "No Show Guest",
                 "0900000000");
             eligibleBooking.AddRoom(new BookingRoom(
@@ -2396,6 +2397,146 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             HttpStatusCode.OK,
             admin.AccessToken);
         rejectedHotel.ApprovalStatus.Should().Be(HotelApprovalStatus.Rejected);
+    }
+
+    [Fact]
+    public async Task HotelContentAndGuestCountRoundTripThroughManagementMarketplaceAndBookingApis()
+    {
+        using HttpClient client = _factory.CreateClient();
+        TestAuthResponse owner = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.PropertyOwner,
+            "content-owner");
+
+        Guid hotelId;
+        Guid roomTypeId;
+        using (IServiceScope scope = _factory.Services.CreateScope())
+        {
+            HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+            HotelProperty hotel = CreateApprovedHotel(owner.UserId, "Contract Complete Suites");
+            RoomType roomType = new(
+                Guid.NewGuid(),
+                hotel.Id,
+                "Family Residence",
+                2,
+                2,
+                175m,
+                "Private residence for families.",
+                "Wi-Fi, workspace, minibar");
+            PhysicalRoom room = new(
+                Guid.NewGuid(),
+                hotel.Id,
+                roomType.Id,
+                "1204",
+                RoomOperationalStatus.Available,
+                "12",
+                "Quiet-side room");
+
+            dbContext.HotelProperties.Add(hotel);
+            dbContext.RoomTypes.Add(roomType);
+            dbContext.PhysicalRooms.Add(room);
+            await dbContext.SaveChangesAsync();
+            hotelId = hotel.Id;
+            roomTypeId = roomType.Id;
+        }
+
+        owner = await LoginAsync(client, owner.Email, "IntegrationPassword123!");
+        HotelContentDto content = await SendJsonAsync<HotelContentDto>(
+            client,
+            HttpMethod.Put,
+            $"/api/owner/hotels/{hotelId}/content",
+            new
+            {
+                images = new[]
+                {
+                    new { imageUrl = "https://images.example.com/contract-suite.jpg", displayOrder = 0 }
+                },
+                amenities = new[]
+                {
+                    new { code = "WIFI", name = "High-speed Wi-Fi", type = "Connectivity" },
+                    new { code = "POOL", name = "Swimming pool", type = "Recreation" }
+                },
+                cancellationPolicy = new
+                {
+                    name = "Flexible 48 hours",
+                    freeCancellationHours = 48,
+                    refundPercentage = 80m,
+                    description = "Cancel at least 48 hours before arrival for an 80 percent refund."
+                }
+            },
+            HttpStatusCode.OK,
+            owner.AccessToken);
+
+        content.Images.Should().ContainSingle();
+        content.Amenities.Should().HaveCount(2);
+        content.CancellationPolicy.Should().NotBeNull();
+
+        DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(20);
+        DateOnly checkOutDate = checkInDate.AddDays(3);
+        HotelDetailDto detail = await GetJsonAsync<HotelDetailDto>(
+            client,
+            $"/api/public/hotels/{hotelId}?checkInDate={checkInDate:yyyy-MM-dd}&checkOutDate={checkOutDate:yyyy-MM-dd}&guestCount=3&roomCount=1",
+            HttpStatusCode.OK);
+        detail.Images.Should().ContainSingle();
+        detail.Amenities.Select(amenity => amenity.Code).Should().BeEquivalentTo("WIFI", "POOL");
+        detail.CancellationPolicy!.FreeCancellationHours.Should().Be(48);
+        detail.AvailableRoomTypes.Should().ContainSingle(roomType =>
+            roomType.Id == roomTypeId && roomType.Facilities == "Wi-Fi, workspace, minibar");
+
+        TestAuthResponse customer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "content-customer");
+        BookingDto booking = await PostJsonAsync<BookingDto>(
+            client,
+            "/api/bookings",
+            new
+            {
+                hotelId,
+                roomTypeId,
+                checkInDate,
+                checkOutDate,
+                roomCount = 1,
+                guestCount = 3,
+                guestFullName = "Contract Guest",
+                guestPhone = "0912345678",
+                paymentMode = PaymentMode.PayAtProperty
+            },
+            HttpStatusCode.Created,
+            customer.AccessToken);
+        booking.GuestCount.Should().Be(3);
+
+        await SendJsonAsync<HotelContentDto>(
+            client,
+            HttpMethod.Put,
+            $"/api/owner/hotels/{hotelId}/content",
+            new
+            {
+                images = Array.Empty<object>(),
+                amenities = Array.Empty<object>(),
+                cancellationPolicy = new
+                {
+                    name = "Strict 72 hours",
+                    freeCancellationHours = 72,
+                    refundPercentage = 20m,
+                    description = "Updated after the booking was created."
+                }
+            },
+            HttpStatusCode.OK,
+            owner.AccessToken);
+
+        BookingCancellationQuoteDto quote = await GetJsonAsync<BookingCancellationQuoteDto>(
+            client,
+            $"/api/bookings/{booking.Id}/cancellation-quote",
+            HttpStatusCode.OK,
+            customer.AccessToken);
+        quote.PolicyName.Should().Be("Flexible 48 hours");
+        quote.FreeCancellationHours.Should().Be(48);
+        quote.RefundPercentage.Should().Be(80m);
+
+        BookingDto[] trips = await GetJsonAsync<BookingDto[]>(
+            client,
+            "/api/bookings/my",
+            HttpStatusCode.OK,
+            customer.AccessToken);
+        trips.Should().ContainSingle(item => item.Id == booking.Id && item.GuestCount == 3);
     }
 
     private static async Task<BookingDto> CreateBookingAsync(

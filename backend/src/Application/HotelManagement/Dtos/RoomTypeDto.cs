@@ -10,4 +10,5 @@ public sealed record RoomTypeDto(
     int ChildCapacity,
     decimal BasePricePerNight,
     string? Description,
+    string? Facilities,
     RecordStatus Status);

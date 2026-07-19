@@ -7,4 +7,6 @@ public sealed record PhysicalRoomDto(
     Guid HotelId,
     Guid RoomTypeId,
     string RoomNumber,
+    string? Floor,
+    string? Notes,
     RoomOperationalStatus Status);

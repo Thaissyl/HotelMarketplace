@@ -248,6 +248,15 @@ class _HotelDetailContentState extends State<_HotelDetailContent> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _HotelHeaderCard(hotel: widget.hotel),
+              if (widget.hotel.images.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.md),
+                _HotelGallery(images: widget.hotel.images),
+              ],
+              if (widget.hotel.amenities.isNotEmpty ||
+                  widget.hotel.cancellationPolicy != null) ...[
+                const SizedBox(height: AppSpacing.lg),
+                _HotelInformation(hotel: widget.hotel),
+              ],
               const SizedBox(height: AppSpacing.md),
               _StayEditor(
                 query: widget.query,
@@ -267,9 +276,7 @@ class _HotelDetailContentState extends State<_HotelDetailContent> {
                 for (var index = 0; index < roomTypes.length; index += 1)
                   Padding(
                     padding: EdgeInsets.only(
-                      bottom: index == roomTypes.length - 1
-                          ? 0
-                          : AppSpacing.md,
+                      bottom: index == roomTypes.length - 1 ? 0 : AppSpacing.md,
                     ),
                     child: _RoomTypeCard(
                       roomType: roomTypes[index],
@@ -308,6 +315,87 @@ class _HotelDetailContentState extends State<_HotelDetailContent> {
               ),
             ),
           ),
+      ],
+    );
+  }
+}
+
+class _HotelGallery extends StatelessWidget {
+  const _HotelGallery({required this.images});
+
+  final List<HotelImage> images;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 210,
+      child: PageView.builder(
+        itemCount: images.length,
+        itemBuilder: (context, index) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadii.md),
+            child: Image.network(
+              images[index].imageUrl,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (context, error, stackTrace) {
+                return const ColoredBox(
+                  color: AppColors.surfaceSoft,
+                  child: Center(child: Icon(Icons.broken_image_outlined)),
+                );
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HotelInformation extends StatelessWidget {
+  const _HotelInformation({required this.hotel});
+
+  final HotelDetail hotel;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final policy = hotel.cancellationPolicy;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (hotel.amenities.isNotEmpty) ...[
+          Text('Amenities', style: textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: hotel.amenities
+                .map(
+                  (amenity) => Chip(
+                    avatar: const Icon(Icons.check_circle_outline, size: 18),
+                    label: Text(amenity.name),
+                  ),
+                )
+                .toList(growable: false),
+          ),
+        ],
+        if (policy != null) ...[
+          if (hotel.amenities.isNotEmpty) const SizedBox(height: AppSpacing.lg),
+          Text('Cancellation policy', style: textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.xs),
+          Text(policy.name, style: textTheme.labelLarge),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            '${policy.refundPercentage.toStringAsFixed(0)}% refund when cancelled at least ${policy.freeCancellationHours} hours before arrival.',
+            style: textTheme.bodyMedium,
+          ),
+          if ((policy.description ?? '').isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(policy.description!, style: textTheme.bodyMedium),
+          ],
+        ],
       ],
     );
   }
@@ -540,6 +628,22 @@ class _RoomTypeCard extends StatelessWidget {
                   style: textTheme.bodyMedium,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              if ((roomType.facilities ?? '').isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.room_preferences_outlined, size: 18),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        roomType.facilities!,
+                        style: textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
                 ),
               ],
               const SizedBox(height: AppSpacing.md),

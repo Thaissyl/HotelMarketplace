@@ -25,6 +25,7 @@ public sealed class Booking : Entity, IHotelScopedEntity
         PaymentMode paymentMode,
         BookingSource source,
         decimal totalAmount,
+        int guestCount,
         string guestFullName,
         string guestPhone)
         : base(id)
@@ -33,6 +34,7 @@ public sealed class Booking : Entity, IHotelScopedEntity
         Guard.NotEmpty(hotelId, nameof(HotelId));
         Guard.DateRange(checkInDate, checkOutDate, "Booking.InvalidStayDates");
         Guard.NonNegative(totalAmount, nameof(TotalAmount));
+        Guard.GreaterThanZero(guestCount, nameof(GuestCount));
         BookingCode = Guard.NotBlank(bookingCode, nameof(BookingCode), 32).ToUpperInvariant();
         CustomerUserAccountId = customerUserAccountId;
         HotelId = hotelId;
@@ -41,6 +43,7 @@ public sealed class Booking : Entity, IHotelScopedEntity
         PaymentMode = paymentMode;
         Source = source;
         TotalAmount = totalAmount;
+        GuestCount = guestCount;
         GuestFullName = Guard.NotBlank(guestFullName, nameof(GuestFullName), 200);
         GuestPhone = Guard.NotBlank(guestPhone, nameof(GuestPhone), 32);
         Status = paymentMode == PaymentMode.PlatformCollect ? BookingStatus.PendingPayment : BookingStatus.Confirmed;
@@ -65,6 +68,8 @@ public sealed class Booking : Entity, IHotelScopedEntity
 
     public decimal TotalAmount { get; private set; }
 
+    public int GuestCount { get; private set; }
+
     public string GuestFullName { get; private set; }
 
     public string GuestPhone { get; private set; }
@@ -80,6 +85,12 @@ public sealed class Booking : Entity, IHotelScopedEntity
     public string? NoShowReason { get; private set; }
 
     public DateTime? NoShowAtUtc { get; private set; }
+
+    public string? CancellationPolicyName { get; private set; }
+
+    public int? CancellationPolicyFreeCancellationHours { get; private set; }
+
+    public decimal? CancellationPolicyRefundPercentage { get; private set; }
 
     public IReadOnlyCollection<BookingRoom> Rooms => _rooms;
 
@@ -106,6 +117,20 @@ public sealed class Booking : Entity, IHotelScopedEntity
         }
 
         PaymentExpiresAtUtc = expiresAtUtc;
+    }
+
+    public void ApplyCancellationPolicySnapshot(CancellationPolicy policy)
+    {
+        if (policy.HotelId != HotelId)
+        {
+            throw new DomainException(
+                "Booking.InvalidCancellationPolicy",
+                "Cancellation policy must belong to the booking hotel.");
+        }
+
+        CancellationPolicyName = policy.Name;
+        CancellationPolicyFreeCancellationHours = policy.FreeCancellationHours;
+        CancellationPolicyRefundPercentage = policy.RefundPercentage;
     }
 
     public void ConfirmPayment()

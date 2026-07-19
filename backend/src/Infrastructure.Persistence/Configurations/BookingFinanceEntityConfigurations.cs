@@ -16,6 +16,7 @@ internal sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(entity => entity.Source).HasEnumConversion();
         builder.Property(entity => entity.Status).HasEnumConversion();
         builder.Property(entity => entity.TotalAmount).HasPrecision(18, 2);
+        builder.Property(entity => entity.GuestCount).IsRequired();
         builder.Property(entity => entity.GuestFullName).HasMaxLength(200).IsRequired();
         builder.Property(entity => entity.GuestPhone).HasMaxLength(32).IsRequired();
         builder.Property(entity => entity.CreatedAtUtc).HasPrecision(3);
@@ -24,6 +25,8 @@ internal sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(entity => entity.CancelledAtUtc).HasPrecision(3);
         builder.Property(entity => entity.NoShowReason).HasMaxLength(500);
         builder.Property(entity => entity.NoShowAtUtc).HasPrecision(3);
+        builder.Property(entity => entity.CancellationPolicyName).HasMaxLength(128);
+        builder.Property(entity => entity.CancellationPolicyRefundPercentage).HasPrecision(5, 2);
         builder.HasIndex(entity => entity.BookingCode).IsUnique();
         builder.HasIndex(entity => new { entity.HotelId, entity.CheckInDate, entity.CheckOutDate, entity.Status });
         builder.HasIndex(entity => new { entity.CustomerUserAccountId, entity.CreatedAtUtc });
@@ -33,6 +36,7 @@ internal sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         {
             table.HasCheckConstraint("CK_Bookings_StayDates", "[CheckOutDate] > [CheckInDate]");
             table.HasCheckConstraint("CK_Bookings_TotalAmount", "[TotalAmount] >= 0");
+            table.HasCheckConstraint("CK_Bookings_GuestCount", "[GuestCount] > 0");
         });
     }
 }

@@ -1,6 +1,7 @@
 using System.Data;
 using HotelMarketplace.Application.HotelManagement;
 using HotelMarketplace.Application.HotelManagement.Dtos;
+using HotelMarketplace.Application.HotelManagement.Requests;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
 using HotelMarketplace.Infrastructure.Persistence.Common;
@@ -206,6 +207,144 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
                 userAccount.Status,
                 assignment.IsActive,
                 assignment.AssignedAtUtc));
+        });
+    }
+
+    public async Task<HotelContentDto?> GetHotelContentAsync(Guid hotelId, CancellationToken cancellationToken)
+    {
+        bool exists = await _dbContext.HotelProperties
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(hotel => hotel.Id == hotelId, cancellationToken);
+
+        return exists ? await BuildHotelContentAsync(hotelId, cancellationToken) : null;
+    }
+
+    public async Task<HotelContentPersistenceResult> ReplaceHotelContentAsync(
+        Guid hotelId,
+        UpdateHotelContentRequest request,
+        Guid actorUserAccountId,
+        CancellationToken cancellationToken)
+    {
+        IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            if (!await SqlApplicationLock.AcquireExclusiveAsync(_dbContext, $"hotel-content:{hotelId:N}", cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return HotelContentPersistenceResult.Failure(HotelContentPersistenceStatus.LockUnavailable);
+            }
+
+            HotelProperty? hotel = await _dbContext.HotelProperties
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(entity => entity.Id == hotelId, cancellationToken);
+            if (hotel is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return HotelContentPersistenceResult.Failure(HotelContentPersistenceStatus.HotelNotFound);
+            }
+
+            List<HotelImage> existingImages = await _dbContext.HotelImages
+                .IgnoreQueryFilters()
+                .Where(image => image.HotelId == hotelId)
+                .ToListAsync(cancellationToken);
+            List<HotelAmenity> existingMappings = await _dbContext.HotelAmenities
+                .IgnoreQueryFilters()
+                .Where(mapping => mapping.HotelId == hotelId)
+                .ToListAsync(cancellationToken);
+            _dbContext.HotelImages.RemoveRange(existingImages);
+            _dbContext.HotelAmenities.RemoveRange(existingMappings);
+
+            foreach (HotelImageInput image in request.Images.OrderBy(image => image.DisplayOrder))
+            {
+                await _dbContext.HotelImages.AddAsync(
+                    new HotelImage(Guid.NewGuid(), hotelId, image.ImageUrl.Trim(), image.DisplayOrder),
+                    cancellationToken);
+            }
+
+            List<string> amenityCodes = request.Amenities
+                .Select(amenity => amenity.Code.Trim().ToUpperInvariant())
+                .ToList();
+            foreach (string amenityCode in amenityCodes.OrderBy(code => code, StringComparer.Ordinal))
+            {
+                if (!await SqlApplicationLock.AcquireExclusiveAsync(
+                        _dbContext,
+                        $"amenity-code:{amenityCode}",
+                        cancellationToken))
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return HotelContentPersistenceResult.Failure(HotelContentPersistenceStatus.LockUnavailable);
+                }
+            }
+
+            Dictionary<string, Amenity> amenitiesByCode = await _dbContext.Amenities
+                .IgnoreQueryFilters()
+                .Where(amenity => amenityCodes.Contains(amenity.Code))
+                .ToDictionaryAsync(amenity => amenity.Code, cancellationToken);
+
+            foreach (HotelAmenityInput input in request.Amenities)
+            {
+                string code = input.Code.Trim().ToUpperInvariant();
+                if (!amenitiesByCode.TryGetValue(code, out Amenity? amenity))
+                {
+                    amenity = new Amenity(Guid.NewGuid(), code, input.Name, input.Type);
+                    await _dbContext.Amenities.AddAsync(amenity, cancellationToken);
+                    amenitiesByCode.Add(code, amenity);
+                }
+                await _dbContext.HotelAmenities.AddAsync(
+                    new HotelAmenity(Guid.NewGuid(), hotelId, amenity.Id),
+                    cancellationToken);
+            }
+
+            CancellationPolicy? policy = await _dbContext.CancellationPolicies
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(entity => entity.HotelId == hotelId, cancellationToken);
+            if (request.CancellationPolicy is null)
+            {
+                if (policy is not null)
+                {
+                    _dbContext.CancellationPolicies.Remove(policy);
+                }
+            }
+            else if (policy is null)
+            {
+                CancellationPolicyInput input = request.CancellationPolicy;
+                await _dbContext.CancellationPolicies.AddAsync(
+                    new CancellationPolicy(
+                        Guid.NewGuid(),
+                        hotelId,
+                        input.Name,
+                        input.FreeCancellationHours,
+                        input.RefundPercentage,
+                        input.Description),
+                    cancellationToken);
+            }
+            else
+            {
+                CancellationPolicyInput input = request.CancellationPolicy;
+                policy.Update(input.Name, input.FreeCancellationHours, input.RefundPercentage, input.Description);
+            }
+
+            await _dbContext.AuditRecords.AddAsync(
+                new AuditRecord(
+                    Guid.NewGuid(),
+                    actorUserAccountId,
+                    "UpdateHotelContent",
+                    nameof(HotelProperty),
+                    hotelId,
+                    $"Hotel content updated with {request.Images.Count} images and {request.Amenities.Count} amenities.",
+                    hotelId),
+                cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return HotelContentPersistenceResult.Success(
+                await BuildHotelContentAsync(hotelId, cancellationToken));
         });
     }
 
@@ -508,6 +647,8 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
         Guid roomTypeId,
         string roomNumber,
         RoomOperationalStatus initialStatus,
+        string? floor,
+        string? notes,
         CancellationToken cancellationToken)
     {
         IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
@@ -553,7 +694,14 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
             PhysicalRoom physicalRoom;
             try
             {
-                physicalRoom = new PhysicalRoom(Guid.NewGuid(), hotelId, roomTypeId, normalizedRoomNumber, initialStatus);
+                physicalRoom = new PhysicalRoom(
+                    Guid.NewGuid(),
+                    hotelId,
+                    roomTypeId,
+                    normalizedRoomNumber,
+                    initialStatus,
+                    floor,
+                    notes);
             }
             catch (SharedKernel.Exceptions.DomainException)
             {
@@ -596,6 +744,8 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
         Guid physicalRoomId,
         string roomNumber,
         RoomOperationalStatus status,
+        string? floor,
+        string? notes,
         CancellationToken cancellationToken)
     {
         IExecutionStrategy executionStrategy = _dbContext.Database.CreateExecutionStrategy();
@@ -685,8 +835,8 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
 
             try
             {
-                physicalRoom.Rename(normalizedRoomNumber);
                 physicalRoom.ChangeSetupStatus(status);
+                physicalRoom.UpdateDetails(normalizedRoomNumber, floor, notes);
             }
             catch (SharedKernel.Exceptions.DomainException)
             {
@@ -907,6 +1057,40 @@ internal sealed class EfHotelManagementRepository : IHotelManagementRepository
                 $"Your hotel staff assignment is now {roleCode} ({eventType}).",
                 hotelId),
             cancellationToken);
+    }
+
+    private async Task<HotelContentDto> BuildHotelContentAsync(Guid hotelId, CancellationToken cancellationToken)
+    {
+        HotelImageManagementDto[] images = await _dbContext.HotelImages
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(image => image.HotelId == hotelId && image.Status == RecordStatus.Active)
+            .OrderBy(image => image.DisplayOrder)
+            .Select(image => new HotelImageManagementDto(image.Id, image.ImageUrl, image.DisplayOrder))
+            .ToArrayAsync(cancellationToken);
+
+        HotelAmenityManagementDto[] amenities = await (
+            from mapping in _dbContext.HotelAmenities.IgnoreQueryFilters().AsNoTracking()
+            join amenity in _dbContext.Amenities.IgnoreQueryFilters().AsNoTracking()
+                on mapping.AmenityId equals amenity.Id
+            where mapping.HotelId == hotelId && amenity.Status == RecordStatus.Active
+            orderby amenity.Type, amenity.Name
+            select new HotelAmenityManagementDto(amenity.Id, amenity.Code, amenity.Name, amenity.Type))
+            .ToArrayAsync(cancellationToken);
+
+        CancellationPolicyManagementDto? policy = await _dbContext.CancellationPolicies
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(entity => entity.HotelId == hotelId && entity.Status == RecordStatus.Active)
+            .Select(entity => new CancellationPolicyManagementDto(
+                entity.Id,
+                entity.Name,
+                entity.FreeCancellationHours,
+                entity.RefundPercentage,
+                entity.Description))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return new HotelContentDto(images, amenities, policy);
     }
 
     private static UserRoleCode ParseRoleCode(string roleCode)

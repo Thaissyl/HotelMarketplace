@@ -33,17 +33,35 @@ class HotelCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 92,
-                height: 104,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppRadii.md),
-                  color: AppColors.brand,
-                ),
-                child: const Icon(
-                  Icons.apartment_rounded,
-                  color: Colors.white,
-                  size: 34,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadii.md),
+                child: SizedBox(
+                  width: 92,
+                  height: 104,
+                  child: (hotel.coverImageUrl ?? '').isEmpty
+                      ? const ColoredBox(
+                          color: AppColors.brand,
+                          child: Icon(
+                            Icons.apartment_rounded,
+                            color: Colors.white,
+                            size: 34,
+                          ),
+                        )
+                      : Image.network(
+                          hotel.coverImageUrl!,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.medium,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const ColoredBox(
+                              color: AppColors.brand,
+                              child: Icon(
+                                Icons.apartment_rounded,
+                                color: Colors.white,
+                                size: 34,
+                              ),
+                            );
+                          },
+                        ),
                 ),
               ),
               const SizedBox(width: AppSpacing.md),
@@ -81,6 +99,15 @@ class HotelCard extends StatelessWidget {
                         hotel.description!,
                         style: textTheme.bodyMedium,
                         maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    if (hotel.amenityNames.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        hotel.amenityNames.take(3).join(' - '),
+                        style: textTheme.labelMedium,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],

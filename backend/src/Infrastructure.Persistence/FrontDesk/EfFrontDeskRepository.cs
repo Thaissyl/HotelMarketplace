@@ -102,6 +102,7 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
                 booking.Source,
                 booking.CheckInDate,
                 booking.CheckOutDate,
+                booking.GuestCount,
                 booking.TotalAmount,
                 booking.GuestFullName,
                 booking.GuestPhone,
@@ -157,6 +158,7 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
                 row.Source,
                 row.CheckInDate,
                 row.CheckOutDate,
+                row.GuestCount,
                 row.TotalAmount,
                 row.GuestFullName,
                 row.GuestPhone,
@@ -769,8 +771,20 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
                 PaymentMode.PayAtProperty,
                 BookingSource.WalkIn,
                 totalAmount,
+                request.GuestCount,
                 request.GuestFullName,
                 request.GuestPhone);
+
+            CancellationPolicy? cancellationPolicy = await _dbContext.CancellationPolicies
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    policy => policy.HotelId == hotelId && policy.Status == RecordStatus.Active,
+                    cancellationToken);
+            if (cancellationPolicy is not null)
+            {
+                booking.ApplyCancellationPolicySnapshot(cancellationPolicy);
+            }
 
             BookingRoom bookingRoom = new(
                 Guid.NewGuid(),
@@ -1183,6 +1197,7 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
             booking.Source,
             booking.CheckInDate,
             booking.CheckOutDate,
+            booking.GuestCount,
             booking.TotalAmount,
             booking.GuestFullName,
             booking.GuestPhone,
@@ -1273,6 +1288,7 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
         BookingSource Source,
         DateOnly CheckInDate,
         DateOnly CheckOutDate,
+        int GuestCount,
         decimal TotalAmount,
         string GuestFullName,
         string GuestPhone,

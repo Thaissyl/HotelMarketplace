@@ -72,6 +72,8 @@ class HotelSearchResult {
     required this.city,
     required this.addressLine,
     required this.description,
+    required this.coverImageUrl,
+    required this.amenityNames,
     required this.minimumPricePerNight,
     required this.availableRoomTypeCount,
   });
@@ -81,6 +83,8 @@ class HotelSearchResult {
   final String city;
   final String addressLine;
   final String? description;
+  final String? coverImageUrl;
+  final List<String> amenityNames;
   final double minimumPricePerNight;
   final int availableRoomTypeCount;
 
@@ -93,6 +97,8 @@ class HotelSearchResult {
       city: json['city']?.toString() ?? '',
       addressLine: json['addressLine']?.toString() ?? '',
       description: json['description']?.toString(),
+      coverImageUrl: json['coverImageUrl']?.toString(),
+      amenityNames: _stringList(json['amenityNames']),
       minimumPricePerNight:
           (json['minimumPricePerNight'] as num?)?.toDouble() ?? 0,
       availableRoomTypeCount:
@@ -114,6 +120,9 @@ class HotelDetail {
     required this.checkOutDate,
     required this.guestCount,
     required this.roomCount,
+    required this.images,
+    required this.amenities,
+    required this.cancellationPolicy,
     required this.availableRoomTypes,
   });
 
@@ -128,6 +137,9 @@ class HotelDetail {
   final DateTime checkOutDate;
   final int guestCount;
   final int roomCount;
+  final List<HotelImage> images;
+  final List<HotelAmenity> amenities;
+  final CancellationPolicy? cancellationPolicy;
   final List<AvailableRoomType> availableRoomTypes;
 
   static HotelDetail fromJson(Object? data) {
@@ -146,6 +158,11 @@ class HotelDetail {
       checkOutDate: _parseDate(json['checkOutDate']),
       guestCount: (json['guestCount'] as num?)?.toInt() ?? 1,
       roomCount: (json['roomCount'] as num?)?.toInt() ?? 1,
+      images: _modelList(json['images'], HotelImage.fromJson),
+      amenities: _modelList(json['amenities'], HotelAmenity.fromJson),
+      cancellationPolicy: json['cancellationPolicy'] == null
+          ? null
+          : CancellationPolicy.fromJson(json['cancellationPolicy']),
       availableRoomTypes: roomTypes is List
           ? roomTypes.map(AvailableRoomType.fromJson).toList(growable: false)
           : const <AvailableRoomType>[],
@@ -166,6 +183,7 @@ class AvailableRoomType {
     required this.nights,
     required this.totalPriceForStay,
     required this.description,
+    required this.facilities,
   });
 
   final String id;
@@ -179,6 +197,7 @@ class AvailableRoomType {
   final int nights;
   final double totalPriceForStay;
   final String? description;
+  final String? facilities;
 
   static AvailableRoomType fromJson(Object? data) {
     final json = _asMap(data);
@@ -194,6 +213,80 @@ class AvailableRoomType {
       requestedRoomCount: (json['requestedRoomCount'] as num?)?.toInt() ?? 0,
       nights: (json['nights'] as num?)?.toInt() ?? 1,
       totalPriceForStay: (json['totalPriceForStay'] as num?)?.toDouble() ?? 0,
+      description: json['description']?.toString(),
+      facilities: json['facilities']?.toString(),
+    );
+  }
+}
+
+class HotelImage {
+  const HotelImage({
+    required this.id,
+    required this.imageUrl,
+    required this.displayOrder,
+  });
+
+  final String id;
+  final String imageUrl;
+  final int displayOrder;
+
+  static HotelImage fromJson(Object? data) {
+    final json = _asMap(data);
+    return HotelImage(
+      id: json['id']?.toString() ?? '',
+      imageUrl: json['imageUrl']?.toString() ?? '',
+      displayOrder: (json['displayOrder'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class HotelAmenity {
+  const HotelAmenity({
+    required this.id,
+    required this.code,
+    required this.name,
+    required this.type,
+  });
+
+  final String id;
+  final String code;
+  final String name;
+  final String type;
+
+  static HotelAmenity fromJson(Object? data) {
+    final json = _asMap(data);
+    return HotelAmenity(
+      id: json['id']?.toString() ?? '',
+      code: json['code']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      type: json['type']?.toString() ?? '',
+    );
+  }
+}
+
+class CancellationPolicy {
+  const CancellationPolicy({
+    required this.id,
+    required this.name,
+    required this.freeCancellationHours,
+    required this.refundPercentage,
+    required this.description,
+  });
+
+  final String id;
+  final String name;
+  final int freeCancellationHours;
+  final double refundPercentage;
+  final String? description;
+
+  static CancellationPolicy fromJson(Object? data) {
+    final json = _asMap(data);
+    return CancellationPolicy(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      freeCancellationHours:
+          (json['freeCancellationHours'] as num?)?.toInt() ?? 0,
+      refundPercentage: (json['refundPercentage'] as num?)?.toDouble() ?? 0,
       description: json['description']?.toString(),
     );
   }
@@ -220,4 +313,16 @@ Map<String, dynamic> _asMap(Object? data) {
   }
 
   return const <String, dynamic>{};
+}
+
+List<String> _stringList(Object? data) {
+  return data is List
+      ? data.map((value) => value.toString()).toList(growable: false)
+      : const <String>[];
+}
+
+List<T> _modelList<T>(Object? data, T Function(Object?) parser) {
+  return data is List
+      ? data.map(parser).toList(growable: false)
+      : List<T>.empty(growable: false);
 }

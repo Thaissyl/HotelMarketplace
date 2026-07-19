@@ -12,4 +12,7 @@ public sealed record HotelDetailDto(
     DateOnly CheckOutDate,
     int GuestCount,
     int RoomCount,
+    IReadOnlyCollection<HotelImageDto> Images,
+    IReadOnlyCollection<HotelAmenityDto> Amenities,
+    CancellationPolicyDto? CancellationPolicy,
     IReadOnlyCollection<AvailableRoomTypeDto> AvailableRoomTypes);

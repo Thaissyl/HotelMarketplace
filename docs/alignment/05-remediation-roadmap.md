@@ -132,9 +132,14 @@ role-neutral own-profile management remains GAP-021.
 
 ### ALN-011 Contract and Data Completeness
 
-Persist GuestCount and add hotel images, amenities, cancellation policy, room
-floor/notes/facilities, payment collection evidence, reconciliation notes, and
-settlement evidence through domain, migrations, DTOs, and projections.
+Status: Core contract and persistence completeness implemented and verified on
+`feat/aln-011-contract-data-completeness`.
+
+Guest count, booking policy snapshots, hotel gallery, amenities, cancellation
+policy content, room facilities, and physical-room floor/notes now flow through
+domain, migration, management APIs, marketplace projections, and Mobile read
+models. Payment collection, reconciliation, and settlement evidence was already
+implemented by ALN-007 and was retained as the canonical financial model.
 
 ### ALN-012 Mobile Requirement Parity
 

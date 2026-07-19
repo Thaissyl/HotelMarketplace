@@ -10,7 +10,7 @@ public sealed class RoomType : Entity, IHotelScopedEntity
         Name = string.Empty;
     }
 
-    public RoomType(Guid id, Guid hotelId, string name, int adultCapacity, int childCapacity, decimal basePricePerNight, string? description = null)
+    public RoomType(Guid id, Guid hotelId, string name, int adultCapacity, int childCapacity, decimal basePricePerNight, string? description = null, string? facilities = null)
         : base(id)
     {
         Guard.NotEmpty(hotelId, nameof(HotelId));
@@ -27,6 +27,7 @@ public sealed class RoomType : Entity, IHotelScopedEntity
         ChildCapacity = childCapacity;
         BasePricePerNight = basePricePerNight;
         Description = Guard.Optional(description, nameof(Description), 1000);
+        Facilities = Guard.Optional(facilities, nameof(Facilities), 2000);
         Status = RecordStatus.Active;
     }
 
@@ -42,6 +43,8 @@ public sealed class RoomType : Entity, IHotelScopedEntity
 
     public string? Description { get; private set; }
 
+    public string? Facilities { get; private set; }
+
     public RecordStatus Status { get; private set; }
 
     public void UpdateDetails(
@@ -49,7 +52,8 @@ public sealed class RoomType : Entity, IHotelScopedEntity
         int adultCapacity,
         int childCapacity,
         decimal basePricePerNight,
-        string? description)
+        string? description,
+        string? facilities)
     {
         Guard.GreaterThanZero(adultCapacity, nameof(AdultCapacity));
         Guard.NonNegative(basePricePerNight, nameof(BasePricePerNight));
@@ -64,6 +68,7 @@ public sealed class RoomType : Entity, IHotelScopedEntity
         ChildCapacity = childCapacity;
         BasePricePerNight = basePricePerNight;
         Description = Guard.Optional(description, nameof(Description), 1000);
+        Facilities = Guard.Optional(facilities, nameof(Facilities), 2000);
     }
 
     public void Deactivate()

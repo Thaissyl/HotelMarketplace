@@ -239,3 +239,23 @@ change or revocation, open-task protection, reactivation, and list projection.
 Actor authority is revalidated under the same transaction and application lock
 as each mutation so concurrent Manager revocation cannot authorize a later staff
 change.
+
+## ALN-011 Contract and Data Verification
+
+The contract-completeness increment was verified across domain invariants, SQL
+Server migration and integration behavior, projected marketplace reads, Mobile
+parsing and rendering, and Android compilation.
+
+| Command | Result |
+| --- | --- |
+| `dotnet build .\backend\HotelMarketplace.slnx --no-restore` | Passed; 0 warnings and 0 errors |
+| `dotnet test .\backend\HotelMarketplace.slnx --no-build --no-restore` | Passed; 20 Domain tests and 37 API integration tests |
+| `dotnet ef migrations has-pending-model-changes` | Passed; model matches `CompleteHotelBookingContracts` |
+| `flutter analyze` | Passed; no issues found |
+| `flutter test` | Passed; 7 tests |
+| `flutter build apk --debug` | Passed; debug APK built successfully |
+
+The new API scenario verifies Owner content replacement, ordered public content,
+room facilities, three-guest booking persistence, Customer Trips round-trip,
+and preservation of the booking's original cancellation policy after the Owner
+changes the hotel policy.

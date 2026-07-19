@@ -74,6 +74,35 @@ public sealed class OwnerHotelsController : ControllerBase
         return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
     }
 
+    [HttpGet("{hotelId:guid}/content")]
+    [Authorize(Policy = AuthorizationPolicies.HotelScoped)]
+    [ProducesResponseType(typeof(HotelContentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetHotelContent(Guid hotelId, CancellationToken cancellationToken)
+    {
+        Result<HotelContentDto> result = await _hotelManagementService.GetHotelContentAsync(hotelId, cancellationToken);
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
+    [HttpPut("{hotelId:guid}/content")]
+    [Authorize(Policy = AuthorizationPolicies.HotelScoped)]
+    [ProducesResponseType(typeof(HotelContentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateHotelContent(
+        Guid hotelId,
+        UpdateHotelContentRequest request,
+        CancellationToken cancellationToken)
+    {
+        Result<HotelContentDto> result = await _hotelManagementService.UpdateHotelContentAsync(
+            hotelId,
+            request,
+            cancellationToken);
+        return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);
+    }
+
     [HttpGet("{hotelId:guid}/staff")]
     [Authorize(Policy = AuthorizationPolicies.HotelScoped)]
     [ProducesResponseType(typeof(IReadOnlyCollection<HotelStaffMemberDto>), StatusCodes.Status200OK)]

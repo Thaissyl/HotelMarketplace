@@ -285,6 +285,7 @@ class _RoomTypeSectionState extends ConsumerState<_RoomTypeSection> {
   final _child = TextEditingController(text: '0');
   final _price = TextEditingController(text: '100');
   final _description = TextEditingController();
+  final _facilities = TextEditingController();
   bool _creating = false;
 
   @override
@@ -294,6 +295,7 @@ class _RoomTypeSectionState extends ConsumerState<_RoomTypeSection> {
     _child.dispose();
     _price.dispose();
     _description.dispose();
+    _facilities.dispose();
     super.dispose();
   }
 
@@ -324,10 +326,12 @@ class _RoomTypeSectionState extends ConsumerState<_RoomTypeSection> {
               childCapacity: childCapacity,
               basePricePerNight: price,
               description: _description.text,
+              facilities: _facilities.text,
             ),
           );
       _name.clear();
       _description.clear();
+      _facilities.clear();
       ref.invalidate(roomTypesProvider(widget.hotelId));
       if (mounted) {
         AppErrorPresenter.showSnackBar(context, 'Room type created.');
@@ -402,6 +406,13 @@ class _RoomTypeSectionState extends ConsumerState<_RoomTypeSection> {
               labelText: 'Description',
               maxLines: 2,
             ),
+            const SizedBox(height: AppSpacing.md),
+            AppTextFormField(
+              controller: _facilities,
+              labelText: 'Facilities',
+              hintText: 'Wi-Fi, workspace, minibar',
+              maxLines: 2,
+            ),
             const SizedBox(height: AppSpacing.lg),
             FilledButton.icon(
               onPressed: _creating ? null : _create,
@@ -438,6 +449,8 @@ class _PhysicalRoomSection extends ConsumerStatefulWidget {
 
 class _PhysicalRoomSectionState extends ConsumerState<_PhysicalRoomSection> {
   final _roomNumber = TextEditingController();
+  final _floor = TextEditingController();
+  final _notes = TextEditingController();
   String? _roomTypeId;
   String _initialStatus = 'Available';
   bool _creating = false;
@@ -445,6 +458,8 @@ class _PhysicalRoomSectionState extends ConsumerState<_PhysicalRoomSection> {
   @override
   void dispose() {
     _roomNumber.dispose();
+    _floor.dispose();
+    _notes.dispose();
     super.dispose();
   }
 
@@ -466,9 +481,13 @@ class _PhysicalRoomSectionState extends ConsumerState<_PhysicalRoomSection> {
               roomTypeId: roomTypeId,
               roomNumber: _roomNumber.text,
               initialStatus: _initialStatus,
+              floor: _floor.text,
+              notes: _notes.text,
             ),
           );
       _roomNumber.clear();
+      _floor.clear();
+      _notes.clear();
       ref.invalidate(
         physicalRoomsProvider(PhysicalRoomsRequest(hotelId: widget.hotelId)),
       );
@@ -539,6 +558,19 @@ class _PhysicalRoomSectionState extends ConsumerState<_PhysicalRoomSection> {
               labelText: 'Room number',
             ),
             const SizedBox(height: AppSpacing.md),
+            AppTextFormField(
+              controller: _floor,
+              labelText: 'Floor',
+              inputFormatters: [LengthLimitingTextInputFormatter(20)],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppTextFormField(
+              controller: _notes,
+              labelText: 'Operational notes',
+              maxLines: 2,
+              inputFormatters: [LengthLimitingTextInputFormatter(500)],
+            ),
+            const SizedBox(height: AppSpacing.md),
             DropdownButtonFormField<String>(
               initialValue: _initialStatus,
               decoration: const InputDecoration(labelText: 'Initial status'),
@@ -601,6 +633,12 @@ class _RoomTypeTile extends StatelessWidget {
                 Text(
                   '${item.totalCapacity} guests - ${AppFormatters.money(item.basePricePerNight)}',
                 ),
+                if ((item.facilities ?? '').isNotEmpty)
+                  Text(
+                    item.facilities!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
               ],
             ),
           ),

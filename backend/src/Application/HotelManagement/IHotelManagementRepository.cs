@@ -1,4 +1,5 @@
 using HotelMarketplace.Application.HotelManagement.Dtos;
+using HotelMarketplace.Application.HotelManagement.Requests;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
 
@@ -17,6 +18,14 @@ public interface IHotelManagementRepository
     Task<HotelProperty?> GetHotelByIdAsync(Guid hotelId, CancellationToken cancellationToken);
 
     Task<bool> UserOwnsHotelAsync(Guid userAccountId, Guid hotelId, CancellationToken cancellationToken);
+
+    Task<HotelContentDto?> GetHotelContentAsync(Guid hotelId, CancellationToken cancellationToken);
+
+    Task<HotelContentPersistenceResult> ReplaceHotelContentAsync(
+        Guid hotelId,
+        UpdateHotelContentRequest request,
+        Guid actorUserAccountId,
+        CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<HotelStaffMemberDto>> GetStaffAsync(Guid hotelId, CancellationToken cancellationToken);
 
@@ -66,6 +75,8 @@ public interface IHotelManagementRepository
         Guid roomTypeId,
         string roomNumber,
         RoomOperationalStatus initialStatus,
+        string? floor,
+        string? notes,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<PhysicalRoom>> GetPhysicalRoomsAsync(Guid hotelId, Guid? roomTypeId, CancellationToken cancellationToken);
@@ -77,6 +88,8 @@ public interface IHotelManagementRepository
         Guid physicalRoomId,
         string roomNumber,
         RoomOperationalStatus status,
+        string? floor,
+        string? notes,
         CancellationToken cancellationToken);
 
     Task<bool> RoomNumberExistsAsync(Guid hotelId, string roomNumber, Guid? excludedPhysicalRoomId, CancellationToken cancellationToken);
