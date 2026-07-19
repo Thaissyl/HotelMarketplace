@@ -8,6 +8,7 @@ public sealed record AuthUserSnapshot(
     string Email,
     string PasswordHash,
     AccountStatus Status,
+    bool IsSystemAccount,
     IReadOnlyCollection<UserRoleCode> Roles,
     IReadOnlyCollection<Guid> HotelIds,
     IReadOnlyCollection<HotelRoleAccess> HotelRoleAccesses);

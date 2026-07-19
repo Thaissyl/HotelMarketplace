@@ -141,6 +141,7 @@ public sealed class FrontDeskController : ControllerBase
             "FrontDesk.PaymentCollectionRequired" => StatusCodes.Status409Conflict,
             "FrontDesk.CapacityExceeded" => StatusCodes.Status400BadRequest,
             "FrontDesk.InsufficientAvailability" => StatusCodes.Status409Conflict,
+            "FrontDesk.IncorrectCashAmount" => StatusCodes.Status400BadRequest,
             "FrontDesk.LockUnavailable" => StatusCodes.Status423Locked,
             _ => StatusCodes.Status400BadRequest
         };

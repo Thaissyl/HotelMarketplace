@@ -30,14 +30,17 @@ and restores prior process environment values after the suite.
 
 `dotnet test .\backend\HotelMarketplace.slnx --no-restore` completed successfully:
 
-- API integration tests: 14 passed, 0 failed, 0 skipped.
+- API integration tests: 17 passed, 0 failed, 0 skipped.
 - Domain.UnitTests: no authored tests discovered.
 - Application.UnitTests: no authored tests discovered.
 - The API suite includes forged-header, unassigned Platform Administrator,
   mixed-role cross-hotel, and post-token assignment-revocation scenarios.
 - Inventory coverage includes same-channel contention, marketplace versus Walk-in
   contention, different but overlapping date windows, and physical-room blocks.
+- Walk-in coverage includes protected anonymous-customer attribution, deferred
+  assignment to `Confirmed`, immediate assignment to `CheckedIn`, disabled system
+  login and Admin mutation, exact cash collection, and absence of payment expiry.
 
-This result verifies the current ALN-001 acceptance scope. It does not establish
-conformance for the remaining remediation packages or replace the missing Domain
-and Application test suites.
+This result verifies the current ALN-001 through ALN-003 acceptance scope. It does
+not establish conformance for the remaining remediation packages or replace the
+missing Domain and Application test suites.

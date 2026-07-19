@@ -14,5 +14,6 @@ public static class FrontDeskErrors
     public static readonly ResultError PaymentCollectionRequired = new("FrontDesk.PaymentCollectionRequired", "Please confirm payment collection before checkout.");
     public static readonly ResultError CapacityExceeded = new("FrontDesk.CapacityExceeded", "The guest count exceeds the selected room type capacity.");
     public static readonly ResultError InsufficientAvailability = new("FrontDesk.InsufficientAvailability", "The requested room type no longer has enough availability for these dates.");
+    public static readonly ResultError IncorrectCashAmount = new("FrontDesk.IncorrectCashAmount", "Cash collected must equal the server-calculated booking total.");
     public static readonly ResultError LockUnavailable = new("FrontDesk.LockUnavailable", "The front desk operation is busy. Please try again.");
 }

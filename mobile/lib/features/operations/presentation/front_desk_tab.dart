@@ -846,7 +846,9 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
   String? _selectedRoomTypeId;
   DateTime _checkIn = DateTime.now();
   DateTime _checkOut = DateTime.now().add(const Duration(days: 1));
+  int _roomCount = 1;
   int _guestCount = 1;
+  bool _assignRoomsNow = true;
   bool _loading = false;
 
   @override
@@ -860,11 +862,13 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
   Future<void> _submit() async {
     if (_guestName.text.trim().isEmpty ||
         _guestPhone.text.trim().length != 10 ||
-        _selectedRoomIds.isEmpty ||
-        _selectedRoomTypeId == null) {
+        _selectedRoomTypeId == null ||
+        (_assignRoomsNow && _selectedRoomIds.length != _roomCount)) {
       AppErrorPresenter.showSnackBar(
         context,
-        'Room type, room, guest name, and 10-digit phone are required.',
+        _assignRoomsNow
+            ? 'Select exactly $_roomCount rooms, and enter the guest name and 10-digit phone.'
+            : 'Room type, guest name, and 10-digit phone are required.',
       );
       return;
     }
@@ -874,7 +878,10 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
       final result = await ref.read(operationsApiProvider).createWalkInBooking(
             hotelId: widget.hotelId,
             roomTypeId: _selectedRoomTypeId!,
-            physicalRoomIds: _selectedRoomIds.toList(growable: false),
+            roomCount: _roomCount,
+            physicalRoomIds: _assignRoomsNow
+                ? _selectedRoomIds.toList(growable: false)
+                : const <String>[],
             checkInDate: _checkIn,
             checkOutDate: _checkOut,
             guestCount: _guestCount,
@@ -884,14 +891,23 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
             cashCollectedAmount: double.tryParse(_cash.text) ?? 0,
           );
       if (mounted) {
-        ref.invalidate(
-          frontDeskBookingsProvider(
-            FrontDeskBookingsRequest(
-              hotelId: widget.hotelId,
-              status: FrontDeskBookingListStatus.checkedIn,
+        ref
+          ..invalidate(
+            frontDeskBookingsProvider(
+              FrontDeskBookingsRequest(
+                hotelId: widget.hotelId,
+                status: FrontDeskBookingListStatus.checkedIn,
+              ),
             ),
-          ),
-        );
+          )
+          ..invalidate(
+            frontDeskBookingsProvider(
+              FrontDeskBookingsRequest(
+                hotelId: widget.hotelId,
+                status: FrontDeskBookingListStatus.confirmed,
+              ),
+            ),
+          );
         setState(() => _selectedRoomIds.clear());
         _showResult(context, result);
       }
@@ -917,8 +933,37 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
       setState(() {
         _checkIn = range.start;
         _checkOut = range.end;
+        if (!_isToday(range.start)) {
+          _assignRoomsNow = false;
+          _selectedRoomIds.clear();
+        }
       });
+      _synchronizeCashAmount();
     }
+  }
+
+  bool _isToday(DateTime value) {
+    final now = DateTime.now();
+    return value.year == now.year &&
+        value.month == now.month &&
+        value.day == now.day;
+  }
+
+  void _synchronizeCashAmount() {
+    final roomTypes = ref.read(roomTypesProvider(widget.hotelId)).asData?.value;
+    RoomTypeInventoryItem? selectedRoomType;
+    for (final roomType in roomTypes ?? const <RoomTypeInventoryItem>[]) {
+      if (roomType.id == _selectedRoomTypeId) {
+        selectedRoomType = roomType;
+        break;
+      }
+    }
+
+    final nights = _checkOut.difference(_checkIn).inDays;
+    final amount =
+        (selectedRoomType?.basePricePerNight ?? 0) * _roomCount * nights;
+    _cash.text =
+        amount.toStringAsFixed(amount.truncateToDouble() == amount ? 0 : 2);
   }
 
   @override
@@ -928,7 +973,7 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
         const _PanelHeader(
           icon: Icons.add_business_rounded,
           title: 'Walk-in booking',
-          subtitle: 'Create and check in a direct guest in one flow.',
+          subtitle: 'Collect cash now, then assign rooms now or at check-in.',
         ),
         _RoomTypePicker(
           hotelId: widget.hotelId,
@@ -938,6 +983,7 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
               _selectedRoomTypeId = roomTypeId;
               _selectedRoomIds.clear();
             });
+            _synchronizeCashAmount();
           },
         ),
         OutlinedButton.icon(
@@ -951,6 +997,18 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
           value: _guestCount,
           onChanged: (value) => setState(() => _guestCount = value),
         ),
+        _RoomCountStepper(
+          value: _roomCount,
+          onChanged: (value) {
+            setState(() {
+              _roomCount = value;
+              if (_selectedRoomIds.length > value) {
+                _selectedRoomIds.clear();
+              }
+            });
+            _synchronizeCashAmount();
+          },
+        ),
         AppTextFormField(controller: _guestName, labelText: 'Guest full name'),
         AppTextFormField(
           controller: _guestPhone,
@@ -963,24 +1021,45 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
         ),
         TextField(
           controller: _cash,
-          keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          readOnly: true,
           decoration: const InputDecoration(
-            labelText: 'Cash collected amount',
+            labelText: 'Cash to collect',
+            helperText:
+                'Calculated from room price, room count, and stay length.',
             prefixIcon: Icon(Icons.payments_outlined),
           ),
         ),
-        _RoomPicker(
-          hotelId: widget.hotelId,
-          roomTypeId: _selectedRoomTypeId,
-          selectedRoomIds: _selectedRoomIds,
-          onChanged: () => setState(() {}),
-          onRoomSelected: (room) {
-            if (_selectedRoomTypeId != room.roomTypeId) {
-              setState(() => _selectedRoomTypeId = room.roomTypeId);
-            }
-          },
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          value: _assignRoomsNow,
+          onChanged: _isToday(_checkIn)
+              ? (value) => setState(() {
+                    _assignRoomsNow = value;
+                    if (!value) {
+                      _selectedRoomIds.clear();
+                    }
+                  })
+              : null,
+          title: const Text('Assign rooms and check in now'),
+          subtitle: Text(
+            _isToday(_checkIn)
+                ? 'Turn this off to create a confirmed booking and assign rooms later.'
+                : 'Room assignment is available on the check-in date.',
+          ),
         ),
+        if (_assignRoomsNow)
+          _RoomPicker(
+            hotelId: widget.hotelId,
+            roomTypeId: _selectedRoomTypeId,
+            selectedRoomIds: _selectedRoomIds,
+            maximumSelections: _roomCount,
+            onChanged: () => setState(() {}),
+            onRoomSelected: (room) {
+              if (_selectedRoomTypeId != room.roomTypeId) {
+                setState(() => _selectedRoomTypeId = room.roomTypeId);
+              }
+            },
+          ),
         FilledButton.icon(
           onPressed: _loading ? null : _submit,
           icon: _loading
@@ -989,7 +1068,11 @@ class _WalkInPanelState extends ConsumerState<_WalkInPanel> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.check_circle_rounded),
-          label: const Text('Create walk-in stay'),
+          label: Text(
+            _assignRoomsNow
+                ? 'Collect cash and check in'
+                : 'Collect cash and confirm booking',
+          ),
         ),
       ],
     );
@@ -1069,6 +1152,7 @@ class _RoomPicker extends ConsumerWidget {
     required this.roomTypeId,
     required this.selectedRoomIds,
     required this.onChanged,
+    this.maximumSelections,
     this.onRoomSelected,
   });
 
@@ -1076,6 +1160,7 @@ class _RoomPicker extends ConsumerWidget {
   final String? roomTypeId;
   final Set<String> selectedRoomIds;
   final VoidCallback onChanged;
+  final int? maximumSelections;
   final ValueChanged<RoomInventoryItem>? onRoomSelected;
 
   @override
@@ -1113,15 +1198,19 @@ class _RoomPicker extends ConsumerWidget {
                       FilterChip(
                         label: Text(room.roomNumber),
                         selected: selectedRoomIds.contains(room.id),
-                        onSelected: (selected) {
-                          if (selected) {
-                            selectedRoomIds.add(room.id);
-                            onRoomSelected?.call(room);
-                          } else {
-                            selectedRoomIds.remove(room.id);
-                          }
-                          onChanged();
-                        },
+                        onSelected: !selectedRoomIds.contains(room.id) &&
+                                maximumSelections != null &&
+                                selectedRoomIds.length >= maximumSelections!
+                            ? null
+                            : (selected) {
+                                if (selected) {
+                                  selectedRoomIds.add(room.id);
+                                  onRoomSelected?.call(room);
+                                } else {
+                                  selectedRoomIds.remove(room.id);
+                                }
+                                onChanged();
+                              },
                       ),
                   ],
                 );
@@ -1400,6 +1489,33 @@ class _GuestCountStepper extends StatelessWidget {
         SizedBox(width: 42, child: Center(child: Text('$value'))),
         IconButton.filledTonal(
           onPressed: value >= 30 ? null : () => onChanged(value + 1),
+          icon: const Icon(Icons.add_rounded),
+        ),
+      ],
+    );
+  }
+}
+
+class _RoomCountStepper extends StatelessWidget {
+  const _RoomCountStepper({required this.value, required this.onChanged});
+
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text('Rooms', style: Theme.of(context).textTheme.labelLarge),
+        ),
+        IconButton.filledTonal(
+          onPressed: value <= 1 ? null : () => onChanged(value - 1),
+          icon: const Icon(Icons.remove_rounded),
+        ),
+        SizedBox(width: 42, child: Center(child: Text('$value'))),
+        IconButton.filledTonal(
+          onPressed: value >= 10 ? null : () => onChanged(value + 1),
           icon: const Icon(Icons.add_rounded),
         ),
       ],

@@ -35,11 +35,19 @@ internal sealed class CreateWalkInBookingRequestValidator : AbstractValidator<Cr
     public CreateWalkInBookingRequestValidator(IDateTimeProvider dateTimeProvider)
     {
         RuleFor(request => request.RoomTypeId).NotEmpty();
-        RuleFor(request => request.PhysicalRoomIds).NotEmpty();
-        RuleForEach(request => request.PhysicalRoomIds).NotEmpty();
+        RuleFor(request => request.RoomCount).InclusiveBetween(1, 10);
+        RuleForEach(request => request.PhysicalRoomIds).NotEmpty()
+            .When(request => request.PhysicalRoomIds is not null);
         RuleFor(request => request.PhysicalRoomIds)
-            .Must(roomIds => roomIds is not null && roomIds.Distinct().Count() == roomIds.Count)
+            .Must(roomIds => roomIds is null || roomIds.Distinct().Count() == roomIds.Count)
             .WithMessage("Physical room ids must be unique.");
+        RuleFor(request => request.PhysicalRoomIds)
+            .Must((request, roomIds) => roomIds is null || roomIds.Count == 0 || roomIds.Count == request.RoomCount)
+            .WithMessage("Assign all requested rooms during creation, or leave physical room ids empty for later check-in.");
+        RuleFor(request => request.CheckInDate)
+            .Equal(dateTimeProvider.Today)
+            .When(request => request.PhysicalRoomIds is { Count: > 0 })
+            .WithMessage("Rooms can be assigned during walk-in creation only when check-in is today.");
         RuleFor(request => request.CheckInDate)
             .GreaterThanOrEqualTo(dateTimeProvider.Today)
             .WithMessage("Check-in date cannot be in the past.")

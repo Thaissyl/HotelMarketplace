@@ -1,5 +1,6 @@
 using HotelMarketplace.Domain.Common;
 using HotelMarketplace.Domain.Enums;
+using HotelMarketplace.SharedKernel.Exceptions;
 
 namespace HotelMarketplace.Domain.Entities;
 
@@ -23,6 +24,7 @@ public sealed class UserAccount : Entity
         FullName = Guard.NotBlank(fullName, nameof(FullName), 200);
         PhoneNumber = Guard.Optional(phoneNumber, nameof(PhoneNumber), 32);
         Status = AccountStatus.Active;
+        IsSystemAccount = false;
         CreatedAtUtc = DateTime.UtcNow;
     }
 
@@ -36,6 +38,8 @@ public sealed class UserAccount : Entity
 
     public AccountStatus Status { get; private set; }
 
+    public bool IsSystemAccount { get; private set; }
+
     public DateTime CreatedAtUtc { get; private set; }
 
     public IReadOnlyCollection<UserAccountRole> Roles => _roles;
@@ -44,6 +48,8 @@ public sealed class UserAccount : Entity
 
     public void Suspend()
     {
+        EnsureInteractiveAccount();
+
         if (Status == AccountStatus.Suspended)
         {
             return;
@@ -54,6 +60,8 @@ public sealed class UserAccount : Entity
 
     public void Reactivate()
     {
+        EnsureInteractiveAccount();
+
         if (Status == AccountStatus.Active)
         {
             return;
@@ -64,12 +72,24 @@ public sealed class UserAccount : Entity
 
     public void UpdateProfile(string fullName, string? phoneNumber)
     {
+        EnsureInteractiveAccount();
         FullName = Guard.NotBlank(fullName, nameof(FullName), 200);
         PhoneNumber = Guard.Optional(phoneNumber, nameof(PhoneNumber), 32);
     }
 
     public void ChangePasswordHash(string passwordHash)
     {
+        EnsureInteractiveAccount();
         PasswordHash = Guard.NotBlank(passwordHash, nameof(PasswordHash), 512);
+    }
+
+    private void EnsureInteractiveAccount()
+    {
+        if (IsSystemAccount)
+        {
+            throw new DomainException(
+                "UserAccount.SystemAccountMutationForbidden",
+                "System accounts cannot be modified through interactive account operations.");
+        }
     }
 }

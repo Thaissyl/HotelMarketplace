@@ -116,6 +116,7 @@ internal sealed class EfAuthUserRepository : IAuthUserRepository
             user.Email,
             user.PasswordHash,
             user.Status,
+            user.IsSystemAccount,
             roles,
             hotelIds,
             hotelRoleAccesses);

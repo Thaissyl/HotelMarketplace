@@ -17,9 +17,22 @@ internal sealed class UserAccountConfiguration : IEntityTypeConfiguration<UserAc
         builder.Property(entity => entity.PasswordHash).HasMaxLength(512).IsRequired();
         builder.Property(entity => entity.FullName).HasMaxLength(200).IsRequired();
         builder.Property(entity => entity.Status).HasEnumConversion();
+        builder.Property(entity => entity.IsSystemAccount).IsRequired();
         builder.Property(entity => entity.CreatedAtUtc).HasPrecision(3);
         builder.HasIndex(entity => entity.Email).IsUnique();
         builder.HasIndex(entity => entity.PhoneNumber).IsUnique().HasFilter("[PhoneNumber] IS NOT NULL");
+
+        builder.HasData(new
+        {
+            Id = SeededUserAccountIds.AnonymousWalkInCustomer,
+            Email = "anonymous-walk-in@system.local",
+            PhoneNumber = (string?)null,
+            PasswordHash = "LOGIN-DISABLED",
+            FullName = "Anonymous Walk-in Customer",
+            Status = AccountStatus.Active,
+            IsSystemAccount = true,
+            CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+        });
     }
 }
 
@@ -53,6 +66,15 @@ internal sealed class UserAccountRoleConfiguration : IEntityTypeConfiguration<Us
         builder.HasIndex(entity => new { entity.UserAccountId, entity.RoleId }).IsUnique().HasFilter("[IsActive] = 1");
         builder.HasOne<UserAccount>().WithMany("Roles").HasForeignKey(entity => entity.UserAccountId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<UserRole>().WithMany().HasForeignKey(entity => entity.RoleId).OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasData(new
+        {
+            Id = SeededUserAccountIds.AnonymousWalkInCustomerRole,
+            UserAccountId = SeededUserAccountIds.AnonymousWalkInCustomer,
+            RoleId = SeededRoleIds.Customer,
+            IsActive = true,
+            AssignedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+        });
     }
 }
 

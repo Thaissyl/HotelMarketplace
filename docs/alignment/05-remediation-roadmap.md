@@ -43,6 +43,8 @@ never has overlapping active assignments.
 
 ### ALN-003 Approved Walk-In Model
 
+Status: Implemented on `fix/aln-003-approved-walk-in-model`.
+
 - Add a protected seeded system account `Anonymous Walk-in Customer` with a
   stable identifier and no interactive login capability.
 - Store real guest identity and contact information on the booking/stay.

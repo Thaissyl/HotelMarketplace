@@ -193,6 +193,7 @@ class OperationsApi {
   Future<FrontDeskBookingResult> createWalkInBooking({
     required String hotelId,
     required String roomTypeId,
+    required int roomCount,
     required List<String> physicalRoomIds,
     required DateTime checkInDate,
     required DateTime checkOutDate,
@@ -207,6 +208,7 @@ class OperationsApi {
       options: AuthHeaderInterceptor.hotelScopedOptions(),
       data: {
         'roomTypeId': roomTypeId,
+        'roomCount': roomCount,
         'physicalRoomIds': physicalRoomIds,
         'checkInDate': AppFormatters.apiDate(checkInDate),
         'checkOutDate': AppFormatters.apiDate(checkOutDate),

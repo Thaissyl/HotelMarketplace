@@ -34,7 +34,8 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
     {
         IQueryable<UserAccount> query = _dbContext.UserAccounts
             .IgnoreQueryFilters()
-            .AsNoTracking();
+            .AsNoTracking()
+            .Where(user => !user.IsSystemAccount);
 
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
@@ -142,7 +143,7 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
         bool userExists = await _dbContext.UserAccounts
             .IgnoreQueryFilters()
             .AsNoTracking()
-            .AnyAsync(user => user.Id == userId, cancellationToken);
+            .AnyAsync(user => user.Id == userId && !user.IsSystemAccount, cancellationToken);
 
         if (!userExists)
         {
@@ -205,7 +206,7 @@ internal sealed class EfPlatformAdminRepository : IPlatformAdminRepository
 
             UserAccount? user = await _dbContext.UserAccounts
                 .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(entity => entity.Id == userId, cancellationToken);
+                .FirstOrDefaultAsync(entity => entity.Id == userId && !entity.IsSystemAccount, cancellationToken);
 
             if (user is null)
             {

@@ -14,7 +14,8 @@ public enum FrontDeskPersistenceStatus
     PaymentCollectionRequired = 8,
     CapacityExceeded = 9,
     LockUnavailable = 10,
-    InsufficientAvailability = 11
+    InsufficientAvailability = 11,
+    IncorrectCashAmount = 12
 }
 
 public sealed record FrontDeskPersistenceResult(

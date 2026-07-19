@@ -282,6 +282,120 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
     }
 
     [Fact]
+    public async Task WalkInWithoutRoomAssignmentCreatesConfirmedBookingForAnonymousCustomer()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 2);
+        TestAuthResponse receptionist = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Receptionist,
+            "unassigned-walk-in-receptionist",
+            hotel.HotelId);
+        DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(3);
+
+        FrontDeskBookingDto result = await PostJsonAsync<FrontDeskBookingDto>(
+            client,
+            $"/api/hotels/{hotel.HotelId}/front-desk/walk-in-bookings",
+            new
+            {
+                roomTypeId = hotel.RoomTypeId,
+                roomCount = 1,
+                physicalRoomIds = Array.Empty<Guid>(),
+                checkInDate,
+                checkOutDate = checkInDate.AddDays(2),
+                guestCount = 2,
+                guestFullName = "Future Walk In Guest",
+                guestPhone = "0987654321",
+                identityDocumentNumber = "WALKIN-FUTURE",
+                cashCollectedAmount = 200m
+            },
+            HttpStatusCode.Created,
+            receptionist.AccessToken);
+
+        result.Status.Should().Be(BookingStatus.Confirmed);
+        result.AssignedRooms.Should().BeEmpty();
+        result.GuestStayRecordId.Should().BeNull();
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+        Booking booking = await dbContext.Bookings.IgnoreQueryFilters().SingleAsync(entity => entity.Id == result.BookingId);
+        booking.CustomerUserAccountId.Should().Be(HotelMarketplace.Domain.Security.SeededUserAccountIds.AnonymousWalkInCustomer);
+        booking.Source.Should().Be(BookingSource.WalkIn);
+        booking.PaymentMode.Should().Be(PaymentMode.PayAtProperty);
+        booking.PaymentExpiresAtUtc.Should().BeNull();
+        (await dbContext.PaymentCollectionRecords.IgnoreQueryFilters().SingleAsync(entity => entity.BookingId == booking.Id))
+            .Amount.Should().Be(booking.TotalAmount);
+    }
+
+    [Fact]
+    public async Task AnonymousWalkInSystemAccountCannotLoginOrBeManagedAsAUser()
+    {
+        using HttpClient client = _factory.CreateClient();
+        TestAuthResponse administrator = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.PlatformAdministrator,
+            "system-account-admin");
+
+        using HttpResponseMessage loginResponse = await client.PostAsJsonAsync(
+            "/api/auth/login",
+            new { email = "anonymous-walk-in@system.local", password = "any-password" },
+            JsonOptions);
+        loginResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        IReadOnlyCollection<HotelMarketplace.Application.PlatformAdmin.Dtos.AdminUserDto> users =
+            await GetJsonAsync<IReadOnlyCollection<HotelMarketplace.Application.PlatformAdmin.Dtos.AdminUserDto>>(
+                client,
+                "/api/platform-admin/users?searchTerm=anonymous-walk-in",
+                HttpStatusCode.OK,
+                administrator.AccessToken);
+        users.Should().BeEmpty();
+
+        using HttpRequestMessage suspendRequest = new(
+            HttpMethod.Post,
+            $"/api/platform-admin/users/{HotelMarketplace.Domain.Security.SeededUserAccountIds.AnonymousWalkInCustomer}/suspend");
+        suspendRequest.Headers.Authorization = Bearer(administrator.AccessToken);
+        using HttpResponseMessage suspendResponse = await client.SendAsync(suspendRequest);
+        suspendResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task WalkInRejectsCashAmountThatDoesNotMatchServerCalculatedTotal()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse receptionist = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Receptionist,
+            "incorrect-walk-in-cash-receptionist",
+            hotel.HotelId);
+        DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(4);
+
+        using HttpRequestMessage request = new(
+            HttpMethod.Post,
+            $"/api/hotels/{hotel.HotelId}/front-desk/walk-in-bookings");
+        request.Headers.Authorization = Bearer(receptionist.AccessToken);
+        request.Content = JsonContent.Create(
+            new
+            {
+                roomTypeId = hotel.RoomTypeId,
+                roomCount = 1,
+                physicalRoomIds = Array.Empty<Guid>(),
+                checkInDate,
+                checkOutDate = checkInDate.AddDays(2),
+                guestCount = 1,
+                guestFullName = "Incorrect Cash Guest",
+                guestPhone = "0987654321",
+                cashCollectedAmount = 199m
+            },
+            options: JsonOptions);
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("FrontDesk.IncorrectCashAmount");
+    }
+
+    [Fact]
     public async Task ConcurrentOverlappingDateRangesUseTheSameRoomTypeInventoryLock()
     {
         using HttpClient client = _factory.CreateClient();
@@ -1013,6 +1127,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             new
             {
                 roomTypeId = roomType.Id,
+                roomCount = 1,
                 physicalRoomIds = new[] { firstRoom.Id },
                 checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date),
                 checkOutDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(1),
@@ -1229,14 +1344,15 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             new
             {
                 roomTypeId = hotel.RoomTypeId,
-                physicalRoomIds = new[] { hotel.PhysicalRoomIds.Single() },
+                roomCount = 1,
+                physicalRoomIds = Array.Empty<Guid>(),
                 checkInDate,
                 checkOutDate,
                 guestCount = 1,
                 guestFullName = "Concurrent Walk In Guest",
                 guestPhone = "0987654321",
                 identityDocumentNumber = "CROSSCHANNEL",
-                cashCollectedAmount = 100m
+                cashCollectedAmount = 200m
             },
             options: JsonOptions);
 

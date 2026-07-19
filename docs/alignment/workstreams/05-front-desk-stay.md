@@ -1,6 +1,6 @@
 # WS-05 Front Desk and Stay Lifecycle
 
-Status: Main check-in/out path exists; documented lifecycle is incomplete
+Status: Walk-in alignment completed; remaining check-in/out lifecycle gaps are tracked
 
 ## Aligned Evidence
 
@@ -21,7 +21,7 @@ Status: Main check-in/out path exists; documented lifecycle is incomplete
 | UC-028 | No-show candidates and room-status overview are incomplete | GAP-027 |
 | UC-029 | Pre-assignment/change-room is unavailable outside check-in | GAP-013 |
 | UC-030 | Collection is only a checkout side effect and uses the wrong status type | GAP-012 |
-| UC-031 | Walk-in uses shared inventory but remains attributed to staff and always checks in | GAP-004 |
+| UC-031 | Remediated: protected anonymous customer, exact cash collection, and assignment-dependent Confirmed or CheckedIn state | GAP-004, ALN-003 |
 
 ## Required Design
 

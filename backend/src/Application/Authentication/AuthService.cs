@@ -98,7 +98,7 @@ internal sealed class AuthService : IAuthService
         string normalizedEmail = NormalizeEmail(request.Email);
         AuthUserSnapshot? user = await _authUserRepository.GetAuthUserByEmailAsync(normalizedEmail, cancellationToken);
 
-        if (user is null || !_passwordHasher.VerifyPassword(request.Password, user.PasswordHash))
+        if (user is null || user.IsSystemAccount || !_passwordHasher.VerifyPassword(request.Password, user.PasswordHash))
         {
             return Result.Failure<AuthResponse>(AuthenticationErrors.InvalidCredentials);
         }

@@ -45,3 +45,4 @@ dependency order, not only user-interface visibility.
 | GAP-001 | Remediated on `fix/aln-001-hotel-role-authorization` | Platform Administrator bypass removed from operational and customer routes; active hotel-role assignment is required server-side |
 | GAP-002 | Remediated on `fix/aln-001-hotel-role-authorization` | JWT now carries `hotel_role_access` tuples and authorization validates the active tuple against endpoint roles |
 | GAP-003 | Remediated on `fix/aln-002-unified-inventory-commitment` | Marketplace and Walk-in creation share one room-type lock and commitment calculation; overlapping date windows and room blocks are covered by integration tests |
+| GAP-004 | Remediated on `fix/aln-003-approved-walk-in-model` | Walk-in bookings use a protected shared customer, retain actual guest data, record exact cash collection, never enter PendingPayment, and become Confirmed or CheckedIn based on assignment |
