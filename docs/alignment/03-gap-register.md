@@ -50,3 +50,4 @@ dependency order, not only user-interface visibility.
 | GAP-006 | Remediated on `fix/aln-005-customer-cancellation` | Customer cancellation quote and mutation enforce ownership/status, evaluate hotel policy, release commitments, initiate one refund where eligible, and persist audit/notification evidence |
 | GAP-007 | Remediated on `fix/aln-005-customer-cancellation` | Hotel-scoped no-show enforces Confirmed state and configured UTC window, releases assignments, preserves financial records, and writes audit/notification evidence |
 | GAP-011 | Remediated on `fix/aln-005-customer-cancellation` | Eligible paid cancellation creates a PendingReview RefundRecord and returns refund status to the Customer flow |
+| GAP-008 | Remediated on `fix/aln-006-availability-calendar` | Hotel-scoped calendar APIs and Mobile workflow manage date-range restrictions under shared inventory locks, reject active commitments, and update marketplace projections immediately |

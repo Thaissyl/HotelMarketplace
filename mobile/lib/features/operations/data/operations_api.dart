@@ -25,6 +25,47 @@ class OperationsApi {
     }
   }
 
+  Future<AvailabilityCalendar> getAvailabilityCalendar({
+    required String hotelId,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) {
+    return _apiClient.get<AvailabilityCalendar>(
+      '/api/hotels/$hotelId/availability',
+      queryParameters: {
+        'startDate': AppFormatters.apiDate(startDate),
+        'endDate': AppFormatters.apiDate(endDate),
+      },
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      decoder: AvailabilityCalendar.fromJson,
+    );
+  }
+
+  Future<AvailabilityCalendar> changeAvailability({
+    required String hotelId,
+    required String roomTypeId,
+    required String? physicalRoomId,
+    required DateTime startDate,
+    required DateTime endDate,
+    required AvailabilityChangeAction action,
+    required String? reason,
+  }) {
+    return _apiClient.post<AvailabilityCalendar>(
+      '/api/hotels/$hotelId/availability/changes',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: {
+        'roomTypeId': roomTypeId,
+        'physicalRoomId': physicalRoomId,
+        'startDate': AppFormatters.apiDate(startDate),
+        'endDate': AppFormatters.apiDate(endDate),
+        'action': action.apiValue,
+        'reason':
+            reason == null || reason.trim().isEmpty ? null : reason.trim(),
+      },
+      decoder: AvailabilityCalendar.fromJson,
+    );
+  }
+
   Future<List<RoomInventoryItem>> getPhysicalRooms({
     required String hotelId,
     String? roomTypeId,

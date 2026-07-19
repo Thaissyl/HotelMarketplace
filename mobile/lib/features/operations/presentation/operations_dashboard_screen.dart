@@ -7,6 +7,7 @@ import '../../auth/application/auth_controller.dart';
 import '../../auth/domain/auth_models.dart';
 import '../../marketplace/presentation/marketplace_screen.dart';
 import '../application/selected_hotel_controller.dart';
+import 'availability_calendar_tab.dart';
 import 'front_desk_tab.dart';
 import 'housekeeping_tab.dart';
 import 'manager_overview_tab.dart';
@@ -26,8 +27,8 @@ class OperationsDashboardScreen extends ConsumerWidget {
     final selectedHotelState = ref.watch(selectedHotelControllerProvider);
     final userSession = ref.watch(authControllerProvider).userSession;
     final hotelIds = userSession?.hotelIds ?? const [];
-    final selectedHotelId = selectedHotelState.value ??
-        (hotelIds.isEmpty ? null : hotelIds.first);
+    final selectedHotelId =
+        selectedHotelState.value ?? (hotelIds.isEmpty ? null : hotelIds.first);
     final roles = userSession?.roles ?? const [];
     final sections = _OperationSection.visibleFor(roles);
     final canUseCustomerMarketplace =
@@ -168,6 +169,10 @@ enum _OperationSection {
     label: 'Front Desk',
     icon: Icons.room_service_rounded,
   ),
+  availability(
+    label: 'Availability',
+    icon: Icons.calendar_month_rounded,
+  ),
   housekeeping(
     label: 'Rooms',
     icon: Icons.cleaning_services_rounded,
@@ -196,14 +201,14 @@ enum _OperationSection {
   static List<_OperationSection> visibleFor(List<String> roles) {
     final hasAllHotelOperations = roles.any((role) {
       return role == UserRoleCode.propertyOwner.apiValue ||
-          role == UserRoleCode.hotelManager.apiValue ||
-          role == UserRoleCode.platformAdministrator.apiValue;
+          role == UserRoleCode.hotelManager.apiValue;
     });
 
     if (hasAllHotelOperations) {
       return [
         overview,
         if (roles.contains(UserRoleCode.propertyOwner.apiValue)) property,
+        availability,
         frontDesk,
         housekeeping,
         maintenance,
@@ -212,7 +217,10 @@ enum _OperationSection {
     }
 
     return [
-      if (roles.contains(UserRoleCode.receptionist.apiValue)) frontDesk,
+      if (roles.contains(UserRoleCode.receptionist.apiValue)) ...[
+        frontDesk,
+        availability,
+      ],
       if (roles.contains(UserRoleCode.housekeepingStaff.apiValue)) housekeeping,
       if (roles.contains(UserRoleCode.maintenanceStaff.apiValue)) maintenance,
     ];
@@ -225,6 +233,10 @@ enum _OperationSection {
           roles: roles,
         ),
       _OperationSection.frontDesk => FrontDeskTab(hotelId: hotelId),
+      _OperationSection.availability => AvailabilityCalendarTab(
+          hotelId: hotelId,
+          roles: roles,
+        ),
       _OperationSection.housekeeping => HousekeepingTab(hotelId: hotelId),
       _OperationSection.maintenance => MaintenanceTab(hotelId: hotelId),
       _OperationSection.staff => StaffManagementTab(hotelId: hotelId),

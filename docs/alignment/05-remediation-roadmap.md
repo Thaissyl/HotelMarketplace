@@ -84,6 +84,9 @@ mobile views, and tests.
 
 ### ALN-006 Availability Calendar
 
+Status: Implemented and verified on `fix/aln-006-availability-calendar`.
+See [14-aln-006-availability-calendar.md](14-aln-006-availability-calendar.md).
+
 Implement date-range room-type or physical-room blocking, conflict checks against
 active commitments, marketplace projection integration, Owner/Manager management,
 limited Receptionist permissions, and mobile calendar behavior.

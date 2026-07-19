@@ -9,6 +9,15 @@ final operationsApiProvider = Provider<OperationsApi>((ref) {
   return OperationsApi(ref.watch(apiClientProvider));
 });
 
+final availabilityCalendarProvider = FutureProvider.autoDispose
+    .family<AvailabilityCalendar, AvailabilityCalendarRequest>((ref, request) {
+  return ref.watch(operationsApiProvider).getAvailabilityCalendar(
+        hotelId: request.hotelId,
+        startDate: request.startDate,
+        endDate: request.endDate,
+      );
+});
+
 final workingHotelsProvider = FutureProvider.autoDispose<List<WorkingHotel>>((
   ref,
 ) {
@@ -99,6 +108,29 @@ class PhysicalRoomsRequest {
 
   @override
   int get hashCode => Object.hash(hotelId, roomTypeId);
+}
+
+class AvailabilityCalendarRequest {
+  const AvailabilityCalendarRequest({
+    required this.hotelId,
+    required this.startDate,
+    required this.endDate,
+  });
+
+  final String hotelId;
+  final DateTime startDate;
+  final DateTime endDate;
+
+  @override
+  bool operator ==(Object other) {
+    return other is AvailabilityCalendarRequest &&
+        other.hotelId == hotelId &&
+        other.startDate == startDate &&
+        other.endDate == endDate;
+  }
+
+  @override
+  int get hashCode => Object.hash(hotelId, startDate, endDate);
 }
 
 class FrontDeskBookingsRequest {

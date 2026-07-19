@@ -1,4 +1,5 @@
 using HotelMarketplace.Application.Authentication;
+using HotelMarketplace.Application.Availability;
 using HotelMarketplace.Application.Bookings;
 using HotelMarketplace.Application.Bookings.Expiration;
 using HotelMarketplace.Application.CustomerAccount;
@@ -12,6 +13,7 @@ using HotelMarketplace.Application.Payments;
 using HotelMarketplace.Application.PlatformAdmin;
 using HotelMarketplace.Application.Security;
 using HotelMarketplace.Infrastructure.Persistence.Authentication;
+using HotelMarketplace.Infrastructure.Persistence.Availability;
 using HotelMarketplace.Infrastructure.Persistence.Bookings;
 using HotelMarketplace.Infrastructure.Persistence.CustomerAccount;
 using HotelMarketplace.Infrastructure.Persistence.FrontDesk;
@@ -53,6 +55,7 @@ public static class DependencyInjection
         });
 
         services.AddScoped<IAuthUserRepository, EfAuthUserRepository>();
+        services.AddScoped<IAvailabilityRepository, EfAvailabilityRepository>();
         services.AddScoped<IHotelAccessRepository, EfHotelAccessRepository>();
         services.AddScoped<IInventoryCommitmentCoordinator, EfInventoryCommitmentCoordinator>();
         services.AddScoped<IBookingRepository, EfBookingRepository>();

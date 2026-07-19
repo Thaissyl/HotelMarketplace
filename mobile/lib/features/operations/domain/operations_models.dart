@@ -558,6 +558,180 @@ class MaintenanceRequestItem {
   }
 }
 
+enum AvailabilityChangeAction {
+  open('Open', 'Open room type'),
+  close('Close', 'Close room type'),
+  block('Block', 'Block room'),
+  unblock('Unblock', 'Unblock room');
+
+  const AvailabilityChangeAction(this.apiValue, this.label);
+
+  final String apiValue;
+  final String label;
+}
+
+class AvailabilityCalendar {
+  const AvailabilityCalendar({
+    required this.hotelId,
+    required this.startDate,
+    required this.endDate,
+    required this.roomTypes,
+    required this.entries,
+    required this.activeCommitments,
+  });
+
+  final String hotelId;
+  final DateTime startDate;
+  final DateTime endDate;
+  final List<AvailabilityRoomType> roomTypes;
+  final List<AvailabilityEntry> entries;
+  final List<AvailabilityCommitment> activeCommitments;
+
+  static AvailabilityCalendar fromJson(Object? data) {
+    final json = _asMap(data);
+    return AvailabilityCalendar(
+      hotelId: json['hotelId']?.toString() ?? '',
+      startDate: _parseDate(json['startDate']),
+      endDate: _parseDate(json['endDate']),
+      roomTypes: _asList(json['roomTypes'])
+          .map(AvailabilityRoomType.fromJson)
+          .toList(growable: false),
+      entries: _asList(json['entries'])
+          .map(AvailabilityEntry.fromJson)
+          .toList(growable: false),
+      activeCommitments: _asList(json['activeCommitments'])
+          .map(AvailabilityCommitment.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
+class AvailabilityRoomType {
+  const AvailabilityRoomType({
+    required this.id,
+    required this.name,
+    required this.status,
+    required this.physicalRooms,
+  });
+
+  final String id;
+  final String name;
+  final String status;
+  final List<AvailabilityPhysicalRoom> physicalRooms;
+
+  static AvailabilityRoomType fromJson(Object? data) {
+    final json = _asMap(data);
+    return AvailabilityRoomType(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      status: json['status']?.toString() ?? '',
+      physicalRooms: _asList(json['physicalRooms'])
+          .map(AvailabilityPhysicalRoom.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
+class AvailabilityPhysicalRoom {
+  const AvailabilityPhysicalRoom({
+    required this.id,
+    required this.roomNumber,
+    required this.status,
+  });
+
+  final String id;
+  final String roomNumber;
+  final String status;
+
+  static AvailabilityPhysicalRoom fromJson(Object? data) {
+    final json = _asMap(data);
+    return AvailabilityPhysicalRoom(
+      id: json['id']?.toString() ?? '',
+      roomNumber: json['roomNumber']?.toString() ?? '',
+      status: json['status']?.toString() ?? '',
+    );
+  }
+}
+
+class AvailabilityEntry {
+  const AvailabilityEntry({
+    required this.id,
+    required this.roomTypeId,
+    required this.physicalRoomId,
+    required this.startDate,
+    required this.endDate,
+    required this.status,
+    required this.reason,
+  });
+
+  final String id;
+  final String roomTypeId;
+  final String? physicalRoomId;
+  final DateTime startDate;
+  final DateTime endDate;
+  final String status;
+  final String reason;
+
+  static AvailabilityEntry fromJson(Object? data) {
+    final json = _asMap(data);
+    return AvailabilityEntry(
+      id: json['id']?.toString() ?? '',
+      roomTypeId: json['roomTypeId']?.toString() ?? '',
+      physicalRoomId: json['physicalRoomId']?.toString(),
+      startDate: _parseDate(json['startDate']),
+      endDate: _parseDate(json['endDate']),
+      status: json['status']?.toString() ?? '',
+      reason: json['reason']?.toString() ?? '',
+    );
+  }
+}
+
+class AvailabilityCommitment {
+  const AvailabilityCommitment({
+    required this.bookingId,
+    required this.bookingCode,
+    required this.roomTypeId,
+    required this.checkInDate,
+    required this.checkOutDate,
+    required this.roomCount,
+    required this.status,
+    required this.assignedPhysicalRoomIds,
+  });
+
+  final String bookingId;
+  final String bookingCode;
+  final String roomTypeId;
+  final DateTime checkInDate;
+  final DateTime checkOutDate;
+  final int roomCount;
+  final String status;
+  final List<String> assignedPhysicalRoomIds;
+
+  static AvailabilityCommitment fromJson(Object? data) {
+    final json = _asMap(data);
+    return AvailabilityCommitment(
+      bookingId: json['bookingId']?.toString() ?? '',
+      bookingCode: json['bookingCode']?.toString() ?? '',
+      roomTypeId: json['roomTypeId']?.toString() ?? '',
+      checkInDate: _parseDate(json['checkInDate']),
+      checkOutDate: _parseDate(json['checkOutDate']),
+      roomCount: (json['roomCount'] as num?)?.toInt() ?? 0,
+      status: json['status']?.toString() ?? '',
+      assignedPhysicalRoomIds: _asList(json['assignedPhysicalRoomIds'])
+          .map((item) => item.toString())
+          .toList(growable: false),
+    );
+  }
+}
+
+DateTime _parseDate(Object? value) {
+  return DateTime.tryParse(value?.toString() ?? '') ?? DateTime(2000);
+}
+
+List<Object?> _asList(Object? value) {
+  return value is List ? value.cast<Object?>() : const <Object?>[];
+}
+
 Map<String, dynamic> _asMap(Object? data) {
   if (data is Map<String, dynamic>) {
     return data;

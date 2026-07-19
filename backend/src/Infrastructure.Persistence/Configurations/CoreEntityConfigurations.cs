@@ -223,6 +223,7 @@ internal sealed class RoomAvailabilityConfiguration : IEntityTypeConfiguration<R
         builder.Property(entity => entity.StartDate).HasColumnType("date");
         builder.Property(entity => entity.EndDate).HasColumnType("date");
         builder.Property(entity => entity.Status).HasEnumConversion();
+        builder.Property(entity => entity.Reason).HasMaxLength(500).IsRequired();
         builder.HasIndex(entity => new { entity.HotelId, entity.RoomTypeId, entity.StartDate, entity.EndDate, entity.Status });
         builder.HasOne<HotelProperty>().WithMany().HasForeignKey(entity => entity.HotelId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<RoomType>().WithMany().HasForeignKey(entity => entity.RoomTypeId).OnDelete(DeleteBehavior.Restrict);

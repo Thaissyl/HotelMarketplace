@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
+using HotelMarketplace.Application.Availability.Dtos;
 using HotelMarketplace.Application.Bookings.Dtos;
 using HotelMarketplace.Application.Bookings.Expiration;
 using HotelMarketplace.Application.CustomerAccount.Dtos;
@@ -869,7 +870,8 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
                 checkInDate,
                 checkOutDate,
                 AvailabilityStatus.Blocked,
-                hotel.PhysicalRoomIds.Single()));
+                hotel.PhysicalRoomIds.Single(),
+                "Integration test inventory block"));
             await dbContext.SaveChangesAsync();
         }
 
@@ -893,6 +895,265 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await response.Content.ReadAsStringAsync()).Should().Contain("Booking.InsufficientAvailability");
+    }
+
+    [Fact]
+    public async Task AvailabilityCloseAndOpenImmediatelyUpdateMarketplaceProjection()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse owner = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.PropertyOwner,
+            "availability-owner",
+            hotel.HotelId);
+        DateOnly startDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(70);
+        DateOnly endDate = startDate.AddDays(3);
+        string availabilityQuery = $"checkInDate={startDate:yyyy-MM-dd}&checkOutDate={endDate:yyyy-MM-dd}&guestCount=1&roomCount=1";
+
+        IReadOnlyCollection<HotelSearchResultDto> beforeClose = await GetJsonAsync<IReadOnlyCollection<HotelSearchResultDto>>(
+            client,
+            $"/api/public/hotels?{availabilityQuery}",
+            HttpStatusCode.OK);
+        beforeClose.Should().Contain(result => result.Id == hotel.HotelId);
+
+        AvailabilityCalendarDto closed = await PostJsonAsync<AvailabilityCalendarDto>(
+            client,
+            $"/api/hotels/{hotel.HotelId}/availability/changes",
+            new
+            {
+                roomTypeId = hotel.RoomTypeId,
+                physicalRoomId = (Guid?)null,
+                startDate,
+                endDate,
+                action = AvailabilityChangeAction.Close,
+                reason = "Private event inventory hold"
+            },
+            HttpStatusCode.OK,
+            owner.AccessToken);
+        closed.Entries.Should().ContainSingle(entry =>
+            entry.Status == AvailabilityStatus.Closed &&
+            entry.RoomTypeId == hotel.RoomTypeId &&
+            entry.PhysicalRoomId == null);
+
+        IReadOnlyCollection<HotelSearchResultDto> afterClose = await GetJsonAsync<IReadOnlyCollection<HotelSearchResultDto>>(
+            client,
+            $"/api/public/hotels?{availabilityQuery}",
+            HttpStatusCode.OK);
+        afterClose.Should().NotContain(result => result.Id == hotel.HotelId);
+
+        AvailabilityCalendarDto opened = await PostJsonAsync<AvailabilityCalendarDto>(
+            client,
+            $"/api/hotels/{hotel.HotelId}/availability/changes",
+            new
+            {
+                roomTypeId = hotel.RoomTypeId,
+                physicalRoomId = (Guid?)null,
+                startDate,
+                endDate,
+                action = AvailabilityChangeAction.Open,
+                reason = (string?)null
+            },
+            HttpStatusCode.OK,
+            owner.AccessToken);
+        opened.Entries.Should().BeEmpty();
+
+        IReadOnlyCollection<HotelSearchResultDto> afterOpen = await GetJsonAsync<IReadOnlyCollection<HotelSearchResultDto>>(
+            client,
+            $"/api/public/hotels?{availabilityQuery}",
+            HttpStatusCode.OK);
+        afterOpen.Should().Contain(result => result.Id == hotel.HotelId);
+    }
+
+    [Fact]
+    public async Task AvailabilityBlockRejectsActiveBookingWithoutChangingCalendar()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "availability-customer");
+        TestAuthResponse owner = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.PropertyOwner,
+            "availability-conflict-owner",
+            hotel.HotelId);
+        BookingDto booking = await CreateBookingAsync(client, customer.AccessToken, hotel);
+
+        using HttpRequestMessage request = new(
+            HttpMethod.Post,
+            $"/api/hotels/{hotel.HotelId}/availability/changes");
+        request.Headers.Authorization = Bearer(owner.AccessToken);
+        request.Content = JsonContent.Create(
+            new
+            {
+                roomTypeId = hotel.RoomTypeId,
+                physicalRoomId = hotel.PhysicalRoomIds.Single(),
+                startDate = booking.CheckInDate,
+                endDate = booking.CheckOutDate,
+                action = AvailabilityChangeAction.Block,
+                reason = "Emergency engineering inspection"
+            },
+            options: JsonOptions);
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+        string responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict, responseBody);
+        responseBody.Should().Contain("Availability.ActiveBookingConflict");
+
+        AvailabilityCalendarDto calendar = await GetJsonAsync<AvailabilityCalendarDto>(
+            client,
+            $"/api/hotels/{hotel.HotelId}/availability?startDate={booking.CheckInDate:yyyy-MM-dd}&endDate={booking.CheckOutDate:yyyy-MM-dd}",
+            HttpStatusCode.OK,
+            owner.AccessToken);
+        calendar.Entries.Should().BeEmpty();
+        calendar.ActiveCommitments.Should().ContainSingle(item => item.BookingId == booking.Id);
+    }
+
+    [Fact]
+    public async Task ReceptionistCanBlockPhysicalRoomButCannotCloseRoomType()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse receptionist = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Receptionist,
+            "availability-receptionist",
+            hotel.HotelId);
+        DateOnly startDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(90);
+        DateOnly endDate = startDate.AddDays(2);
+
+        using HttpRequestMessage restrictedRequest = new(
+            HttpMethod.Post,
+            $"/api/hotels/{hotel.HotelId}/availability/changes");
+        restrictedRequest.Headers.Authorization = Bearer(receptionist.AccessToken);
+        restrictedRequest.Content = JsonContent.Create(
+            new
+            {
+                roomTypeId = hotel.RoomTypeId,
+                physicalRoomId = (Guid?)null,
+                startDate,
+                endDate,
+                action = AvailabilityChangeAction.Close,
+                reason = "Receptionist cannot close a room type"
+            },
+            options: JsonOptions);
+
+        using HttpResponseMessage restrictedResponse = await client.SendAsync(restrictedRequest);
+        restrictedResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        AvailabilityCalendarDto blocked = await PostJsonAsync<AvailabilityCalendarDto>(
+            client,
+            $"/api/hotels/{hotel.HotelId}/availability/changes",
+            new
+            {
+                roomTypeId = hotel.RoomTypeId,
+                physicalRoomId = hotel.PhysicalRoomIds.Single(),
+                startDate,
+                endDate,
+                action = AvailabilityChangeAction.Block,
+                reason = "Room temporarily held for operational inspection"
+            },
+            HttpStatusCode.OK,
+            receptionist.AccessToken);
+
+        blocked.Entries.Should().ContainSingle(entry =>
+            entry.Status == AvailabilityStatus.Blocked &&
+            entry.PhysicalRoomId == hotel.PhysicalRoomIds.Single());
+    }
+
+    [Fact]
+    public async Task ConcurrentOnlineBookingAndAvailabilityBlockCannotBothCommit()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "availability-race-customer");
+        TestAuthResponse owner = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.PropertyOwner,
+            "availability-race-owner",
+            hotel.HotelId);
+        DateOnly startDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(110);
+        DateOnly endDate = startDate.AddDays(2);
+
+        HttpStatusCode[] statusCodes = await Task.WhenAll(
+            SendCreateBookingAttemptAsync(
+                client,
+                customer.AccessToken,
+                hotel,
+                startDate,
+                endDate),
+            SendAvailabilityChangeAttemptAsync(
+                client,
+                owner.AccessToken,
+                hotel,
+                startDate,
+                endDate));
+
+        statusCodes.Count(status => status is HttpStatusCode.Created or HttpStatusCode.OK)
+            .Should()
+            .Be(1);
+        statusCodes.Count(status => status is HttpStatusCode.Conflict or (HttpStatusCode)423)
+            .Should()
+            .Be(1);
+    }
+
+    [Fact]
+    public async Task PartialUnblockPreservesRestrictionOutsideSelectedDates()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse owner = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.PropertyOwner,
+            "availability-split-owner",
+            hotel.HotelId);
+        DateOnly blockedStart = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(130);
+        DateOnly blockedEnd = blockedStart.AddDays(10);
+        DateOnly openStart = blockedStart.AddDays(3);
+        DateOnly openEnd = blockedStart.AddDays(6);
+
+        await PostJsonAsync<AvailabilityCalendarDto>(
+            client,
+            $"/api/hotels/{hotel.HotelId}/availability/changes",
+            new
+            {
+                roomTypeId = hotel.RoomTypeId,
+                physicalRoomId = hotel.PhysicalRoomIds.Single(),
+                startDate = blockedStart,
+                endDate = blockedEnd,
+                action = AvailabilityChangeAction.Block,
+                reason = "Planned room refurbishment"
+            },
+            HttpStatusCode.OK,
+            owner.AccessToken);
+
+        await PostJsonAsync<AvailabilityCalendarDto>(
+            client,
+            $"/api/hotels/{hotel.HotelId}/availability/changes",
+            new
+            {
+                roomTypeId = hotel.RoomTypeId,
+                physicalRoomId = hotel.PhysicalRoomIds.Single(),
+                startDate = openStart,
+                endDate = openEnd,
+                action = AvailabilityChangeAction.Unblock,
+                reason = (string?)null
+            },
+            HttpStatusCode.OK,
+            owner.AccessToken);
+
+        AvailabilityCalendarDto calendar = await GetJsonAsync<AvailabilityCalendarDto>(
+            client,
+            $"/api/hotels/{hotel.HotelId}/availability" +
+                $"?startDate={blockedStart:yyyy-MM-dd}&endDate={blockedEnd:yyyy-MM-dd}" +
+                $"&roomTypeId={hotel.RoomTypeId}&physicalRoomId={hotel.PhysicalRoomIds.Single()}",
+            HttpStatusCode.OK,
+            owner.AccessToken);
+
+        calendar.Entries.Should().HaveCount(2);
+        calendar.Entries.Should().Contain(entry =>
+            entry.StartDate == blockedStart && entry.EndDate == openStart);
+        calendar.Entries.Should().Contain(entry =>
+            entry.StartDate == openEnd && entry.EndDate == blockedEnd);
     }
 
     [Fact]
@@ -1732,6 +1993,33 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
         request.Headers.Authorization = Bearer(accessToken);
         request.Content = JsonContent.Create(new { amount }, options: JsonOptions);
         return await client.SendAsync(request);
+    }
+
+    private static async Task<HttpStatusCode> SendAvailabilityChangeAttemptAsync(
+        HttpClient client,
+        string accessToken,
+        SeededHotel hotel,
+        DateOnly startDate,
+        DateOnly endDate)
+    {
+        using HttpRequestMessage request = new(
+            HttpMethod.Post,
+            $"/api/hotels/{hotel.HotelId}/availability/changes");
+        request.Headers.Authorization = Bearer(accessToken);
+        request.Content = JsonContent.Create(
+            new
+            {
+                roomTypeId = hotel.RoomTypeId,
+                physicalRoomId = hotel.PhysicalRoomIds.Single(),
+                startDate,
+                endDate,
+                action = AvailabilityChangeAction.Block,
+                reason = "Concurrent inventory control"
+            },
+            options: JsonOptions);
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+        return response.StatusCode;
     }
 
     private static async Task<HttpResponseMessage> SendCancellationAsync(

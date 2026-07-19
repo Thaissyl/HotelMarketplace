@@ -45,6 +45,7 @@ to the canonical SRS and SDD.
 | [11-aln-003-approved-walk-in-model.md](11-aln-003-approved-walk-in-model.md) | ALN-003 protected anonymous customer and Walk-in lifecycle evidence |
 | [12-aln-004-explicit-demo-payment.md](12-aln-004-explicit-demo-payment.md) | ALN-004 explicit demo payment contract, atomicity, and audit evidence |
 | [13-aln-005-cancellation-refund-no-show.md](13-aln-005-cancellation-refund-no-show.md) | ALN-005 cancellation, refund initiation, no-show, and lock-order evidence |
+| [14-aln-006-availability-calendar.md](14-aln-006-availability-calendar.md) | ALN-006 availability calendar, permissions, interval, marketplace, and concurrency evidence |
 | [workstreams](workstreams/README.md) | Detailed reviews by business capability |
 
 ## Completion Criteria

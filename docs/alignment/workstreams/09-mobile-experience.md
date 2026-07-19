@@ -11,6 +11,9 @@ Status: Demonstrable role workspaces exist; requirement parity and automated cov
 - Timers and router refresh listeners use disposal hooks.
 - UI consolidating several SRS screens into tabs is acceptable where behavior is
   complete.
+- Owner, Manager, and Receptionist operations workspaces expose an Availability
+  calendar with date and room filters, restrictions, commitments, room status,
+  role-limited actions, duplicate-submit prevention, and friendly conflict errors.
 
 ## Verified Gaps
 
@@ -19,11 +22,11 @@ Status: Demonstrable role workspaces exist; requirement parity and automated cov
 | SCR-004 to SCR-006 | Guest search/detail is redirected to login | GAP-022 |
 | SCR-013 | Remediated: Trips details persistently display cancellation-created refund amount and status | GAP-011, ALN-005 |
 | SCR-015 | New Owner cannot register a hotel | GAP-022 |
-| SCR-019 | Availability calendar is absent | GAP-008, GAP-027 |
+| SCR-019 | Remediated: role-specific calendar and change workflow are implemented | GAP-008, GAP-027, ALN-006 |
 | SCR-022/023 | Arrival details support no-show; a dedicated eligible-candidate projection and complete room overview remain partial | GAP-027 |
 | SCR-038/039 | Commission and reconciliation interfaces are absent | GAP-026 |
 | NFR-SEC-006 | Main manifest permits cleartext in release | GAP-028 |
-| Test implication | One shell widget test does not verify role guards or workflows | GAP-030 |
+| Test implication | Shell and availability-contract tests exist; role guards and mutation widgets still need broader coverage | GAP-030 |
 
 ## Required Design
 

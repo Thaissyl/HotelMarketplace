@@ -92,3 +92,30 @@ database migrations were applied through `scripts/start-local-backend.ps1`.
 Residual limitations remain: hotel-local time zones are not yet modeled for the
 no-show window, Application unit tests are not authored, and cancellation-policy
 administration is not exposed as a dedicated Mobile workflow.
+
+## ALN-006 Verification
+
+The availability calendar was verified across Domain, API, SQL Server persistence,
+public marketplace projection, Mobile contract parsing, and the Pixel 7 emulator.
+
+| Command | Result |
+| --- | --- |
+| `dotnet build .\backend\HotelMarketplace.slnx --no-restore` | Passed; 0 warnings and 0 errors |
+| `dotnet test .\backend\HotelMarketplace.slnx --no-restore` | Passed; 32 API integration tests and 8 Domain tests |
+| `dotnet ef migrations has-pending-model-changes` | Passed; model matches the latest migration |
+| `flutter analyze` | Passed; no issues found |
+| `flutter test` | Passed; 2 tests |
+| Android profile build | Passed and installed on the existing Pixel 7 emulator |
+
+ALN-006 tests verify room-type close/open marketplace consistency, active-booking
+conflict rejection, Receptionist physical-room-only authority, and concurrent
+online booking versus availability blocking. It also verifies that partially
+opening or unblocking a restriction preserves the unaffected date intervals.
+Emulator verification confirmed the
+Receptionist calendar layout, hotel and room context, filters, role-limited form,
+required reason, duplicate-submit protection, and friendly HTTP 409 presentation.
+
+The implementation intentionally uses a conservative conflict rule: a new close
+or block is rejected when any active room-type commitment overlaps the requested
+dates. A controlled exception or relocation workflow is not implemented. Setup
+status bypass and inspection/release policy remain assigned to ALN-008.

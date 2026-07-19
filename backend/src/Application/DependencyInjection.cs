@@ -1,5 +1,6 @@
 using HotelMarketplace.SharedKernel;
 using HotelMarketplace.Application.Authentication;
+using HotelMarketplace.Application.Availability;
 using HotelMarketplace.Application.Bookings;
 using HotelMarketplace.Application.Bookings.Expiration;
 using HotelMarketplace.Application.CustomerAccount;
@@ -23,6 +24,7 @@ public static class DependencyInjection
         services.AddSharedKernel();
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly, includeInternalTypes: true);
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IAvailabilityService, AvailabilityService>();
         services.AddScoped<IBookingService, BookingService>();
         services.AddScoped<ICustomerAccountService, CustomerAccountService>();
         services.AddScoped<IExpiredBookingService, ExpiredBookingService>();
