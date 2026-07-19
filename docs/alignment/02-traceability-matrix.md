@@ -11,7 +11,7 @@ branches, data fields, permissions, lifecycle states, or tests are absent.
 | UC-002 | Public hotel detail and availability | Public detail exists but omits documented content | Detail exists but requires Customer login | Not covered | Partial | High | WS-02, WS-09 |
 | UC-003 | Customer or Owner registration | Implemented with validation and hashing | Implemented | Invalid placeholder test exists | Aligned | Low residual | WS-01 |
 | UC-004 | Login and role-specific access | Implemented; hotel-role tuple is lost in JWT | Implemented role landing | Tenant assignment combinations not covered | Partial | Critical | WS-01 |
-| UC-005 | Instant Customer booking with payment-mode choice | Atomic Platform Collect creation only | Platform Collect only | Online concurrency covered | Partial | High | WS-02, WS-03 |
+| UC-005 | Instant Customer booking with payment-mode choice | Atomic Platform Collect creation uses the unified inventory coordinator; Pay at Property remains absent | Platform Collect only | Same-channel, cross-channel, overlapping-window, and block tests pass | Partial | High | WS-02, WS-03, ALN-002 |
 | UC-006 | Approved demo payment | Simulation confirms owned eligible booking; real payOS code remains | Demo confirmation exists | Happy path only | Partial under approved scope | Medium | WS-02, WS-08 |
 | UC-007 | Customer cancellation and refund initiation | No endpoint, service, or domain transition | Missing | Missing | Missing | High | WS-02, WS-07 |
 | UC-008 | Customer booking list and detail | List exists; guest count is returned as one and detail is limited | Trips/detail equivalent exists | Happy path only | Partial | Medium | WS-02, WS-09 |
@@ -37,7 +37,7 @@ branches, data fields, permissions, lifecycle states, or tests are absent.
 | UC-028 | Arrivals, departures, and no-show candidates | Filtered booking list exists; no no-show candidates | Panels exist; no complete operational summary | Smoke-level only | Partial | Medium | WS-05 |
 | UC-029 | Pre-assign or change physical room | Assignment exists only inside check-in/walk-in | No independent operation | Concurrent check-in only | Partial | Medium | WS-05 |
 | UC-030 | Pay-at-Property collection lifecycle | Checkout side effect uses PaymentStatus instead of collection lifecycle | Checkout amount input exists | Happy path only | Deviated | High | WS-05, WS-07 |
-| UC-031 | Approved Anonymous Walk-in flow | Uses staff actor as Customer and separate physical-room locks | Walk-in form exists | No cross-channel test | Deviated | Critical | WS-03, WS-05 |
+| UC-031 | Approved Anonymous Walk-in flow | Uses shared inventory commitment and physical-room locks, but still attributes the booking to staff and always checks in | Walk-in form exists | Cross-channel final-room test passes | Partial | Critical | WS-03, WS-05, ALN-002 |
 | UC-032 | Role-safe housekeeping task views | Query exists; privacy projection is limited | Task list exists | Smoke-level only | Partial | Medium | WS-06 |
 | UC-033 | Cleaning lifecycle and assignee ownership | Open/InProgress/Completed path exists; assignment and inspection states differ | Status action exists | Smoke-level only | Partial | High | WS-06 |
 | UC-034 | Report room issue with severity effect | Creation exists and blocks room; lifecycle is simplified | Creation exists | Smoke-level only | Partial | Medium | WS-06 |

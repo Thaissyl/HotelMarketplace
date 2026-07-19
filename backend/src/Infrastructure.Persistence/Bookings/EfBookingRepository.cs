@@ -2,9 +2,9 @@ using System.Data;
 using System.Globalization;
 using HotelMarketplace.Application.Bookings;
 using HotelMarketplace.Application.Bookings.Dtos;
+using HotelMarketplace.Application.Inventory;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
-using HotelMarketplace.Infrastructure.Persistence.Common;
 using HotelMarketplace.SharedKernel.Time;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -13,29 +13,18 @@ namespace HotelMarketplace.Infrastructure.Persistence.Bookings;
 
 internal sealed class EfBookingRepository : IBookingRepository
 {
-    private static readonly BookingStatus[] BlockingConfirmedStatuses =
-    {
-        BookingStatus.Confirmed,
-        BookingStatus.CheckedIn
-    };
-
-    private static readonly RoomOperationalStatus[] UnsellableRoomStatuses =
-    {
-        RoomOperationalStatus.Maintenance,
-        RoomOperationalStatus.OutOfService,
-        RoomOperationalStatus.Blocked,
-        RoomOperationalStatus.Inactive
-    };
-
     private readonly HotelMarketplaceDbContext _dbContext;
     private readonly IDateTimeProvider _dateTimeProvider;
+    private readonly IInventoryCommitmentCoordinator _inventoryCommitmentCoordinator;
 
     public EfBookingRepository(
         HotelMarketplaceDbContext dbContext,
-        IDateTimeProvider dateTimeProvider)
+        IDateTimeProvider dateTimeProvider,
+        IInventoryCommitmentCoordinator inventoryCommitmentCoordinator)
     {
         _dbContext = dbContext;
         _dateTimeProvider = dateTimeProvider;
+        _inventoryCommitmentCoordinator = inventoryCommitmentCoordinator;
     }
 
     public async Task<CreateBookingRepositoryResult> CreatePendingBookingAsync(
@@ -49,16 +38,6 @@ internal sealed class EfBookingRepository : IBookingRepository
             await using IDbContextTransaction transaction = await _dbContext.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable,
                 cancellationToken);
-
-            bool lockAcquired = await SqlApplicationLock.AcquireExclusiveAsync(
-                _dbContext,
-                $"booking:{request.HotelId:N}:{request.RoomTypeId:N}:{request.CheckInDate:yyyyMMdd}:{request.CheckOutDate:yyyyMMdd}",
-                cancellationToken);
-            if (!lockAcquired)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return CreateBookingRepositoryResult.Failure(CreateBookingRepositoryStatus.ReservationLockUnavailable);
-            }
 
             DateTime utcNow = _dateTimeProvider.UtcNow;
             DateTime paymentExpiresAtUtc = utcNow.AddMinutes(15);
@@ -103,30 +82,23 @@ internal sealed class EfBookingRepository : IBookingRepository
                 return CreateBookingRepositoryResult.Failure(CreateBookingRepositoryStatus.CapacityExceeded);
             }
 
-            int physicalRoomCount = await _dbContext.PhysicalRooms
-                .IgnoreQueryFilters()
-                .AsNoTracking()
-                .CountAsync(physicalRoom => physicalRoom.HotelId == request.HotelId &&
-                    physicalRoom.RoomTypeId == request.RoomTypeId &&
-                    !UnsellableRoomStatuses.Contains(physicalRoom.Status),
-                    cancellationToken);
+            InventoryCommitmentEvaluation inventory = await _inventoryCommitmentCoordinator.AcquireAndEvaluateAsync(
+                request.HotelId,
+                request.RoomTypeId,
+                request.CheckInDate,
+                request.CheckOutDate,
+                request.RoomCount,
+                utcNow,
+                ignoredBookingId: null,
+                cancellationToken);
 
-            int reservedRoomCount = await (
-                from bookingRoom in _dbContext.BookingRooms.AsNoTracking()
-                join existingBooking in _dbContext.Bookings.IgnoreQueryFilters().AsNoTracking()
-                    on bookingRoom.BookingId equals existingBooking.Id
-                where existingBooking.HotelId == request.HotelId &&
-                    bookingRoom.RoomTypeId == request.RoomTypeId &&
-                    existingBooking.CheckInDate < request.CheckOutDate &&
-                    existingBooking.CheckOutDate > request.CheckInDate &&
-                    (BlockingConfirmedStatuses.Contains(existingBooking.Status) ||
-                        (existingBooking.Status == BookingStatus.PendingPayment &&
-                            (existingBooking.PaymentExpiresAtUtc == null || existingBooking.PaymentExpiresAtUtc > utcNow)))
-                select (int?)bookingRoom.Quantity)
-                .SumAsync(cancellationToken) ?? 0;
+            if (inventory.Status == InventoryCommitmentStatus.LockUnavailable)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return CreateBookingRepositoryResult.Failure(CreateBookingRepositoryStatus.ReservationLockUnavailable);
+            }
 
-            int availableRoomCount = physicalRoomCount - reservedRoomCount;
-            if (availableRoomCount < request.RoomCount)
+            if (inventory.Status == InventoryCommitmentStatus.InsufficientAvailability)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return CreateBookingRepositoryResult.Failure(CreateBookingRepositoryStatus.InsufficientAvailability);

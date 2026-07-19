@@ -3,6 +3,7 @@ using System.Globalization;
 using HotelMarketplace.Application.FrontDesk;
 using HotelMarketplace.Application.FrontDesk.Dtos;
 using HotelMarketplace.Application.FrontDesk.Requests;
+using HotelMarketplace.Application.Inventory;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
 using HotelMarketplace.Infrastructure.Persistence.Common;
@@ -16,13 +17,16 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
 {
     private readonly HotelMarketplaceDbContext _dbContext;
     private readonly IDateTimeProvider _dateTimeProvider;
+    private readonly IInventoryCommitmentCoordinator _inventoryCommitmentCoordinator;
 
     public EfFrontDeskRepository(
         HotelMarketplaceDbContext dbContext,
-        IDateTimeProvider dateTimeProvider)
+        IDateTimeProvider dateTimeProvider,
+        IInventoryCommitmentCoordinator inventoryCommitmentCoordinator)
     {
         _dbContext = dbContext;
         _dateTimeProvider = dateTimeProvider;
+        _inventoryCommitmentCoordinator = inventoryCommitmentCoordinator;
     }
 
     public async Task<IReadOnlyCollection<PhysicalRoom>> GetPhysicalRoomsAsync(
@@ -219,6 +223,16 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InvalidRoomAssignment);
+            }
+
+            bool inventoryLockAcquired = await _inventoryCommitmentCoordinator.AcquireRoomTypeLockAsync(
+                hotelId,
+                bookingRoom.RoomTypeId,
+                cancellationToken);
+            if (!inventoryLockAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.LockUnavailable);
             }
 
             bool roomLocksAcquired = await SqlApplicationLock.AcquireRoomLocksAsync(
@@ -446,16 +460,6 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
                 cancellationToken);
 
             List<Guid> requestedRoomIds = request.PhysicalRoomIds.Distinct().ToList();
-            bool roomLocksAcquired = await SqlApplicationLock.AcquireRoomLocksAsync(
-                _dbContext,
-                hotelId,
-                requestedRoomIds,
-                cancellationToken);
-            if (!roomLocksAcquired)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.LockUnavailable);
-            }
 
             RoomType? roomType = await _dbContext.RoomTypes
                 .IgnoreQueryFilters()
@@ -475,6 +479,40 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.CapacityExceeded);
+            }
+
+            DateTime utcNow = _dateTimeProvider.UtcNow;
+            InventoryCommitmentEvaluation inventory = await _inventoryCommitmentCoordinator.AcquireAndEvaluateAsync(
+                hotelId,
+                roomType.Id,
+                request.CheckInDate,
+                request.CheckOutDate,
+                requestedRoomIds.Count,
+                utcNow,
+                ignoredBookingId: null,
+                cancellationToken);
+
+            if (inventory.Status == InventoryCommitmentStatus.LockUnavailable)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.LockUnavailable);
+            }
+
+            if (inventory.Status == InventoryCommitmentStatus.InsufficientAvailability)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.InsufficientAvailability);
+            }
+
+            bool roomLocksAcquired = await SqlApplicationLock.AcquireRoomLocksAsync(
+                _dbContext,
+                hotelId,
+                requestedRoomIds,
+                cancellationToken);
+            if (!roomLocksAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return FrontDeskPersistenceResult.Failure(FrontDeskPersistenceStatus.LockUnavailable);
             }
 
             List<PhysicalRoom> rooms = await _dbContext.PhysicalRooms
@@ -504,8 +542,6 @@ internal sealed class EfFrontDeskRepository : IFrontDeskRepository
             int nights = request.CheckOutDate.DayNumber - request.CheckInDate.DayNumber;
             decimal totalAmount = requestedRoomIds.Count * nights * roomType.BasePricePerNight;
             Guid bookingId = Guid.NewGuid();
-            DateTime utcNow = _dateTimeProvider.UtcNow;
-
             Booking booking = new(
                 bookingId,
                 GenerateBookingCode(utcNow),

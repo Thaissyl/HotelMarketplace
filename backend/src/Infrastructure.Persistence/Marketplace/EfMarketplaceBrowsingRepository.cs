@@ -24,6 +24,19 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
         RoomOperationalStatus.Inactive
     };
 
+    private static readonly RoomOperationalStatus[] CurrentDayTransientUnsellableStatuses =
+    {
+        RoomOperationalStatus.Dirty,
+        RoomOperationalStatus.Cleaning,
+        RoomOperationalStatus.InspectionRequired
+    };
+
+    private static readonly AvailabilityStatus[] BlockingAvailabilityStatuses =
+    {
+        AvailabilityStatus.Closed,
+        AvailabilityStatus.Blocked
+    };
+
     private readonly HotelMarketplaceDbContext _dbContext;
     private readonly IDateTimeProvider _dateTimeProvider;
 
@@ -40,6 +53,7 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
         CancellationToken cancellationToken)
     {
         DateTime utcNow = _dateTimeProvider.UtcNow;
+        DateOnly today = DateOnly.FromDateTime(utcNow);
 
         var availableRoomTypes =
             from roomType in _dbContext.RoomTypes.IgnoreQueryFilters().AsNoTracking()
@@ -48,6 +62,26 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
                 .AsNoTracking()
                 .Count(physicalRoom => physicalRoom.RoomTypeId == roomType.Id &&
                     !UnsellableRoomStatuses.Contains(physicalRoom.Status))
+            let unavailablePhysicalRoomCount = _dbContext.PhysicalRooms
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Count(physicalRoom => physicalRoom.RoomTypeId == roomType.Id &&
+                    !UnsellableRoomStatuses.Contains(physicalRoom.Status) &&
+                    ((request.CheckInDate <= today &&
+                        CurrentDayTransientUnsellableStatuses.Contains(physicalRoom.Status)) ||
+                     _dbContext.RoomAvailabilities.IgnoreQueryFilters().Any(block =>
+                        block.PhysicalRoomId == physicalRoom.Id &&
+                        BlockingAvailabilityStatuses.Contains(block.Status) &&
+                        block.StartDate < request.CheckOutDate &&
+                        block.EndDate > request.CheckInDate)))
+            let roomTypeFullyBlocked = _dbContext.RoomAvailabilities
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Any(block => block.RoomTypeId == roomType.Id &&
+                    block.PhysicalRoomId == null &&
+                    BlockingAvailabilityStatuses.Contains(block.Status) &&
+                    block.StartDate < request.CheckOutDate &&
+                    block.EndDate > request.CheckInDate)
             let bookedRoomCount =
                 (from bookingRoom in _dbContext.BookingRooms.AsNoTracking()
                  join booking in _dbContext.Bookings.IgnoreQueryFilters().AsNoTracking()
@@ -59,9 +93,10 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
                      booking.CheckInDate < request.CheckOutDate &&
                      booking.CheckOutDate > request.CheckInDate
                  select (int?)bookingRoom.Quantity).Sum() ?? 0
-            let availableRoomCount = physicalRoomCount - bookedRoomCount
+            let availableRoomCount = physicalRoomCount - unavailablePhysicalRoomCount - bookedRoomCount
             let totalGuestCapacity = roomType.AdultCapacity + roomType.ChildCapacity
             where roomType.Status == RecordStatus.Active &&
+                !roomTypeFullyBlocked &&
                 availableRoomCount >= request.RoomCount &&
                 (roomType.AdultCapacity + roomType.ChildCapacity) * request.RoomCount >= request.GuestCount
             select new
@@ -139,6 +174,7 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
 
         int nights = request.CheckOutDate.DayNumber - request.CheckInDate.DayNumber;
         DateTime utcNow = _dateTimeProvider.UtcNow;
+        DateOnly today = DateOnly.FromDateTime(utcNow);
 
         var availableRoomTypeQuery =
             from roomType in _dbContext.RoomTypes.IgnoreQueryFilters().AsNoTracking()
@@ -147,6 +183,26 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
                 .AsNoTracking()
                 .Count(physicalRoom => physicalRoom.RoomTypeId == roomType.Id &&
                     !UnsellableRoomStatuses.Contains(physicalRoom.Status))
+            let unavailablePhysicalRoomCount = _dbContext.PhysicalRooms
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Count(physicalRoom => physicalRoom.RoomTypeId == roomType.Id &&
+                    !UnsellableRoomStatuses.Contains(physicalRoom.Status) &&
+                    ((request.CheckInDate <= today &&
+                        CurrentDayTransientUnsellableStatuses.Contains(physicalRoom.Status)) ||
+                     _dbContext.RoomAvailabilities.IgnoreQueryFilters().Any(block =>
+                        block.PhysicalRoomId == physicalRoom.Id &&
+                        BlockingAvailabilityStatuses.Contains(block.Status) &&
+                        block.StartDate < request.CheckOutDate &&
+                        block.EndDate > request.CheckInDate)))
+            let roomTypeFullyBlocked = _dbContext.RoomAvailabilities
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Any(block => block.RoomTypeId == roomType.Id &&
+                    block.PhysicalRoomId == null &&
+                    BlockingAvailabilityStatuses.Contains(block.Status) &&
+                    block.StartDate < request.CheckOutDate &&
+                    block.EndDate > request.CheckInDate)
             let bookedRoomCount =
                 (from bookingRoom in _dbContext.BookingRooms.AsNoTracking()
                  join booking in _dbContext.Bookings.IgnoreQueryFilters().AsNoTracking()
@@ -158,10 +214,11 @@ internal sealed class EfMarketplaceBrowsingRepository : IMarketplaceBrowsingRepo
                      booking.CheckInDate < request.CheckOutDate &&
                      booking.CheckOutDate > request.CheckInDate
                  select (int?)bookingRoom.Quantity).Sum() ?? 0
-            let availableRoomCount = physicalRoomCount - bookedRoomCount
+            let availableRoomCount = physicalRoomCount - unavailablePhysicalRoomCount - bookedRoomCount
             let totalGuestCapacity = roomType.AdultCapacity + roomType.ChildCapacity
             where roomType.HotelId == hotelId &&
                 roomType.Status == RecordStatus.Active &&
+                !roomTypeFullyBlocked &&
                 availableRoomCount >= request.RoomCount &&
                 (roomType.AdultCapacity + roomType.ChildCapacity) * request.RoomCount >= request.GuestCount
             select new

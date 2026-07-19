@@ -228,6 +228,136 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
     }
 
     [Fact]
+    public async Task ConcurrentMarketplaceAndWalkInRequestsCannotCommitTheLastRoomTwice()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "cross-channel-customer");
+        TestAuthResponse receptionist = await SeedUserAndLoginAsync(
+            client,
+            UserRoleCode.Receptionist,
+            "cross-channel-receptionist",
+            hotel.HotelId);
+        DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(25);
+        DateOnly checkOutDate = checkInDate.AddDays(2);
+
+        Task<HttpStatusCode> marketplaceAttempt = SendCreateBookingAttemptAsync(
+            client,
+            customer.AccessToken,
+            hotel,
+            checkInDate,
+            checkOutDate);
+        Task<HttpStatusCode> walkInAttempt = SendWalkInBookingAttemptAsync(
+            client,
+            receptionist.AccessToken,
+            hotel,
+            checkInDate,
+            checkOutDate);
+
+        HttpStatusCode[] statusCodes = await Task.WhenAll(marketplaceAttempt, walkInAttempt);
+
+        statusCodes.Count(statusCode => statusCode == HttpStatusCode.Created).Should().Be(1);
+        statusCodes.Count(statusCode => statusCode is HttpStatusCode.Conflict or (HttpStatusCode)423)
+            .Should()
+            .Be(1);
+
+        using IServiceScope scope = _factory.Services.CreateScope();
+        HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+
+        int committedQuantity = await (
+            from bookingRoom in dbContext.BookingRooms.IgnoreQueryFilters()
+            join booking in dbContext.Bookings.IgnoreQueryFilters()
+                on bookingRoom.BookingId equals booking.Id
+            where booking.HotelId == hotel.HotelId &&
+                bookingRoom.RoomTypeId == hotel.RoomTypeId &&
+                booking.CheckInDate < checkOutDate &&
+                booking.CheckOutDate > checkInDate &&
+                (booking.Status == BookingStatus.PendingPayment ||
+                    booking.Status == BookingStatus.Confirmed ||
+                    booking.Status == BookingStatus.CheckedIn)
+            select bookingRoom.Quantity)
+            .SumAsync();
+
+        committedQuantity.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ConcurrentOverlappingDateRangesUseTheSameRoomTypeInventoryLock()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "overlap-window-customer");
+        DateOnly firstCheckIn = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(40);
+        DateOnly firstCheckOut = firstCheckIn.AddDays(3);
+        DateOnly secondCheckIn = firstCheckIn.AddDays(2);
+        DateOnly secondCheckOut = secondCheckIn.AddDays(3);
+
+        HttpStatusCode[] statusCodes = await Task.WhenAll(
+            SendCreateBookingAttemptAsync(
+                client,
+                customer.AccessToken,
+                hotel,
+                firstCheckIn,
+                firstCheckOut),
+            SendCreateBookingAttemptAsync(
+                client,
+                customer.AccessToken,
+                hotel,
+                secondCheckIn,
+                secondCheckOut));
+
+        statusCodes.Count(statusCode => statusCode == HttpStatusCode.Created).Should().Be(1);
+        statusCodes.Count(statusCode => statusCode is HttpStatusCode.Conflict or (HttpStatusCode)423)
+            .Should()
+            .Be(1);
+    }
+
+    [Fact]
+    public async Task PhysicalRoomAvailabilityBlockReducesBookableInventory()
+    {
+        using HttpClient client = _factory.CreateClient();
+        SeededHotel hotel = await SeedBookableHotelAsync(physicalRoomCount: 1);
+        TestAuthResponse customer = await SeedUserAndLoginAsync(client, UserRoleCode.Customer, "blocked-room-customer");
+        DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(30);
+        DateOnly checkOutDate = checkInDate.AddDays(2);
+
+        using (IServiceScope scope = _factory.Services.CreateScope())
+        {
+            HotelMarketplaceDbContext dbContext = scope.ServiceProvider.GetRequiredService<HotelMarketplaceDbContext>();
+            dbContext.RoomAvailabilities.Add(new RoomAvailability(
+                Guid.NewGuid(),
+                hotel.HotelId,
+                hotel.RoomTypeId,
+                checkInDate,
+                checkOutDate,
+                AvailabilityStatus.Blocked,
+                hotel.PhysicalRoomIds.Single()));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using HttpRequestMessage request = new(HttpMethod.Post, "/api/bookings");
+        request.Headers.Authorization = Bearer(customer.AccessToken);
+        request.Content = JsonContent.Create(
+            new
+            {
+                hotelId = hotel.HotelId,
+                roomTypeId = hotel.RoomTypeId,
+                checkInDate,
+                checkOutDate,
+                roomCount = 1,
+                guestCount = 1,
+                guestFullName = "Blocked Room Guest",
+                guestPhone = "0900000000"
+            },
+            options: JsonOptions);
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Booking.InsufficientAvailability");
+    }
+
+    [Fact]
     public async Task CheckInExpiredBookingReturnsConflict()
     {
         using HttpClient client = _factory.CreateClient();
@@ -1048,6 +1178,22 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
         DateOnly checkInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(20);
         DateOnly checkOutDate = checkInDate.AddDays(1);
 
+        return await SendCreateBookingAttemptAsync(
+            client,
+            accessToken,
+            seededHotel,
+            checkInDate,
+            checkOutDate);
+    }
+
+    private static async Task<HttpStatusCode> SendCreateBookingAttemptAsync(
+        HttpClient client,
+        string accessToken,
+        SeededHotel seededHotel,
+        DateOnly checkInDate,
+        DateOnly checkOutDate)
+    {
+
         using HttpRequestMessage request = new(HttpMethod.Post, "/api/bookings");
         request.Headers.Authorization = Bearer(accessToken);
         request.Content = JsonContent.Create(
@@ -1065,6 +1211,36 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             options: JsonOptions);
 
         HttpResponseMessage response = await client.SendAsync(request);
+        return response.StatusCode;
+    }
+
+    private static async Task<HttpStatusCode> SendWalkInBookingAttemptAsync(
+        HttpClient client,
+        string accessToken,
+        SeededHotel hotel,
+        DateOnly checkInDate,
+        DateOnly checkOutDate)
+    {
+        using HttpRequestMessage request = new(
+            HttpMethod.Post,
+            $"/api/hotels/{hotel.HotelId}/front-desk/walk-in-bookings");
+        request.Headers.Authorization = Bearer(accessToken);
+        request.Content = JsonContent.Create(
+            new
+            {
+                roomTypeId = hotel.RoomTypeId,
+                physicalRoomIds = new[] { hotel.PhysicalRoomIds.Single() },
+                checkInDate,
+                checkOutDate,
+                guestCount = 1,
+                guestFullName = "Concurrent Walk In Guest",
+                guestPhone = "0987654321",
+                identityDocumentNumber = "CROSSCHANNEL",
+                cashCollectedAmount = 100m
+            },
+            options: JsonOptions);
+
+        using HttpResponseMessage response = await client.SendAsync(request);
         return response.StatusCode;
     }
 

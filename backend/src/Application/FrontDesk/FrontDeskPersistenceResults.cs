@@ -13,7 +13,8 @@ public enum FrontDeskPersistenceStatus
     RoomAssignmentOverlap = 7,
     PaymentCollectionRequired = 8,
     CapacityExceeded = 9,
-    LockUnavailable = 10
+    LockUnavailable = 10,
+    InsufficientAvailability = 11
 }
 
 public sealed record FrontDeskPersistenceResult(

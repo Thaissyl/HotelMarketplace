@@ -1,6 +1,6 @@
 # WS-03 Inventory and Availability
 
-Status: Unsafe cross-channel invariant; P0 correction required
+Status: Cross-channel commitment aligned; availability-management APIs remain incomplete
 
 ## Aligned Evidence
 
@@ -8,13 +8,16 @@ Status: Unsafe cross-channel invariant; P0 correction required
 - Marketplace booking serializes room-type quantity checks.
 - Check-in serializes booking and physical-room assignment.
 - RoomAvailability and RoomStatusHistory entities exist.
+- Marketplace and Walk-in creation share a room-type inventory lock and one
+  commitment calculation.
+- Overlapping date windows, payment holds, room blocks, and current-day transient
+  room states are included in availability decisions.
 
 ## Verified Gaps
 
 | Requirement | Finding | Gap |
 | --- | --- | --- |
-| BR-BOOK-003/004 | Walk-in does not subtract online committed room-type quantity | GAP-003 |
-| UC-031 | Walk-in locks physical rooms only and can overbook room-type inventory | GAP-003, GAP-004 |
+| UC-031 | Walk-in still uses the staff actor as Customer and always checks in immediately | GAP-004 |
 | UC-013 | Availability block entity has no command/query API and is ignored by public availability | GAP-008 |
 | BR-ROOM-002 | Current-day saleability can count Dirty, Cleaning, or InspectionRequired rooms | GAP-008 |
 | BR-ROOM-002 | Owner setup changes can force operational rooms back to Available | GAP-016 |

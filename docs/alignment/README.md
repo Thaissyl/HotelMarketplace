@@ -41,6 +41,7 @@ to the canonical SRS and SDD.
 | [07-audit-summary.md](07-audit-summary.md) | Consolidated conformance assessment and release position |
 | [08-verification-log.md](08-verification-log.md) | Commands executed and reproducible verification results |
 | [09-aln-001-hotel-role-authorization.md](09-aln-001-hotel-role-authorization.md) | ALN-001 implementation evidence and acceptance results |
+| [10-aln-002-unified-inventory-commitment.md](10-aln-002-unified-inventory-commitment.md) | ALN-002 inventory invariants and concurrency evidence |
 | [workstreams](workstreams/README.md) | Detailed reviews by business capability |
 
 ## Completion Criteria

@@ -200,6 +200,7 @@ internal sealed class FrontDeskService : IFrontDeskService
             FrontDeskPersistenceStatus.RoomAssignmentOverlap => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.RoomAssignmentOverlap),
             FrontDeskPersistenceStatus.PaymentCollectionRequired => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.PaymentCollectionRequired),
             FrontDeskPersistenceStatus.CapacityExceeded => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.CapacityExceeded),
+            FrontDeskPersistenceStatus.InsufficientAvailability => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.InsufficientAvailability),
             FrontDeskPersistenceStatus.LockUnavailable => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.LockUnavailable),
             _ => Result.Failure<FrontDeskBookingDto>(FrontDeskErrors.InvalidRoomAssignment)
         };

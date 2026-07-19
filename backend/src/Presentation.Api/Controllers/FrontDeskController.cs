@@ -140,6 +140,7 @@ public sealed class FrontDeskController : ControllerBase
             "FrontDesk.RoomAssignmentOverlap" => StatusCodes.Status409Conflict,
             "FrontDesk.PaymentCollectionRequired" => StatusCodes.Status409Conflict,
             "FrontDesk.CapacityExceeded" => StatusCodes.Status400BadRequest,
+            "FrontDesk.InsufficientAvailability" => StatusCodes.Status409Conflict,
             "FrontDesk.LockUnavailable" => StatusCodes.Status423Locked,
             _ => StatusCodes.Status400BadRequest
         };

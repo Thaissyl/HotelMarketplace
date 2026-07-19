@@ -1,5 +1,6 @@
 using System.Data;
 using HotelMarketplace.Application.Bookings.Expiration;
+using HotelMarketplace.Application.Inventory;
 using HotelMarketplace.Domain.Entities;
 using HotelMarketplace.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -10,10 +11,14 @@ namespace HotelMarketplace.Infrastructure.Persistence.Bookings;
 internal sealed class EfExpiredBookingRepository : IExpiredBookingRepository
 {
     private readonly HotelMarketplaceDbContext _dbContext;
+    private readonly IInventoryCommitmentCoordinator _inventoryCommitmentCoordinator;
 
-    public EfExpiredBookingRepository(HotelMarketplaceDbContext dbContext)
+    public EfExpiredBookingRepository(
+        HotelMarketplaceDbContext dbContext,
+        IInventoryCommitmentCoordinator inventoryCommitmentCoordinator)
     {
         _dbContext = dbContext;
+        _inventoryCommitmentCoordinator = inventoryCommitmentCoordinator;
     }
 
     public async Task<IReadOnlyCollection<ExpiredBookingDto>> ExpirePendingPaymentBookingsAsync(
@@ -31,6 +36,7 @@ internal sealed class EfExpiredBookingRepository : IExpiredBookingRepository
 
             Booking[] expiredBookings = await _dbContext.Bookings
                 .IgnoreQueryFilters()
+                .Include(booking => booking.Rooms)
                 .Where(booking => booking.Status == BookingStatus.PendingPayment &&
                     booking.PaymentExpiresAtUtc != null &&
                     booking.PaymentExpiresAtUtc <= utcNow)
@@ -41,6 +47,21 @@ internal sealed class EfExpiredBookingRepository : IExpiredBookingRepository
             if (expiredBookings.Length == 0)
             {
                 await transaction.CommitAsync(cancellationToken);
+                return Array.Empty<ExpiredBookingDto>();
+            }
+
+            InventoryRoomTypeKey[] roomTypeKeys = expiredBookings
+                .SelectMany(booking => booking.Rooms.Select(room => new InventoryRoomTypeKey(
+                    booking.HotelId,
+                    room.RoomTypeId)))
+                .ToArray();
+
+            bool inventoryLocksAcquired = await _inventoryCommitmentCoordinator.AcquireRoomTypeLocksAsync(
+                roomTypeKeys,
+                cancellationToken);
+            if (!inventoryLocksAcquired)
+            {
+                await transaction.RollbackAsync(cancellationToken);
                 return Array.Empty<ExpiredBookingDto>();
             }
 

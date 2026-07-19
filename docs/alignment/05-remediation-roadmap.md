@@ -25,6 +25,9 @@ active compatible role for that exact hotel.
 
 ### ALN-002 Unified Inventory Commitment
 
+Status: Implemented and verified on `fix/aln-002-unified-inventory-commitment`.
+See [10-aln-002-unified-inventory-commitment.md](10-aln-002-unified-inventory-commitment.md).
+
 - Introduce a shared inventory reservation coordinator used by marketplace,
   Walk-in, room assignment, cancellation, expiration, and no-show.
 - Use one compatible application-lock resource for hotel, room type, and
