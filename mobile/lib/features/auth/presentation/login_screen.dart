@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_spacing.dart';
-import '../../../core/network/api_exception.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
 import '../../../shared/widgets/app_text_form_field.dart';
 import '../application/auth_controller.dart';
@@ -50,14 +49,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!success && mounted) {
       final error = ref.read(authControllerProvider).error;
       if (error != null) {
+        final isUnauthorized = AppErrorPresenter.isUnauthorized(error);
         await AppErrorPresenter.showBottomSheet(
           context,
-          error is UnauthorizedApiException
-              ? 'Email or password is incorrect. Please check your credentials and try again.'
+          isUnauthorized
+              ? 'Email, phone number, or password is incorrect. Please check your credentials and try again.'
               : error,
-          title: error is UnauthorizedApiException
-              ? 'Incorrect email or password'
-              : null,
+          title: isUnauthorized ? 'Incorrect login information' : null,
         );
       }
     }
@@ -70,7 +68,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     return AuthShell(
       title: 'Login Screen',
-      subtitle: 'Sign in with your registered email.',
       showBackButton: false,
       child: Form(
         key: _formKey,
@@ -82,48 +79,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
-              autofillHints: const [AutofillHints.email],
-              validator: AuthFormValidators.email,
-              labelText: 'Email',
+              autofillHints: const [
+                AutofillHints.username,
+                AutofillHints.email,
+                AutofillHints.telephoneNumber,
+              ],
+              validator: AuthFormValidators.emailOrPhone,
+              labelText: 'Email or Phone',
+              externalLabel: true,
+              required: true,
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.section),
             PasswordField(
               controller: _passwordController,
               validator: AuthFormValidators.password,
               onFieldSubmitted: (_) => isLoading ? null : _submit(),
+              externalLabel: true,
+              showVisibilityToggle: false,
             ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: isLoading
-                    ? null
-                    : () => showDialog<void>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('Password recovery'),
-                            content: const Text(
-                              'Password recovery is not available in this MVP. '
-                              'Contact the property owner or platform administrator '
-                              'to restore access to a managed account.',
-                            ),
-                            actions: [
-                              FilledButton(
-                                onPressed: () => Navigator.of(context).pop(),
-                                child: const Text('Close'),
-                              ),
-                            ],
-                          ),
-                        ),
-                child: const Text('Forgot password?'),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.section),
             AuthSubmitButton(
               label: 'Login',
               isLoading: isLoading,
               onPressed: _submit,
             ),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.xxl),
             TextButton(
               onPressed: isLoading
                   ? null

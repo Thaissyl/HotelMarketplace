@@ -10,6 +10,8 @@ class PasswordField extends StatefulWidget {
     this.labelText = 'Password',
     this.textInputAction = TextInputAction.done,
     this.onFieldSubmitted,
+    this.externalLabel = false,
+    this.showVisibilityToggle = true,
   });
 
   final TextEditingController controller;
@@ -17,6 +19,8 @@ class PasswordField extends StatefulWidget {
   final String labelText;
   final TextInputAction textInputAction;
   final ValueChanged<String>? onFieldSubmitted;
+  final bool externalLabel;
+  final bool showVisibilityToggle;
 
   @override
   State<PasswordField> createState() => _PasswordFieldState();
@@ -36,19 +40,23 @@ class _PasswordFieldState extends State<PasswordField> {
       validator: widget.validator,
       onFieldSubmitted: widget.onFieldSubmitted,
       labelText: widget.labelText,
-      suffixIcon: IconButton(
-        tooltip: _obscureText ? 'Show password' : 'Hide password',
-        onPressed: () {
-          setState(() {
-            _obscureText = !_obscureText;
-          });
-        },
-        icon: Icon(
-          _obscureText
-              ? Icons.visibility_rounded
-              : Icons.visibility_off_rounded,
-        ),
-      ),
+      externalLabel: widget.externalLabel,
+      required: true,
+      suffixIcon: widget.showVisibilityToggle
+          ? IconButton(
+              tooltip: _obscureText ? 'Show password' : 'Hide password',
+              onPressed: () {
+                setState(() {
+                  _obscureText = !_obscureText;
+                });
+              },
+              icon: Icon(
+                _obscureText
+                    ? Icons.visibility_rounded
+                    : Icons.visibility_off_rounded,
+              ),
+            )
+          : null,
     );
   }
 }

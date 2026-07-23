@@ -95,8 +95,10 @@ internal sealed class AuthService : IAuthService
                 ValidationErrorFormatter.ToResultError("Auth.InvalidLoginRequest", validationResult));
         }
 
-        string normalizedEmail = NormalizeEmail(request.Email);
-        AuthUserSnapshot? user = await _authUserRepository.GetAuthUserByEmailAsync(normalizedEmail, cancellationToken);
+        string normalizedIdentifier = NormalizeLoginIdentifier(request.Email);
+        AuthUserSnapshot? user = await _authUserRepository.GetAuthUserByIdentifierAsync(
+            normalizedIdentifier,
+            cancellationToken);
 
         if (user is null || user.IsSystemAccount || !_passwordHasher.VerifyPassword(request.Password, user.PasswordHash))
         {
@@ -128,5 +130,13 @@ internal sealed class AuthService : IAuthService
     private static string NormalizeEmail(string email)
     {
         return email.Trim().ToLowerInvariant();
+    }
+
+    private static string NormalizeLoginIdentifier(string identifier)
+    {
+        string normalizedIdentifier = identifier.Trim();
+        return normalizedIdentifier.Contains('@')
+            ? normalizedIdentifier.ToLowerInvariant()
+            : normalizedIdentifier;
     }
 }

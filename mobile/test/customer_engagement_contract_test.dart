@@ -28,6 +28,9 @@ void main() {
 
   test('authentication form rejects malformed customer input', () {
     expect(AuthFormValidators.email('string'), isNotNull);
+    expect(AuthFormValidators.emailOrPhone('customer@example.com'), isNull);
+    expect(AuthFormValidators.emailOrPhone('0912345678'), isNull);
+    expect(AuthFormValidators.emailOrPhone('123456789'), isNotNull);
     expect(AuthFormValidators.phoneNumber('123456789'), isNotNull);
     expect(AuthFormValidators.phoneNumber('0912345678'), isNull);
     expect(AuthFormValidators.password('weak', strong: true), isNotNull);

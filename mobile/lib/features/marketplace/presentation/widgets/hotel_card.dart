@@ -11,139 +11,118 @@ class HotelCard extends StatelessWidget {
     super.key,
     required this.hotel,
     required this.onTap,
-    required this.saved,
-    required this.onToggleSaved,
   });
 
   final HotelSearchResult hotel;
   final VoidCallback onTap;
-  final bool saved;
-  final VoidCallback onToggleSaved;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    return Card(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppRadii.md),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(AppRadii.md),
-                child: SizedBox(
-                  width: 92,
-                  height: 104,
-                  child: (hotel.coverImageUrl ?? '').isEmpty
-                      ? const ColoredBox(
-                          color: AppColors.brand,
-                          child: Icon(
-                            Icons.apartment_rounded,
-                            color: Colors.white,
-                            size: 34,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.outline),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
+            child: Text(hotel.name, style: textTheme.titleMedium),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadii.xs),
+                  child: SizedBox(
+                    width: 124,
+                    height: 112,
+                    child: (hotel.coverImageUrl ?? '').isEmpty
+                        ? const ColoredBox(
+                            color: AppColors.surfaceSoft,
+                            child: Icon(
+                              Icons.image_outlined,
+                              color: AppColors.subtleInk,
+                              size: 40,
+                            ),
+                          )
+                        : Image.network(
+                            hotel.coverImageUrl!,
+                            fit: BoxFit.cover,
+                            filterQuality: FilterQuality.medium,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const ColoredBox(
+                                color: AppColors.surfaceSoft,
+                                child: Icon(
+                                  Icons.broken_image_outlined,
+                                  color: AppColors.subtleInk,
+                                ),
+                              );
+                            },
                           ),
-                        )
-                      : Image.network(
-                          hotel.coverImageUrl!,
-                          fit: BoxFit.cover,
-                          filterQuality: FilterQuality.medium,
-                          errorBuilder: (context, error, stackTrace) {
-                            return const ColoredBox(
-                              color: AppColors.brand,
-                              child: Icon(
-                                Icons.apartment_rounded,
-                                color: Colors.white,
-                                size: 34,
-                              ),
-                            );
-                          },
-                        ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(hotel.name, style: textTheme.titleMedium),
-                        ),
-                        IconButton(
-                          tooltip: saved ? 'Remove saved hotel' : 'Save hotel',
-                          onPressed: onToggleSaved,
-                          icon: Icon(
-                            saved
-                                ? Icons.favorite_rounded
-                                : Icons.favorite_border_rounded,
-                            color: saved ? AppColors.danger : null,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      '${hotel.city} - ${hotel.addressLine}',
-                      style: textTheme.bodyMedium,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if ((hotel.description ?? '').isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.xs),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        hotel.description!,
+                        '${hotel.addressLine}, ${hotel.city}',
                         style: textTheme.bodyMedium,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    ],
-                    if (hotel.amenityNames.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        'From ${AppFormatters.money(hotel.minimumPricePerNight)} per night',
+                        style: textTheme.labelLarge,
+                      ),
                       const SizedBox(height: AppSpacing.xs),
                       Text(
-                        hotel.amenityNames.take(3).join(' - '),
-                        style: textTheme.labelMedium,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        '${hotel.availableRoomTypeCount} available room type${hotel.availableRoomTypeCount == 1 ? '' : 's'}',
+                        style: textTheme.bodyMedium,
                       ),
-                    ],
-                    const SizedBox(height: AppSpacing.sm),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'From ${AppFormatters.money(hotel.minimumPricePerNight)} / night',
-                            style: textTheme.labelLarge,
-                          ),
-                        ),
+                      if (hotel.amenityNames.isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.xs),
                         Text(
-                          hotel.availableRoomTypeCount == 1
-                              ? '1 room type'
-                              : '${hotel.availableRoomTypeCount} room types',
-                          style: textTheme.labelMedium,
+                          hotel.amenityNames.take(3).join(', '),
+                          style: textTheme.bodyMedium,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: onTap,
-                        icon: const Icon(Icons.chevron_right_rounded),
-                        iconAlignment: IconAlignment.end,
-                        label: const Text('Select hotel'),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: 180,
+                child: FilledButton(
+                  onPressed: onTap,
+                  child: const Text('Select Hotel'),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

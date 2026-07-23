@@ -23,6 +23,19 @@ class AuthFormValidators {
     return null;
   }
 
+  static String? emailOrPhone(String? value) {
+    final trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      return 'Email or phone number is required.';
+    }
+
+    if (_emailPattern.hasMatch(trimmed) || _phonePattern.hasMatch(trimmed)) {
+      return null;
+    }
+
+    return 'Enter a valid email address or a 10-digit phone number.';
+  }
+
   static String? password(String? value, {bool strong = false}) {
     final password = value ?? '';
     if (password.isEmpty) {

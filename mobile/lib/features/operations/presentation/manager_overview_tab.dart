@@ -4,9 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
+import '../../../shared/utils/app_formatters.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
+import '../../../shared/widgets/srs_screen.dart';
 import '../application/operations_providers.dart';
 import '../domain/operations_models.dart';
+import 'hotel_booking_list_screen.dart';
+import 'owner_physical_room_management_screen.dart';
+import 'owner_room_type_management_screen.dart';
 
 class ManagerOverviewTab extends ConsumerWidget {
   const ManagerOverviewTab({
@@ -22,963 +27,500 @@ class ManagerOverviewTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final hotels = ref.watch(workingHotelsProvider);
-    final housekeeping = ref.watch(
-      housekeepingTasksProvider(HousekeepingTasksRequest(hotelId: hotelId)),
-    );
-    final maintenance = ref.watch(
-      maintenanceRequestsProvider(MaintenanceRequestsRequest(hotelId: hotelId)),
-    );
     final roomsRequest = PhysicalRoomsRequest(hotelId: hotelId);
-    final confirmedRequest = FrontDeskBookingsRequest(
-      hotelId: hotelId,
-      status: FrontDeskBookingListStatus.confirmed,
-    );
-    final checkedInRequest = FrontDeskBookingsRequest(
-      hotelId: hotelId,
-      status: FrontDeskBookingListStatus.checkedIn,
-    );
+    final bookingsRequest = FrontDeskBookingsRequest(hotelId: hotelId);
+    final housekeepingRequest = HousekeepingTasksRequest(hotelId: hotelId);
+    final maintenanceRequest = MaintenanceRequestsRequest(hotelId: hotelId);
+
     final rooms = ref.watch(physicalRoomsProvider(roomsRequest));
-    final confirmedBookings =
-        ref.watch(frontDeskBookingsProvider(confirmedRequest));
-    final checkedInBookings =
-        ref.watch(frontDeskBookingsProvider(checkedInRequest));
+    final bookings = ref.watch(frontDeskBookingsProvider(bookingsRequest));
+    final housekeeping =
+        ref.watch(housekeepingTasksProvider(housekeepingRequest));
+    final maintenance =
+        ref.watch(maintenanceRequestsProvider(maintenanceRequest));
+
+    Future<void> refresh() async {
+      ref.invalidate(workingHotelsProvider);
+      ref.invalidate(physicalRoomsProvider(roomsRequest));
+      ref.invalidate(frontDeskBookingsProvider(bookingsRequest));
+      ref.invalidate(housekeepingTasksProvider(housekeepingRequest));
+      ref.invalidate(maintenanceRequestsProvider(maintenanceRequest));
+    }
 
     return RefreshIndicator(
-      onRefresh: () async {
-        ref.invalidate(workingHotelsProvider);
-        ref.invalidate(
-          housekeepingTasksProvider(HousekeepingTasksRequest(hotelId: hotelId)),
-        );
-        ref.invalidate(
-          maintenanceRequestsProvider(
-            MaintenanceRequestsRequest(hotelId: hotelId),
-          ),
-        );
-        ref.invalidate(physicalRoomsProvider(roomsRequest));
-        ref.invalidate(frontDeskBookingsProvider(confirmedRequest));
-        ref.invalidate(frontDeskBookingsProvider(checkedInRequest));
-      },
+      onRefresh: refresh,
       child: ListView(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         children: [
-          hotels.when(
-            data: (items) {
-              final hotel = items.firstWhere(
-                (item) => item.id == hotelId,
-                orElse: () => WorkingHotel.fallback(hotelId),
-              );
-
-              return _HotelHeader(hotel: hotel, roles: roles);
-            },
-            error: (error, stackTrace) => _HotelHeader(
-              hotel: WorkingHotel.fallback(hotelId),
-              roles: roles,
-            ),
-            loading: () => const LinearProgressIndicator(),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          const _SectionTitle(
-            title: 'Hotel summary',
-            subtitle: 'Room capacity, arrivals, revenue, and occupancy.',
-          ),
+          const SrsSectionTitle('Hotel Summary Cards'),
           const SizedBox(height: AppSpacing.sm),
-          _HotelSummaryBoard(
+          _SummaryCards(
             rooms: rooms.asData?.value ?? const [],
-            confirmedBookings: confirmedBookings.asData?.value ?? const [],
-            checkedInBookings: checkedInBookings.asData?.value ?? const [],
-            isLoading: rooms.isLoading ||
-                confirmedBookings.isLoading ||
-                checkedInBookings.isLoading,
+            bookings: bookings.asData?.value ?? const [],
+            loading: rooms.isLoading || bookings.isLoading,
           ),
-          const SizedBox(height: AppSpacing.lg),
-          const _SectionTitle(
-            title: 'Today at a glance',
-            subtitle: 'Operational pressure for the selected hotel.',
-          ),
+          const SizedBox(height: AppSpacing.xl),
+          const SrsSectionTitle('Operational Metrics'),
           const SizedBox(height: AppSpacing.sm),
-          housekeeping.when(
-            data: (housekeepingItems) {
-              return maintenance.when(
-                data: (maintenanceItems) => _StatusBoard(
-                  housekeepingTasks: housekeepingItems,
-                  maintenanceRequests: maintenanceItems,
-                  rooms: rooms.asData?.value ?? const [],
-                  bookings: [
-                    ...(confirmedBookings.asData?.value ?? const []),
-                    ...(checkedInBookings.asData?.value ?? const []),
-                  ],
-                ),
-                error: (error, stackTrace) => const _StatusBoardError(),
-                loading: () => const _MetricSkeletonGrid(),
-              );
-            },
-            error: (error, stackTrace) => const _StatusBoardError(),
-            loading: () => const _MetricSkeletonGrid(),
+          _OperationalMetrics(
+            rooms: rooms.asData?.value ?? const [],
+            bookings: bookings.asData?.value ?? const [],
+            housekeeping: housekeeping.asData?.value ?? const [],
+            maintenance: maintenance.asData?.value ?? const [],
+            loading: rooms.isLoading ||
+                bookings.isLoading ||
+                housekeeping.isLoading ||
+                maintenance.isLoading,
+            onBookingsTap: () => _open(
+              context,
+              HotelBookingListScreen(initialHotelId: hotelId),
+            ),
+            onRoomsTap: () => _open(
+              context,
+              OwnerPhysicalRoomManagementScreen(hotelId: hotelId),
+            ),
+            onHousekeepingTap:
+                onOpenSection == null ? null : () => onOpenSection!(4),
+            onMaintenanceTap:
+                onOpenSection == null ? null : () => onOpenSection!(5),
           ),
-          const SizedBox(height: AppSpacing.lg),
-          _ManagerNavigationMenu(onOpenSection: onOpenSection),
-          const SizedBox(height: AppSpacing.lg),
-          const _SectionTitle(
-            title: 'Cleaning assignments',
-            subtitle: 'Assign open housekeeping tasks to room attendants.',
-          ),
+          if (rooms.hasError ||
+              bookings.hasError ||
+              housekeeping.hasError ||
+              maintenance.hasError) ...[
+            const SizedBox(height: AppSpacing.md),
+            _LoadNotice(onRetry: refresh),
+          ],
+          const SizedBox(height: AppSpacing.xl),
+          const SrsSectionTitle('Navigation Menu'),
           const SizedBox(height: AppSpacing.sm),
-          housekeeping.when(
-            data: (items) => _HousekeepingAssignmentPreview(
-              hotelId: hotelId,
-              items: items,
-            ),
-            error: (error, stackTrace) => const _EmptyPanel(
-              icon: Icons.error_outline_rounded,
-              title: 'Unable to load housekeeping',
-              message: 'Pull down to refresh or check the backend connection.',
-            ),
-            loading: () => const LinearProgressIndicator(),
+          _NavigationMenu(
+            hotelId: hotelId,
+            roles: roles,
+            onOpenSection: onOpenSection,
           ),
-          const SizedBox(height: AppSpacing.lg),
-          const _SectionTitle(
-            title: 'Open maintenance',
-            subtitle: 'Issues that can block room sales or guest service.',
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          maintenance.when(
-            data: (items) =>
-                _MaintenancePreview(hotelId: hotelId, items: items),
-            error: (error, stackTrace) => const _EmptyPanel(
-              icon: Icons.error_outline_rounded,
-              title: 'Unable to load maintenance',
-              message: 'Pull down to refresh or check the backend connection.',
-            ),
-            loading: () => const LinearProgressIndicator(),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          const _ManagerWorkflowCard(),
         ],
       ),
     );
   }
+
+  void _open(BuildContext context, Widget screen) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (context) => screen),
+    );
+  }
 }
 
-class _HotelSummaryBoard extends StatelessWidget {
-  const _HotelSummaryBoard({
+class _SummaryCards extends StatelessWidget {
+  const _SummaryCards({
     required this.rooms,
-    required this.confirmedBookings,
-    required this.checkedInBookings,
-    required this.isLoading,
+    required this.bookings,
+    required this.loading,
   });
 
   final List<RoomInventoryItem> rooms;
-  final List<FrontDeskBookingSummary> confirmedBookings;
-  final List<FrontDeskBookingSummary> checkedInBookings;
-  final bool isLoading;
+  final List<FrontDeskBookingSummary> bookings;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
-    if (isLoading) {
-      return const _MetricSkeletonGrid();
-    }
-
     final today = DateUtils.dateOnly(DateTime.now());
-    final todayBookings = confirmedBookings
-        .where((booking) => DateUtils.isSameDay(booking.checkInDate, today))
-        .toList(growable: false);
-    final todayRevenue = [...confirmedBookings, ...checkedInBookings]
-        .where(
-          (booking) =>
-              DateUtils.isSameDay(booking.createdAtUtc.toLocal(), today),
-        )
-        .fold<double>(0, (sum, booking) => sum + booking.totalAmount);
+    final todaysBookings = bookings.where((booking) {
+      return DateUtils.isSameDay(booking.checkInDate, today);
+    }).length;
+    final todaysRevenue = bookings.where((booking) {
+      return DateUtils.isSameDay(booking.createdAtUtc.toLocal(), today);
+    }).fold<double>(0, (sum, booking) => sum + booking.totalAmount);
     final occupiedRooms =
         rooms.where((room) => room.status == 'Occupied').length;
     final occupancy =
         rooms.isEmpty ? 0 : ((occupiedRooms / rooms.length) * 100).round();
 
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: AppSpacing.sm,
-      crossAxisSpacing: AppSpacing.sm,
-      childAspectRatio: 1.35,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _StatusTile(
-          title: 'Total rooms',
-          value: rooms.length.toString(),
-          helper: 'Physical rooms in inventory',
-          icon: Icons.bed_rounded,
-          color: AppColors.brand,
+        Expanded(
+          child: _SummaryCard(
+            icon: Icons.bed_rounded,
+            label: 'Total Rooms',
+            value: loading ? '-' : rooms.length.toString(),
+          ),
         ),
-        _StatusTile(
-          title: 'Today arrivals',
-          value: todayBookings.length.toString(),
-          helper: 'Confirmed check-ins today',
-          icon: Icons.calendar_today_rounded,
-          color: AppColors.success,
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: _SummaryCard(
+            icon: Icons.calendar_month_outlined,
+            label: "Today's Bookings",
+            value: loading ? '-' : todaysBookings.toString(),
+          ),
         ),
-        _StatusTile(
-          title: 'Today revenue',
-          value: _compactMoney(todayRevenue),
-          helper: 'Bookings created today',
-          icon: Icons.payments_outlined,
-          color: AppColors.success,
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: _SummaryCard(
+            icon: Icons.attach_money_rounded,
+            label: "Today's Revenue",
+            value: loading ? '-' : _compactMoney(todaysRevenue),
+          ),
         ),
-        _StatusTile(
-          title: 'Occupancy',
-          value: '$occupancy%',
-          helper: '$occupiedRooms of ${rooms.length} rooms',
-          icon: Icons.bar_chart_rounded,
-          color: AppColors.warning,
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: _SummaryCard(
+            icon: Icons.bar_chart_rounded,
+            label: 'Occupancy',
+            value: loading ? '-' : '$occupancy%',
+          ),
         ),
       ],
     );
   }
+}
 
-  String _compactMoney(double amount) {
-    if (amount >= 1000000000) {
-      return '${(amount / 1000000000).toStringAsFixed(1)}B';
-    }
-    if (amount >= 1000000) {
-      return '${(amount / 1000000).toStringAsFixed(1)}M';
-    }
-    if (amount >= 1000) {
-      return '${(amount / 1000).toStringAsFixed(0)}K';
-    }
-    return amount.toStringAsFixed(0);
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 0.72,
+      child: SrsPanel(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: AppSpacing.sm,
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: const BoxDecoration(
+                color: AppColors.surfaceSoft,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: AppColors.brandDark),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Expanded(
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.outlineSoft,
+                borderRadius: BorderRadius.circular(AppRadii.xs),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
-class _ManagerNavigationMenu extends StatelessWidget {
-  const _ManagerNavigationMenu({required this.onOpenSection});
+class _OperationalMetrics extends StatelessWidget {
+  const _OperationalMetrics({
+    required this.rooms,
+    required this.bookings,
+    required this.housekeeping,
+    required this.maintenance,
+    required this.loading,
+    required this.onBookingsTap,
+    required this.onRoomsTap,
+    required this.onHousekeepingTap,
+    required this.onMaintenanceTap,
+  });
 
+  final List<RoomInventoryItem> rooms;
+  final List<FrontDeskBookingSummary> bookings;
+  final List<HousekeepingTask> housekeeping;
+  final List<MaintenanceRequestItem> maintenance;
+  final bool loading;
+  final VoidCallback onBookingsTap;
+  final VoidCallback onRoomsTap;
+  final VoidCallback? onHousekeepingTap;
+  final VoidCallback? onMaintenanceTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final todaysBookings = bookings.where((booking) {
+      return DateUtils.isSameDay(booking.checkInDate, today);
+    }).length;
+    final occupiedRooms =
+        rooms.where((room) => room.status == 'Occupied').length;
+    final pendingHousekeeping = housekeeping.where((task) {
+      return task.status == HousekeepingTaskStatus.open.apiValue;
+    }).length;
+    final openMaintenance = maintenance.where((request) {
+      return request.status == MaintenanceStatus.open.apiValue ||
+          request.status == MaintenanceStatus.inProgress.apiValue;
+    }).length;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: _OperationalCard(
+            icon: Icons.calendar_today_outlined,
+            label: 'Bookings',
+            value: loading ? '-' : todaysBookings.toString(),
+            helper: 'Today',
+            onTap: onBookingsTap,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: _OperationalCard(
+            icon: Icons.meeting_room_outlined,
+            label: 'Rooms',
+            value: loading ? '-' : '$occupiedRooms / ${rooms.length}',
+            helper: 'Occupied',
+            onTap: onRoomsTap,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: _OperationalCard(
+            icon: Icons.cleaning_services_outlined,
+            label: 'Housekeeping',
+            value: loading ? '-' : pendingHousekeeping.toString(),
+            helper: 'Pending',
+            onTap: onHousekeepingTap,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: _OperationalCard(
+            icon: Icons.handyman_outlined,
+            label: 'Maintenance',
+            value: loading ? '-' : openMaintenance.toString(),
+            helper: 'Open',
+            onTap: onMaintenanceTap,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OperationalCard extends StatelessWidget {
+  const _OperationalCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.helper,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final String helper;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 0.72,
+      child: Material(
+        color: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: AppColors.outlineSoft),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppRadii.sm),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.xs),
+            child: Column(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(
+                    color: AppColors.surfaceSoft,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: AppColors.brandDark),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    value,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                Text(
+                  helper,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.mutedInk,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavigationMenu extends StatelessWidget {
+  const _NavigationMenu({
+    required this.hotelId,
+    required this.roles,
+    required this.onOpenSection,
+  });
+
+  final String hotelId;
+  final List<String> roles;
   final ValueChanged<int>? onOpenSection;
 
   @override
   Widget build(BuildContext context) {
-    const destinations = [
-      ('Hotel profile', Icons.apartment_rounded, 1),
-      ('Availability and rooms', Icons.meeting_room_rounded, 2),
-      ('Front desk', Icons.room_service_rounded, 3),
-      ('Housekeeping', Icons.cleaning_services_rounded, 4),
-      ('Maintenance', Icons.handyman_rounded, 5),
-      ('Staff', Icons.manage_accounts_rounded, 6),
+    final items = <_NavigationItem>[
+      _NavigationItem(
+        label: 'Hotel Profile',
+        icon: Icons.apartment_rounded,
+        onTap: onOpenSection == null ? null : () => onOpenSection!(1),
+      ),
+      _NavigationItem(
+        label: 'Rooms',
+        icon: Icons.bed_rounded,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (context) =>
+                OwnerRoomTypeManagementScreen(hotelId: hotelId),
+          ),
+        ),
+      ),
+      _NavigationItem(
+        label: 'Staff',
+        icon: Icons.people_outline_rounded,
+        onTap: onOpenSection == null ? null : () => onOpenSection!(6),
+      ),
+      _NavigationItem(
+        label: 'Front Desk',
+        icon: Icons.room_service_outlined,
+        onTap: onOpenSection == null ? null : () => onOpenSection!(3),
+      ),
+      _NavigationItem(
+        label: 'Tasks',
+        icon: Icons.assignment_turned_in_outlined,
+        onTap: onOpenSection == null ? null : () => onOpenSection!(4),
+      ),
     ];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _SectionTitle(
-          title: 'Management menu',
-          subtitle: 'Open a hotel setup or operational workspace.',
+    return Semantics(
+      label: roles.contains('PropertyOwner')
+          ? 'Property owner navigation'
+          : 'Hotel manager navigation',
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: AppColors.outlineSoft),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        Card(
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              for (var index = 0; index < destinations.length; index++) ...[
-                ListTile(
-                  leading: Icon(destinations[index].$2),
-                  title: Text(destinations[index].$1),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: onOpenSection == null
-                      ? null
-                      : () => onOpenSection!(destinations[index].$3),
-                ),
-                if (index < destinations.length - 1) const Divider(height: 1),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _HotelHeader extends StatelessWidget {
-  const _HotelHeader({
-    required this.hotel,
-    required this.roles,
-  });
-
-  final WorkingHotel hotel;
-  final List<String> roles;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasRealHotelName = hotel.name.trim().isNotEmpty;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        clipBehavior: Clip.antiAlias,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              hasRealHotelName ? hotel.displayName : 'Assigned hotel',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              hasRealHotelName
-                  ? hotel.subtitle
-                  : 'Hotel information is not available from the API yet.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            if (!hasRealHotelName) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                hotel.shortCode,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-            const SizedBox(height: AppSpacing.md),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.xs,
-              children: [
-                _Pill(
-                  label: 'Role: ${_roleLabel(roles)}',
-                  color: AppColors.brand,
-                ),
-                if (hotel.approvalStatus.isNotEmpty)
-                  _Pill(
-                    label: 'Approval: ${hotel.approvalStatus}',
-                    color: AppColors.success,
-                  ),
-                if (hotel.publicationStatus.isNotEmpty)
-                  _Pill(
-                    label: 'Listing: ${hotel.publicationStatus}',
-                    color: AppColors.success,
-                  ),
-                if (hotel.contactPhone.isNotEmpty)
-                  _Pill(
-                    label: hotel.contactPhone,
-                    color: AppColors.mutedInk,
-                  ),
-                if (hotel.contactEmail.isNotEmpty)
-                  _Pill(
-                    label: hotel.contactEmail,
-                    color: AppColors.mutedInk,
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({
-    required this.title,
-    required this.subtitle,
-  });
-
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: AppSpacing.xxs),
-        Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-      ],
-    );
-  }
-}
-
-class _StatusBoard extends StatelessWidget {
-  const _StatusBoard({
-    required this.housekeepingTasks,
-    required this.maintenanceRequests,
-    required this.rooms,
-    required this.bookings,
-  });
-
-  final List<HousekeepingTask> housekeepingTasks;
-  final List<MaintenanceRequestItem> maintenanceRequests;
-  final List<RoomInventoryItem> rooms;
-  final List<FrontDeskBookingSummary> bookings;
-
-  @override
-  Widget build(BuildContext context) {
-    final waitingCleaning = housekeepingTasks
-        .where((task) => task.status == HousekeepingTaskStatus.open.apiValue)
-        .length;
-    final occupiedRooms =
-        rooms.where((room) => room.status == 'Occupied').length;
-    final openMaintenance = maintenanceRequests
-        .where((item) => item.status == MaintenanceStatus.open.apiValue)
-        .length;
-    final urgentMaintenance = maintenanceRequests
-        .where((item) => item.severity == MaintenanceSeverity.critical.apiValue)
-        .length;
-
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: AppSpacing.sm,
-      crossAxisSpacing: AppSpacing.sm,
-      childAspectRatio: 1.35,
-      children: [
-        _StatusTile(
-          title: 'Bookings',
-          value: bookings.length.toString(),
-          helper: 'Confirmed and in-house',
-          icon: Icons.calendar_month_rounded,
-          color: AppColors.brand,
-        ),
-        _StatusTile(
-          title: 'Rooms',
-          value: '$occupiedRooms / ${rooms.length}',
-          helper: 'Occupied',
-          icon: Icons.meeting_room_rounded,
-          color: AppColors.brand,
-        ),
-        _StatusTile(
-          title: 'Housekeeping',
-          value: waitingCleaning.toString(),
-          helper: 'Pending',
-          icon: Icons.cleaning_services_rounded,
-          color: AppColors.warning,
-        ),
-        _StatusTile(
-          title: 'Maintenance',
-          value: openMaintenance.toString(),
-          helper:
-              urgentMaintenance == 0 ? 'Open' : '$urgentMaintenance critical',
-          icon: Icons.handyman_rounded,
-          color: AppColors.danger,
-        ),
-      ],
-    );
-  }
-}
-
-class _StatusTile extends StatelessWidget {
-  const _StatusTile({
-    required this.title,
-    required this.value,
-    required this.helper,
-    required this.icon,
-    required this.color,
-  });
-
-  final String title;
-  final String value;
-  final String helper;
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: color),
-                const Spacer(),
-                Text(value, style: Theme.of(context).textTheme.titleLarge),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(title, style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: AppSpacing.xxs),
-            Expanded(
-              child: Text(
-                helper,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _HousekeepingAssignmentPreview extends StatelessWidget {
-  const _HousekeepingAssignmentPreview({
-    required this.hotelId,
-    required this.items,
-  });
-
-  final String hotelId;
-  final List<HousekeepingTask> items;
-
-  @override
-  Widget build(BuildContext context) {
-    final openItems = items
-        .where((item) => item.status == HousekeepingTaskStatus.open.apiValue)
-        .take(4)
-        .toList(growable: false);
-
-    if (openItems.isEmpty) {
-      return const _EmptyPanel(
-        icon: Icons.cleaning_services_rounded,
-        title: 'No open cleaning tasks',
-        message: 'Checkout-generated cleaning work will appear here.',
-      );
-    }
-
-    return Column(
-      children: [
-        for (final item in openItems)
-          _HousekeepingAssignmentCard(hotelId: hotelId, item: item),
-      ],
-    );
-  }
-}
-
-class _HousekeepingAssignmentCard extends ConsumerWidget {
-  const _HousekeepingAssignmentCard({
-    required this.hotelId,
-    required this.item,
-  });
-
-  final String hotelId;
-  final HousekeepingTask item;
-
-  Future<void> _assign(BuildContext context, WidgetRef ref) async {
-    final staff = await ref.read(hotelStaffProvider(hotelId).future);
-    if (!context.mounted) {
-      return;
-    }
-
-    final assignee = await _chooseStaff(
-      context,
-      staff.where((member) => member.role == 'HousekeepingStaff').toList(),
-      'Assign housekeeping',
-    );
-    if (assignee == null || !context.mounted) {
-      return;
-    }
-
-    try {
-      await ref.read(operationsApiProvider).assignHousekeepingTask(
-            hotelId: hotelId,
-            taskId: item.id,
-            assignedToUserAccountId: assignee.userAccountId,
-          );
-      ref.invalidate(
-        housekeepingTasksProvider(HousekeepingTasksRequest(hotelId: hotelId)),
-      );
-      if (context.mounted) {
-        AppErrorPresenter.showSnackBar(
-          context,
-          'Assigned to ${assignee.fullName}.',
-        );
-      }
-    } catch (error) {
-      if (context.mounted) {
-        await AppErrorPresenter.showBottomSheet(context, error);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          children: [
-            const Icon(Icons.cleaning_services_rounded, color: AppColors.brand),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Room ${item.roomNumber}',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  Text('${item.taskType} - ${item.roomStatus}'),
-                ],
-              ),
-            ),
-            TextButton.icon(
-              onPressed: () => _assign(context, ref),
-              icon: const Icon(Icons.person_add_alt_1_rounded),
-              label: const Text('Assign'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MaintenancePreview extends StatelessWidget {
-  const _MaintenancePreview({
-    required this.hotelId,
-    required this.items,
-  });
-
-  final String hotelId;
-  final List<MaintenanceRequestItem> items;
-
-  @override
-  Widget build(BuildContext context) {
-    final openItems = items
-        .where(
-          (item) =>
-              item.status != MaintenanceStatus.resolved.apiValue &&
-              item.status != MaintenanceStatus.released.apiValue,
-        )
-        .take(3)
-        .toList(growable: false);
-
-    if (openItems.isEmpty) {
-      return const _EmptyPanel(
-        icon: Icons.verified_rounded,
-        title: 'No open maintenance',
-        message: 'All rooms are clear from active maintenance requests.',
-      );
-    }
-
-    return Column(
-      children: [
-        for (final item in openItems)
-          _MaintenanceIssueCard(hotelId: hotelId, item: item),
-      ],
-    );
-  }
-}
-
-class _MaintenanceIssueCard extends ConsumerWidget {
-  const _MaintenanceIssueCard({
-    required this.hotelId,
-    required this.item,
-  });
-
-  final String hotelId;
-  final MaintenanceRequestItem item;
-
-  Future<void> _assign(BuildContext context, WidgetRef ref) async {
-    final staff = await ref.read(hotelStaffProvider(hotelId).future);
-    if (!context.mounted) {
-      return;
-    }
-
-    final assignee = await _chooseStaff(
-      context,
-      staff.where((member) => member.role == 'MaintenanceStaff').toList(),
-      'Assign maintenance',
-    );
-    if (assignee == null || !context.mounted) {
-      return;
-    }
-
-    try {
-      await ref.read(operationsApiProvider).assignMaintenanceRequest(
-            hotelId: hotelId,
-            requestId: item.id,
-            assignedToUserAccountId: assignee.userAccountId,
-          );
-      ref.invalidate(
-        maintenanceRequestsProvider(
-          MaintenanceRequestsRequest(hotelId: hotelId),
-        ),
-      );
-      if (context.mounted) {
-        AppErrorPresenter.showSnackBar(
-          context,
-          'Assigned to ${assignee.fullName}.',
-        );
-      }
-    } catch (error) {
-      if (context.mounted) {
-        await AppErrorPresenter.showBottomSheet(context, error);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(AppSpacing.sm),
-              decoration: BoxDecoration(
-                color: AppColors.danger.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(AppRadii.md),
-              ),
-              child: const Icon(
-                Icons.handyman_rounded,
-                color: AppColors.danger,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Room ${item.roomNumber}',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  Text(
-                    item.description.isEmpty
-                        ? 'No description provided'
-                        : item.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Wrap(
-                    spacing: AppSpacing.xs,
-                    runSpacing: AppSpacing.xs,
-                    children: [
-                      _Pill(label: item.severity, color: AppColors.danger),
-                      _Pill(label: item.status, color: AppColors.brand),
-                      _Pill(
-                        label: item.displayCreatedAt,
-                        color: AppColors.mutedInk,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: () => _assign(context, ref),
-                      icon: const Icon(Icons.engineering_rounded),
-                      label: const Text('Assign technician'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-Future<HotelStaffMember?> _chooseStaff(
-  BuildContext context,
-  List<HotelStaffMember> staff,
-  String title,
-) {
-  if (staff.isEmpty) {
-    AppErrorPresenter.showSnackBar(
-      context,
-      'No matching staff account is available for this hotel.',
-    );
-    return Future.value();
-  }
-
-  return showModalBottomSheet<HotelStaffMember>(
-    context: context,
-    showDragHandle: true,
-    builder: (context) {
-      return SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.md,
-            0,
-            AppSpacing.md,
-            AppSpacing.lg,
-          ),
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: AppSpacing.sm),
-            for (final member in staff)
+            for (var index = 0; index < items.length; index++) ...[
               ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.person_rounded),
+                leading: Container(
+                  width: 38,
+                  height: 38,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceSoft,
+                    borderRadius: BorderRadius.circular(AppRadii.sm),
+                  ),
+                  child: Icon(items[index].icon, color: AppColors.brandDark),
                 ),
-                title: Text(member.fullName),
-                subtitle: Text('${member.email} - ${member.phoneNumber ?? ''}'),
-                onTap: () => Navigator.of(context).pop(member),
+                title: Text(items[index].label),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: items[index].onTap,
               ),
+              if (index < items.length - 1) const Divider(height: 1),
+            ],
           ],
         ),
-      );
-    },
-  );
-}
-
-class _MetricSkeletonGrid extends StatelessWidget {
-  const _MetricSkeletonGrid();
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: AppSpacing.sm,
-      crossAxisSpacing: AppSpacing.sm,
-      childAspectRatio: 1.35,
-      children: const [
-        _MetricSkeleton(),
-        _MetricSkeleton(),
-        _MetricSkeleton(),
-        _MetricSkeleton(),
-      ],
-    );
-  }
-}
-
-class _MetricSkeleton extends StatelessWidget {
-  const _MetricSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Card(
-      child: Padding(
-        padding: EdgeInsets.all(AppSpacing.lg),
-        child: LinearProgressIndicator(),
       ),
     );
   }
 }
 
-class _StatusBoardError extends StatelessWidget {
-  const _StatusBoardError();
-
-  @override
-  Widget build(BuildContext context) {
-    return const _EmptyPanel(
-      icon: Icons.error_outline_rounded,
-      title: 'Unable to load operations',
-      message: 'Pull down to refresh or check the backend connection.',
-    );
-  }
-}
-
-class _EmptyPanel extends StatelessWidget {
-  const _EmptyPanel({
+class _NavigationItem {
+  const _NavigationItem({
+    required this.label,
     required this.icon,
-    required this.title,
-    required this.message,
+    required this.onTap,
   });
 
+  final String label;
   final IconData icon;
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Row(
-          children: [
-            Icon(icon, color: AppColors.mutedInk),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: Theme.of(context).textTheme.titleSmall),
-                  Text(message, style: Theme.of(context).textTheme.bodySmall),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  final VoidCallback? onTap;
 }
 
-class _ManagerWorkflowCard extends StatelessWidget {
-  const _ManagerWorkflowCard();
+class _LoadNotice extends StatelessWidget {
+  const _LoadNotice({required this.onRetry});
+
+  final Future<void> Function() onRetry;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Manager workflow',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            const _WorkflowStep(
-              icon: Icons.room_service_rounded,
-              title: 'Front Desk tab',
-              body:
-                  'Assign available physical rooms, complete check-in, process checkout, and create walk-in bookings.',
-            ),
-            const _WorkflowStep(
-              icon: Icons.cleaning_services_rounded,
-              title: 'Rooms tab',
-              body:
-                  'Track dirty rooms, see which tasks are claimed, and confirm rooms return to Available after cleaning.',
-            ),
-            const _WorkflowStep(
-              icon: Icons.handyman_rounded,
-              title: 'Maintenance tab',
-              body:
-                  'Create repair requests, follow active issues, resolve repairs, and release rooms back to inventory.',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _WorkflowStep extends StatelessWidget {
-  const _WorkflowStep({
-    required this.icon,
-    required this.title,
-    required this.body,
-  });
-
-  final IconData icon;
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+    return SrsPanel(
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.sm),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceSoft,
-              borderRadius: BorderRadius.circular(AppRadii.md),
-            ),
-            child: Icon(icon, color: AppColors.brand),
-          ),
-          const SizedBox(width: AppSpacing.md),
+          const Icon(Icons.info_outline_rounded),
+          const SizedBox(width: AppSpacing.sm),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: Theme.of(context).textTheme.titleSmall),
-                Text(body),
-              ],
+            child: Text(
+              AppErrorPresenter.friendlyMessage(
+                const FormatException('Dashboard data is unavailable.'),
+              ),
             ),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            child: const Text('Retry'),
           ),
         ],
       ),
@@ -986,50 +528,15 @@ class _WorkflowStep extends StatelessWidget {
   }
 }
 
-class _Pill extends StatelessWidget {
-  const _Pill({
-    required this.label,
-    required this.color,
-  });
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xxs,
-      ),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(AppRadii.xl),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color),
-      ),
-    );
+String _compactMoney(double value) {
+  if (value >= 1000000000) {
+    return '\$${(value / 1000000000).toStringAsFixed(1)}B';
   }
-}
-
-String _roleLabel(List<String> roles) {
-  if (roles.contains('PropertyOwner')) {
-    return 'Owner';
+  if (value >= 1000000) {
+    return '\$${(value / 1000000).toStringAsFixed(1)}M';
   }
-  if (roles.contains('HotelManager')) {
-    return 'Hotel manager';
+  if (value >= 1000) {
+    return '\$${(value / 1000).toStringAsFixed(0)}K';
   }
-  if (roles.contains('Receptionist')) {
-    return 'Receptionist';
-  }
-  if (roles.contains('HousekeepingStaff')) {
-    return 'Housekeeping';
-  }
-  if (roles.contains('MaintenanceStaff')) {
-    return 'Maintenance';
-  }
-
-  return 'Operations';
+  return AppFormatters.money(value);
 }

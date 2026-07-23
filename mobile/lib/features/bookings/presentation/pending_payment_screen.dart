@@ -5,14 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_colors.dart';
-import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../features/customer/application/customer_state.dart';
-import '../../../features/customer/presentation/customer_home_screen.dart';
 import '../../../shared/utils/app_formatters.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
+import '../../../shared/widgets/srs_screen.dart';
+import '../../marketplace/presentation/marketplace_screen.dart';
 import '../application/booking_controller.dart';
 import '../domain/booking_models.dart';
+import 'customer_booking_detail_screen.dart';
+import 'payment_result_screen.dart';
 
 class PendingPaymentScreen extends ConsumerStatefulWidget {
   const PendingPaymentScreen({
@@ -36,23 +38,19 @@ class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
   Timer? _timer;
   late Duration _remaining;
   bool _expiredHandled = false;
-  bool _isProcessingPayment = false;
+  bool _processing = false;
 
   @override
   void initState() {
     super.initState();
     _remaining = _calculateRemaining();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      final nextRemaining = _calculateRemaining();
       if (!mounted) {
         return;
       }
-
-      setState(() {
-        _remaining = nextRemaining;
-      });
-
-      if (nextRemaining == Duration.zero && !_expiredHandled) {
+      final remaining = _calculateRemaining();
+      setState(() => _remaining = remaining);
+      if (remaining == Duration.zero && !_expiredHandled) {
         _expiredHandled = true;
         _showExpiredAndLeave();
       }
@@ -70,131 +68,71 @@ class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
     if (expiresAt == null) {
       return const Duration(minutes: 15);
     }
-
     final remaining = expiresAt.difference(DateTime.now().toUtc());
-    if (remaining.isNegative) {
-      return Duration.zero;
-    }
-
-    return remaining;
+    return remaining.isNegative ? Duration.zero : remaining;
   }
 
   Future<void> _showExpiredAndLeave() async {
-    if (_isProcessingPayment) {
+    if (_processing || !mounted) {
       return;
     }
-
     _timer?.cancel();
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadii.lg),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reservation expired'),
+        content: const Text(
+          'The temporary hold has ended. Please search again to reserve a room.',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Back to Search'),
           ),
-          title: const Text('Reservation expired'),
-          content: const Text(
-            'The temporary hold has ended. Please search again to reserve a room.',
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Back to search'),
-            ),
-          ],
-        );
-      },
+        ],
+      ),
     );
-
     if (mounted) {
-      context.go(CustomerHomeScreen.routePath);
+      context.go(MarketplaceScreen.routePath);
     }
   }
 
   Future<void> _completePayment() async {
-    if (_isProcessingPayment || _remaining == Duration.zero) {
-      if (_remaining == Duration.zero) {
-        await _showExpiredAndLeave();
-      }
+    if (_processing) {
+      return;
+    }
+    if (_remaining == Duration.zero) {
+      await _showExpiredAndLeave();
       return;
     }
 
-    setState(() => _isProcessingPayment = true);
-
+    setState(() => _processing = true);
     try {
       final result = await ref.read(bookingApiProvider).confirmDemoPayment(
             bookingId: widget.booking.id,
             amount: widget.booking.totalAmount,
           );
-
       if (!mounted) {
         return;
       }
 
       _timer?.cancel();
-      ref.read(customerStateProvider.notifier).markBookingDemoPaid(
-            widget.booking.id,
-          );
-
-      await showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) {
-          return AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadii.lg),
-            ),
-            title: const Text('Payment result'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.check_circle_outline_rounded,
-                  color: AppColors.success,
-                  size: 64,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  result.message.isEmpty
-                      ? 'Payment successful'
-                      : result.message,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                _PaymentRow(
-                  label: 'Gateway reference',
-                  value: result.paymentTransactionId.isEmpty
-                      ? 'Not provided'
-                      : result.paymentTransactionId,
-                ),
-                const _PaymentRow(
-                  label: 'Booking status',
-                  value: 'Confirmed',
-                ),
-              ],
-            ),
-            actions: [
-              FilledButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: const Text('View booking'),
-              ),
-            ],
-          );
-        },
+      ref
+          .read(customerStateProvider.notifier)
+          .markBookingDemoPaid(widget.booking.id);
+      final confirmedBooking = widget.booking.copyWith(status: 'Confirmed');
+      context.pushReplacement(
+        PaymentResultScreen.pathFor(widget.booking.id),
+        extra: PaymentResultArguments(
+          booking: confirmedBooking,
+          result: result,
+        ),
       );
-
-      if (mounted) {
-        context.go(CustomerHomeScreen.routePath);
-      }
     } catch (error) {
       if (mounted) {
         await AppErrorPresenter.showBottomSheet(context, error);
-        setState(() => _isProcessingPayment = false);
+        setState(() => _processing = false);
       }
     }
   }
@@ -206,145 +144,161 @@ class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
     final seconds =
         _remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Payment instructions'),
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.xl),
-                child: Column(
-                  children: [
-                    Text(
-                      'payOS payment instruction',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    _PaymentRow(
-                      label: 'Booking code',
-                      value: widget.booking.bookingCode,
-                    ),
-                    _PaymentRow(
-                      label: 'Amount',
-                      value: AppFormatters.money(widget.booking.totalAmount),
-                    ),
-                    _PaymentRow(
-                      label: 'Payment deadline',
-                      value: widget.booking.paymentExpiresAtUtc == null
-                          ? '15 minutes'
-                          : AppFormatters.displayDate(
-                              widget.booking.paymentExpiresAtUtc!,
-                            ),
-                    ),
-                    const Divider(height: AppSpacing.xxl),
-                    Text(
-                      'Complete payment before the hold expires',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    const Text(
-                      '1. Review the booking code and amount.\n'
-                      '2. Continue to the configured payment gateway.\n'
-                      '3. Wait for the final payment result before leaving.',
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    SizedBox(
-                      height: 72,
-                      child: Center(
-                        child: Text(
-                          '$minutes:$seconds',
-                          style: Theme.of(context)
-                              .textTheme
-                              .displaySmall
-                              ?.copyWith(
-                                color: _remaining.inMinutes < 2
-                                    ? AppColors.danger
-                                    : AppColors.brand,
-                              ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      'Time remaining',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    FilledButton.icon(
-                      onPressed: _isProcessingPayment ? null : _completePayment,
-                      icon: const Icon(Icons.payments_outlined),
-                      label: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
-                        child: _isProcessingPayment
-                            ? const SizedBox.square(
-                                key: ValueKey('payment-loading'),
-                                dimension: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text(
-                                'Continue payment',
-                                key: ValueKey('payment-label'),
-                              ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      'The current backend uses its configured demo gateway; no real charge is made.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    TextButton(
-                      onPressed: () {
-                        context.go(CustomerHomeScreen.routePath);
-                      },
-                      child: const Text('Return to booking'),
-                    ),
-                  ],
+    return SrsScreen(
+      title: 'Payment Instruction Screen',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SrsPanel(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                _InstructionRow(
+                  icon: Icons.confirmation_number_outlined,
+                  label: 'Booking Code',
+                  value: widget.booking.bookingCode,
                 ),
-              ),
+                const Divider(height: 1),
+                _InstructionRow(
+                  icon: Icons.attach_money,
+                  label: 'Amount',
+                  value: AppFormatters.money(widget.booking.totalAmount),
+                ),
+                const Divider(height: 1),
+                _InstructionRow(
+                  icon: Icons.calendar_month_outlined,
+                  label: 'Payment Deadline',
+                  value: widget.booking.paymentExpiresAtUtc == null
+                      ? '15 minutes'
+                      : AppFormatters.displayDateTime(
+                          widget.booking.paymentExpiresAtUtc!,
+                        ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          SrsPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SrsSectionTitle('Demo Payment Instruction'),
+                const SizedBox(height: AppSpacing.md),
+                const Text(
+                  '1. Review the booking code and amount.\n'
+                  '2. Confirm the demonstration payment below.\n'
+                  '3. Wait for the final booking result before leaving.',
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                Center(
+                  child: Container(
+                    width: 150,
+                    height: 120,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceSoft,
+                      border: Border.all(color: AppColors.outlineSoft),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '$minutes:$seconds',
+                            style: Theme.of(context)
+                                .textTheme
+                                .displaySmall
+                                ?.copyWith(
+                                  color: _remaining.inMinutes < 2
+                                      ? AppColors.danger
+                                      : AppColors.ink,
+                                ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          const Text('Time remaining'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  'This project uses a demonstration payment. No bank or real charge is involved.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          FilledButton(
+            onPressed: _processing ? null : _completePayment,
+            child: _processing
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('Continue Payment'),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          OutlinedButton(
+            onPressed: _processing
+                ? null
+                : () {
+                    context.go(
+                      CustomerBookingDetailScreen.pathFor(widget.booking.id),
+                      extra: widget.booking,
+                    );
+                  },
+            child: const Text('Return'),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _PaymentRow extends StatelessWidget {
-  const _PaymentRow({
+class _InstructionRow extends StatelessWidget {
+  const _InstructionRow({
+    required this.icon,
     required this.label,
     required this.value,
   });
 
+  final IconData icon;
   final String label;
   final String value;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.all(AppSpacing.md),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Container(
+            width: 48,
+            height: 48,
+            alignment: Alignment.center,
+            color: AppColors.surfaceSoft,
+            child: Icon(icon),
+          ),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
-            child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
           ),
           const SizedBox(width: AppSpacing.md),
           Flexible(
             child: Text(
               value,
               textAlign: TextAlign.right,
-              style: Theme.of(context).textTheme.labelLarge,
+              style: Theme.of(context).textTheme.bodyLarge,
             ),
           ),
         ],

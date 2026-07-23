@@ -53,4 +53,52 @@ void main() {
       100,
     );
   });
+
+  test('parses front desk guest count and payment collection contracts', () {
+    final booking = FrontDeskBookingSummary.fromJson({
+      'bookingId': 'booking-1',
+      'bookingCode': 'BK-2026-0001',
+      'hotelId': 'hotel-1',
+      'status': 'CheckedIn',
+      'paymentMode': 'PayAtProperty',
+      'source': 'Online',
+      'checkInDate': '2026-07-23',
+      'checkOutDate': '2026-07-25',
+      'guestCount': 3,
+      'totalAmount': 300,
+      'guestFullName': 'Test Guest',
+      'guestPhone': '0912345678',
+      'roomTypeId': 'room-type-1',
+      'roomTypeName': 'Deluxe Room',
+      'roomQuantity': 1,
+      'nights': 2,
+      'assignedRooms': const [],
+      'createdAtUtc': '2026-07-20T08:00:00Z',
+    });
+    final collection = PaymentCollectionSummary.fromJson({
+      'bookingId': 'booking-1',
+      'bookingCode': 'BK-2026-0001',
+      'paymentMode': 'PayAtProperty',
+      'expectedAmount': 300,
+      'collectedAmount': 100,
+      'remainingBalance': 200,
+      'status': 'PartiallyCollected',
+      'collections': [
+        {
+          'id': 'collection-1',
+          'amount': 100,
+          'balanceBefore': 300,
+          'balanceAfter': 200,
+          'method': 'Cash',
+          'reference': 'CASH-001',
+          'status': 'Recorded',
+          'collectedAtUtc': '2026-07-23T09:00:00Z',
+        },
+      ],
+    });
+
+    expect(booking.guestCount, 3);
+    expect(collection.remainingBalance, 200);
+    expect(collection.collections.single.reference, 'CASH-001');
+  });
 }

@@ -48,12 +48,18 @@ internal sealed class EfAuthUserRepository : IAuthUserRepository
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<AuthUserSnapshot?> GetAuthUserByEmailAsync(string email, CancellationToken cancellationToken)
+    public async Task<AuthUserSnapshot?> GetAuthUserByIdentifierAsync(
+        string emailOrPhoneNumber,
+        CancellationToken cancellationToken)
     {
         UserAccount? user = await _dbContext.UserAccounts
             .IgnoreQueryFilters()
             .AsNoTracking()
-            .FirstOrDefaultAsync(account => account.Email == email, cancellationToken);
+            .FirstOrDefaultAsync(
+                account =>
+                    account.Email == emailOrPhoneNumber ||
+                    account.PhoneNumber == emailOrPhoneNumber,
+                cancellationToken);
 
         if (user is null)
         {

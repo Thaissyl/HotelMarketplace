@@ -9,6 +9,7 @@ public interface IMaintenanceService
 {
     Task<Result<IReadOnlyCollection<PhysicalRoomDto>>> GetRoomsAsync(
         Guid hotelId,
+        Guid? roomTypeId,
         CancellationToken cancellationToken);
 
     Task<Result<IReadOnlyCollection<MaintenanceRequestDto>>> GetRequestsAsync(

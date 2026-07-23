@@ -7,6 +7,7 @@ import '../../auth/application/auth_controller.dart';
 import '../../auth/domain/auth_models.dart';
 import '../../account/presentation/account_settings_screen.dart';
 import '../../marketplace/presentation/marketplace_screen.dart';
+import '../application/operations_providers.dart';
 import '../application/selected_hotel_controller.dart';
 import 'availability_calendar_tab.dart';
 import 'front_desk_tab.dart';
@@ -40,6 +41,13 @@ class _OperationsDashboardScreenState
     final hotelIds = userSession?.hotelIds ?? const [];
     final selectedHotelId =
         selectedHotelState.value ?? (hotelIds.isEmpty ? null : hotelIds.first);
+    final workingHotels = ref.watch(workingHotelsProvider).valueOrNull;
+    final selectedHotelName = selectedHotelId == null
+        ? null
+        : workingHotels
+            ?.where((hotel) => hotel.id == selectedHotelId)
+            .firstOrNull
+            ?.displayName;
     final roles = userSession?.roles ?? const [];
     final sections = _OperationSection.visibleFor(roles);
     final canUseCustomerMarketplace =
@@ -49,20 +57,7 @@ class _OperationsDashboardScreenState
       return Scaffold(
         appBar: AppBar(
           title: const Text('Hotel operations'),
-          actions: [
-            IconButton(
-              tooltip: 'Account settings',
-              onPressed: () => context.push(AccountSettingsScreen.routePath),
-              icon: const Icon(Icons.manage_accounts_rounded),
-            ),
-            IconButton(
-              tooltip: 'Sign out',
-              onPressed: () {
-                ref.read(authControllerProvider.notifier).logout();
-              },
-              icon: const Icon(Icons.logout_rounded),
-            ),
-          ],
+          actions: [_accountMenu()],
         ),
         body: const SafeArea(child: _NoOperationAccess()),
       );
@@ -74,14 +69,28 @@ class _OperationsDashboardScreenState
     final selectedSection = sections[_selectedSectionIndex];
     final canReturnToOverview = sections.first == _OperationSection.overview &&
         selectedSection != _OperationSection.overview;
+    final isOwnerOnboarding = isPropertyOwner && selectedHotelId == null;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          selectedSection == _OperationSection.overview
-              ? _workspaceTitle(roles)
-              : selectedSection.screenTitle,
-        ),
+        title: isOwnerOnboarding
+            ? const Text('Hotel Registration Screen')
+            : selectedSection != _OperationSection.overview &&
+                    selectedHotelId != null
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(selectedSection.screenTitle),
+                      Text(
+                        selectedHotelName ?? 'Assigned hotel',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  )
+                : Text(selectedSection.screenTitle),
         automaticallyImplyLeading:
             canReturnToOverview || canUseCustomerMarketplace,
         leading: canReturnToOverview
@@ -103,49 +112,24 @@ class _OperationsDashboardScreenState
                     icon: const Icon(Icons.arrow_back_rounded),
                   )
                 : null,
-        actions: [
-          if (sections.length > 1)
-            PopupMenuButton<int>(
-              tooltip: 'Open workspace',
-              onSelected: (index) {
-                setState(() => _selectedSectionIndex = index);
-              },
-              itemBuilder: (context) => [
-                for (var index = 0; index < sections.length; index++)
-                  PopupMenuItem<int>(
-                    value: index,
-                    child: Row(
-                      children: [
-                        Icon(sections[index].icon, size: 20),
-                        const SizedBox(width: AppSpacing.sm),
-                        Text(sections[index].label),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          IconButton(
-            tooltip: 'Account settings',
-            onPressed: () => context.push(AccountSettingsScreen.routePath),
-            icon: const Icon(Icons.manage_accounts_rounded),
-          ),
-          IconButton(
-            tooltip: 'Sign out',
-            onPressed: () {
-              ref.read(authControllerProvider.notifier).logout();
-            },
-            icon: const Icon(Icons.logout_rounded),
-          ),
-        ],
+        actions: [_workspaceMenu(sections)],
       ),
       body: SafeArea(
         child: Column(
           children: [
-            const Padding(
-              padding: EdgeInsets.all(AppSpacing.md),
-              child: HotelScopeSelector(),
-            ),
-            const Divider(height: 1),
+            if (selectedSection == _OperationSection.overview &&
+                selectedHotelId != null) ...[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  AppSpacing.md,
+                ),
+                child: HotelScopeSelector(),
+              ),
+              const Divider(height: 1),
+            ],
             Expanded(
               child: selectedHotelId == null
                   ? isPropertyOwner
@@ -177,68 +161,81 @@ class _OperationsDashboardScreenState
     );
   }
 
-  String _workspaceTitle(List<String> roles) {
-    if (roles.contains(UserRoleCode.propertyOwner.apiValue)) {
-      return 'Property Management';
+  Widget _accountMenu() {
+    return PopupMenuButton<String>(
+      tooltip: 'Account menu',
+      onSelected: _handleMenuSelection,
+      itemBuilder: (context) => const [
+        PopupMenuItem<String>(
+          value: 'profile',
+          child: Text('User Profile'),
+        ),
+        PopupMenuItem<String>(
+          value: 'logout',
+          child: Text('Sign Out'),
+        ),
+      ],
+    );
+  }
+
+  Widget _workspaceMenu(List<_OperationSection> sections) {
+    return PopupMenuButton<String>(
+      tooltip: 'Workspace menu',
+      onSelected: _handleMenuSelection,
+      itemBuilder: (context) => [
+        if (sections.length > 1)
+          for (var index = 0; index < sections.length; index++)
+            PopupMenuItem<String>(
+              value: 'section:$index',
+              child: Text(sections[index].label),
+            ),
+        if (sections.length > 1) const PopupMenuDivider(),
+        const PopupMenuItem<String>(
+          value: 'profile',
+          child: Text('User Profile'),
+        ),
+        const PopupMenuItem<String>(
+          value: 'logout',
+          child: Text('Sign Out'),
+        ),
+      ],
+    );
+  }
+
+  void _handleMenuSelection(String value) {
+    if (value == 'profile') {
+      context.push(AccountSettingsScreen.routePath);
+      return;
     }
 
-    if (roles.contains(UserRoleCode.hotelManager.apiValue)) {
-      return 'Hotel Manager';
+    if (value == 'logout') {
+      ref.read(authControllerProvider.notifier).logout();
+      return;
     }
 
-    if (roles.contains(UserRoleCode.receptionist.apiValue)) {
-      return 'Front Desk';
+    if (value.startsWith('section:')) {
+      final index = int.tryParse(value.substring('section:'.length));
+      if (index != null) {
+        setState(() => _selectedSectionIndex = index);
+      }
     }
-
-    if (roles.contains(UserRoleCode.housekeepingStaff.apiValue)) {
-      return 'Housekeeping';
-    }
-
-    if (roles.contains(UserRoleCode.maintenanceStaff.apiValue)) {
-      return 'Maintenance';
-    }
-
-    return 'Hotel operations';
   }
 }
 
 enum _OperationSection {
-  overview(
-    label: 'Overview',
-    icon: Icons.dashboard_rounded,
-  ),
-  frontDesk(
-    label: 'Front Desk',
-    icon: Icons.room_service_rounded,
-  ),
-  availability(
-    label: 'Availability',
-    icon: Icons.calendar_month_rounded,
-  ),
-  housekeeping(
-    label: 'Rooms',
-    icon: Icons.cleaning_services_rounded,
-  ),
-  maintenance(
-    label: 'Maintenance',
-    icon: Icons.handyman_rounded,
-  ),
-  staff(
-    label: 'Staff',
-    icon: Icons.manage_accounts_rounded,
-  ),
-  property(
-    label: 'Property',
-    icon: Icons.apartment_rounded,
-  );
+  overview(label: 'Overview'),
+  frontDesk(label: 'Front Desk'),
+  availability(label: 'Availability'),
+  housekeeping(label: 'Rooms'),
+  maintenance(label: 'Maintenance'),
+  staff(label: 'Staff'),
+  property(label: 'Property');
 
   const _OperationSection({
     required this.label,
-    required this.icon,
   });
 
   final String label;
-  final IconData icon;
 
   String get screenTitle => switch (this) {
         overview => 'Owner/Manager Dashboard',

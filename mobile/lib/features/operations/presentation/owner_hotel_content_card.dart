@@ -2,180 +2,143 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/theme/app_spacing.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_radii.dart';
+import '../../../app/theme/app_spacing.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
 import '../../../shared/widgets/app_text_form_field.dart';
+import '../../../shared/widgets/srs_screen.dart';
 import '../application/operations_providers.dart';
 import '../domain/operations_models.dart';
 
-class OwnerHotelContentCard extends ConsumerWidget {
-  const OwnerHotelContentCard({super.key, required this.hotelId});
+class OwnerHotelContentCard extends ConsumerStatefulWidget {
+  const OwnerHotelContentCard({
+    super.key,
+    required this.hotelId,
+    this.showSaveButton = true,
+  });
+
   final String hotelId;
+  final bool showSaveButton;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final content = ref.watch(hotelContentProvider(hotelId));
-    return content.when(
-      data: (value) => _ContentEditor(hotelId: hotelId, content: value),
-      loading: () => const Card(
-        child: Padding(
-          padding: EdgeInsets.all(AppSpacing.lg),
-          child: LinearProgressIndicator(),
-        ),
-      ),
-      error: (error, stackTrace) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            children: [
-              const Text('Unable to load marketplace content.'),
-              const SizedBox(height: AppSpacing.sm),
-              Text(AppErrorPresenter.friendlyMessage(error)),
-              const SizedBox(height: AppSpacing.md),
-              OutlinedButton.icon(
-                onPressed: () => ref.invalidate(hotelContentProvider(hotelId)),
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Retry'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  ConsumerState<OwnerHotelContentCard> createState() =>
+      OwnerHotelContentCardState();
 }
 
-class _ContentEditor extends ConsumerStatefulWidget {
-  const _ContentEditor({required this.hotelId, required this.content});
-  final String hotelId;
-  final HotelContent content;
+class OwnerHotelContentCardState extends ConsumerState<OwnerHotelContentCard> {
+  static const _suggestedAmenities = <String>[
+    'Wi-Fi',
+    'Parking',
+    'Swimming Pool',
+    'Restaurant',
+    'Gym',
+    'Spa',
+    'Air Conditioning',
+    'Room Service',
+    'Laundry',
+    'Bar',
+    'Conference Room',
+    'Airport Shuttle',
+    'Pet Friendly',
+  ];
 
-  @override
-  ConsumerState<_ContentEditor> createState() => _ContentEditorState();
-}
-
-class _ContentEditorState extends ConsumerState<_ContentEditor> {
-  final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _images;
-  late final TextEditingController _amenities;
-  late final TextEditingController _policyName;
-  late final TextEditingController _freeHours;
-  late final TextEditingController _refundPercentage;
-  late final TextEditingController _policyDescription;
+  final _policyDescription = TextEditingController();
+  final List<String> _imageUrls = <String>[];
+  final Set<String> _amenities = <String>{};
+  bool _initialized = false;
   bool _saving = false;
+  String _policyName = 'Flexible';
+  int _freeCancellationHours = 24;
+  double _refundPercentage = 100;
 
   @override
-  void initState() {
-    super.initState();
-    _images = TextEditingController(
-      text: widget.content.images.map((item) => item.imageUrl).join('\n'),
-    );
-    _amenities = TextEditingController(
-      text: widget.content.amenities
-          .map((item) => '${item.code} | ${item.name} | ${item.type}')
-          .join('\n'),
-    );
-    final policy = widget.content.cancellationPolicy;
-    _policyName = TextEditingController(text: policy?.name ?? 'Flexible');
-    _freeHours = TextEditingController(
-      text: (policy?.freeCancellationHours ?? 24).toString(),
-    );
-    _refundPercentage = TextEditingController(
-      text: (policy?.refundPercentage ?? 100).toStringAsFixed(0),
-    );
-    _policyDescription = TextEditingController(text: policy?.description ?? '');
+  void didUpdateWidget(covariant OwnerHotelContentCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.hotelId != widget.hotelId) {
+      _initialized = false;
+      _imageUrls.clear();
+      _amenities.clear();
+      _policyDescription.clear();
+    }
   }
 
   @override
   void dispose() {
-    _images.dispose();
-    _amenities.dispose();
-    _policyName.dispose();
-    _freeHours.dispose();
-    _refundPercentage.dispose();
     _policyDescription.dispose();
     super.dispose();
   }
 
-  List<String> _nonEmptyLines(String value) => value
-      .split('\n')
-      .map((line) => line.trim())
-      .where((line) => line.isNotEmpty)
-      .toList(growable: false);
-
-  String? _validateImages(String? value) {
-    final lines = _nonEmptyLines(value ?? '');
-    if (lines.length > 20) {
-      return 'Use at most 20 image URLs.';
-    }
-    final invalid = lines.any((line) {
-      final uri = Uri.tryParse(line);
-      return uri == null ||
-          !uri.hasScheme ||
-          (uri.scheme != 'http' && uri.scheme != 'https');
-    });
-    return invalid ? 'Each line must be an absolute HTTP or HTTPS URL.' : null;
-  }
-
-  String? _validateAmenities(String? value) {
-    final lines = _nonEmptyLines(value ?? '');
-    if (lines.length > 50) {
-      return 'Use at most 50 amenities.';
-    }
-    return lines.any((line) => line.split('|').length != 3)
-        ? 'Use one amenity per line: code | name | type.'
-        : null;
-  }
-
-  Future<void> _save() async {
-    FocusScope.of(context).unfocus();
-    if (_formKey.currentState?.validate() != true) {
+  void _initialize(HotelContent content) {
+    if (_initialized) {
       return;
     }
-    final images = _nonEmptyLines(_images.text)
-        .asMap()
-        .entries
-        .map(
-          (entry) => HotelContentImage(
-            imageUrl: entry.value,
-            displayOrder: entry.key,
-          ),
-        )
-        .toList(growable: false);
-    final amenities = _nonEmptyLines(_amenities.text).map((line) {
-      final parts = line.split('|').map((part) => part.trim()).toList();
-      return HotelContentAmenity(
-        code: parts[0],
-        name: parts[1],
-        type: parts[2],
-      );
-    }).toList(growable: false);
+    _initialized = true;
+    final orderedImages = [...content.images]
+      ..sort((left, right) => left.displayOrder.compareTo(right.displayOrder));
+    _imageUrls
+      ..clear()
+      ..addAll(orderedImages.map((image) => image.imageUrl));
+    _amenities
+      ..clear()
+      ..addAll(content.amenities.map((amenity) => amenity.name));
+    final policy = content.cancellationPolicy;
+    _policyName =
+        policy?.name.trim().isNotEmpty == true ? policy!.name : 'Flexible';
+    _freeCancellationHours = policy?.freeCancellationHours ?? 24;
+    _refundPercentage = policy?.refundPercentage ?? 100;
+    _policyDescription.text = policy?.description ?? '';
+  }
+
+  Future<bool> saveContent({bool showFeedback = true}) async {
+    if (!_initialized) {
+      if (mounted) {
+        AppErrorPresenter.showSnackBar(
+          context,
+          'Hotel content is still loading.',
+        );
+      }
+      return false;
+    }
 
     setState(() => _saving = true);
     try {
       await ref.read(operationsApiProvider).updateHotelContent(
             hotelId: widget.hotelId,
             request: UpdateHotelContentRequest(
-              images: images,
-              amenities: amenities,
+              images: [
+                for (var index = 0; index < _imageUrls.length; index++)
+                  HotelContentImage(
+                    imageUrl: _imageUrls[index],
+                    displayOrder: index,
+                  ),
+              ],
+              amenities: [
+                for (final amenity in _amenities)
+                  HotelContentAmenity(
+                    code: _amenityCode(amenity),
+                    name: amenity,
+                    type: 'Hotel',
+                  ),
+              ],
               cancellationPolicy: HotelCancellationPolicy(
-                name: _policyName.text,
-                freeCancellationHours: int.parse(_freeHours.text),
-                refundPercentage: double.parse(_refundPercentage.text),
+                name: _policyName,
+                freeCancellationHours: _freeCancellationHours,
+                refundPercentage: _refundPercentage,
                 description: _policyDescription.text,
               ),
             ),
           );
       ref.invalidate(hotelContentProvider(widget.hotelId));
-      if (mounted) {
-        AppErrorPresenter.showSnackBar(context, 'Marketplace content updated.');
+      if (showFeedback && mounted) {
+        AppErrorPresenter.showSnackBar(context, 'Hotel content updated.');
       }
+      return true;
     } catch (error) {
       if (mounted) {
         await AppErrorPresenter.showBottomSheet(context, error);
       }
+      return false;
     } finally {
       if (mounted) {
         setState(() => _saving = false);
@@ -183,185 +146,275 @@ class _ContentEditorState extends ConsumerState<_ContentEditor> {
     }
   }
 
-  String? _required(String? value) =>
-      value == null || value.trim().isEmpty ? 'This field is required.' : null;
+  Future<void> _addImageUrl() async {
+    if (_imageUrls.length >= 20) {
+      AppErrorPresenter.showSnackBar(
+        context,
+        'A hotel can contain at most 20 images.',
+      );
+      return;
+    }
 
-  String? _range(String? value, int minimum, int maximum) {
-    final number = int.tryParse(value ?? '');
-    return number == null || number < minimum || number > maximum
-        ? 'Enter a value from $minimum to $maximum.'
-        : null;
+    final controller = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Hotel Image'),
+        content: AppTextFormField(
+          controller: controller,
+          labelText: 'Image URL',
+          hintText: 'https://example.com/hotel.jpg',
+          externalLabel: true,
+          keyboardType: TextInputType.url,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = controller.text.trim();
+              final uri = Uri.tryParse(value);
+              if (uri == null ||
+                  !uri.hasScheme ||
+                  (uri.scheme != 'http' && uri.scheme != 'https')) {
+                AppErrorPresenter.showSnackBar(
+                  context,
+                  'Enter an absolute HTTP or HTTPS image URL.',
+                );
+                return;
+              }
+              Navigator.of(context).pop(value);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (url != null && mounted) {
+      setState(() => _imageUrls.add(url));
+    }
+  }
+
+  Future<void> _addAmenity() async {
+    final controller = TextEditingController();
+    final amenity = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Amenity'),
+        content: AppTextFormField(
+          controller: controller,
+          labelText: 'Amenity Name',
+          externalLabel: true,
+          inputFormatters: [LengthLimitingTextInputFormatter(80)],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = controller.text.trim();
+              Navigator.of(context).pop(value.isEmpty ? null : value);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (amenity != null && mounted) {
+      setState(() => _amenities.add(amenity));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Marketplace content',
-                style: Theme.of(context).textTheme.titleMedium,
+    final content = ref.watch(hotelContentProvider(widget.hotelId));
+    return content.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+        child: LinearProgressIndicator(),
+      ),
+      error: (error, stackTrace) => SrsPanel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(AppErrorPresenter.friendlyMessage(error)),
+            const SizedBox(height: AppSpacing.sm),
+            OutlinedButton(
+              onPressed: () =>
+                  ref.invalidate(hotelContentProvider(widget.hotelId)),
+              child: const Text('Try Again'),
+            ),
+          ],
+        ),
+      ),
+      data: (value) {
+        _initialize(value);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SrsFieldLabel('Images'),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                border: Border.all(color: AppColors.outline),
+                borderRadius: BorderRadius.circular(AppRadii.sm),
               ),
-              const SizedBox(height: AppSpacing.xs),
-              const Text(
-                'Manage guest-facing photos, amenities, and cancellation terms.',
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text('Images', style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: AppSpacing.sm),
-              _ImageGalleryPreview(images: widget.content.images),
-              const SizedBox(height: AppSpacing.sm),
-              AppTextFormField(
-                controller: _images,
-                labelText: 'Add or reorder image URLs',
-                hintText: 'One HTTPS image URL per line',
-                maxLines: 4,
-                validator: _validateImages,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text('Amenities', style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: AppSpacing.sm),
-              if (widget.content.amenities.isEmpty)
-                const Text('No amenities selected.')
-              else
-                Wrap(
-                  spacing: AppSpacing.xs,
-                  runSpacing: AppSpacing.xs,
-                  children: [
-                    for (final amenity in widget.content.amenities)
-                      Chip(
-                        avatar: const Icon(Icons.check_rounded, size: 16),
-                        label: Text(amenity.name),
-                      ),
-                  ],
-                ),
-              const SizedBox(height: AppSpacing.sm),
-              AppTextFormField(
-                controller: _amenities,
-                labelText: 'Edit amenities',
-                hintText: 'Code | name | type, one amenity per line',
-                maxLines: 4,
-                validator: _validateAmenities,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'Cancellation policy',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              AppTextFormField(
-                controller: _policyName,
-                labelText: 'Cancellation policy name',
-                validator: _required,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: AppTextFormField(
-                      controller: _freeHours,
-                      labelText: 'Free cancellation hours',
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      validator: (value) => _range(value, 0, 8760),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppTextFormField(
-                      controller: _refundPercentage,
-                      labelText: 'Refund %',
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      validator: (value) => _range(value, 0, 100),
+                  SizedBox(
+                    height: 92,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _imageUrls.length + 1,
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(width: AppSpacing.sm),
+                      itemBuilder: (context, index) {
+                        if (index == _imageUrls.length) {
+                          return _AddImageButton(onPressed: _addImageUrl);
+                        }
+                        final url = _imageUrls[index];
+                        return _EditableImage(
+                          url: url,
+                          onRemove: () =>
+                              setState(() => _imageUrls.removeAt(index)),
+                        );
+                      },
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.md),
-              AppTextFormField(
-                controller: _policyDescription,
-                labelText: 'Policy description',
-                maxLines: 3,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            const SrsFieldLabel('Amenities'),
+            SrsPanel(
+              child: Wrap(
+                spacing: AppSpacing.xs,
+                runSpacing: AppSpacing.xs,
+                children: [
+                  for (final amenity in {
+                    ..._suggestedAmenities,
+                    ..._amenities,
+                  })
+                    FilterChip(
+                      label: Text(amenity),
+                      selected: _amenities.contains(amenity),
+                      onSelected: (selected) {
+                        setState(() {
+                          if (selected) {
+                            _amenities.add(amenity);
+                          } else {
+                            _amenities.remove(amenity);
+                          }
+                        });
+                      },
+                    ),
+                  ActionChip(
+                    avatar: const Icon(Icons.add_rounded, size: 18),
+                    label: const Text('Add'),
+                    onPressed: _addAmenity,
+                  ),
+                ],
               ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppTextFormField(
+              controller: _policyDescription,
+              labelText: 'Cancellation Policy',
+              hintText: 'Describe cancellation and refund conditions',
+              externalLabel: true,
+              maxLines: 4,
+              inputFormatters: [LengthLimitingTextInputFormatter(1000)],
+            ),
+            if (widget.showSaveButton) ...[
               const SizedBox(height: AppSpacing.lg),
-              FilledButton.icon(
-                onPressed: _saving ? null : _save,
-                icon: _saving
+              FilledButton(
+                onPressed: _saving ? null : saveContent,
+                child: _saving
                     ? const SizedBox.square(
-                        dimension: 18,
+                        dimension: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.save_rounded),
-                label: Text(_saving ? 'Saving' : 'Save marketplace content'),
+                    : const Text('Save'),
               ),
             ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _EditableImage extends StatelessWidget {
+  const _EditableImage({required this.url, required this.onRemove});
+
+  final String url;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 92,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadii.sm),
+              child: Image.network(
+                url,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  color: AppColors.surfaceSoft,
+                  child: const Icon(Icons.broken_image_outlined),
+                ),
+              ),
+            ),
           ),
-        ),
+          Positioned(
+            right: -5,
+            top: -5,
+            child: IconButton.filled(
+              visualDensity: VisualDensity.compact,
+              iconSize: 14,
+              tooltip: 'Remove image',
+              onPressed: onRemove,
+              icon: const Icon(Icons.close_rounded),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _ImageGalleryPreview extends StatelessWidget {
-  const _ImageGalleryPreview({required this.images});
+class _AddImageButton extends StatelessWidget {
+  const _AddImageButton({required this.onPressed});
 
-  final List<HotelContentImage> images;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    if (images.isEmpty) {
-      return Container(
-        height: 96,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: AppColors.surfaceSoft,
-          border: Border.all(color: AppColors.outline),
-          borderRadius: BorderRadius.circular(AppRadii.sm),
-        ),
-        child: const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.add_photo_alternate_outlined),
-            SizedBox(height: AppSpacing.xxs),
-            Text('No gallery images'),
-          ],
-        ),
-      );
-    }
-
-    final ordered = [...images]
-      ..sort((left, right) => left.displayOrder.compareTo(right.displayOrder));
     return SizedBox(
-      height: 104,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: ordered.length,
-        separatorBuilder: (context, index) =>
-            const SizedBox(width: AppSpacing.sm),
-        itemBuilder: (context, index) {
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadii.sm),
-            child: SizedBox(
-              width: 128,
-              child: Image.network(
-                ordered[index].imageUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  color: AppColors.surfaceSoft,
-                  alignment: Alignment.center,
-                  child: const Icon(Icons.broken_image_outlined),
-                ),
-              ),
-            ),
-          );
-        },
+      width: 92,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        child: const Icon(Icons.add_rounded),
       ),
     );
   }
+}
+
+String _amenityCode(String name) {
+  return name
+      .trim()
+      .toUpperCase()
+      .replaceAll(RegExp(r'[^A-Z0-9]+'), '_')
+      .replaceAll(RegExp(r'^_+|_+$'), '');
 }

@@ -22,88 +22,105 @@ class _PlatformAdminDashboardScreenState
     extends ConsumerState<PlatformAdminDashboardScreen> {
   _AdminSection _selectedSection = _AdminSection.dashboard;
 
-  void _refreshAll(WidgetRef ref) {
-    ref.invalidate(adminFinanceSummaryProvider);
-    ref.invalidate(pendingHotelsProvider);
-    ref.invalidate(adminHotelsProvider);
-    ref.invalidate(unreconciledPaymentsProvider);
-    ref.invalidate(pendingRefundsProvider);
-    ref.invalidate(actionableAdminRefundsProvider);
-    ref.invalidate(settlementsProvider);
+  void _refreshCurrent() {
+    switch (_selectedSection) {
+      case _AdminSection.dashboard:
+        ref.invalidate(adminFinanceSummaryProvider);
+        return;
+      case _AdminSection.approval:
+        ref.invalidate(pendingHotelsProvider);
+        return;
+      case _AdminSection.commission:
+        ref.invalidate(adminHotelsProvider);
+        return;
+      case _AdminSection.reconciliation:
+        ref.invalidate(unreconciledPaymentsProvider);
+        return;
+      case _AdminSection.refunds:
+        ref.invalidate(actionableAdminRefundsProvider);
+        ref.invalidate(pendingRefundsProvider);
+        return;
+      case _AdminSection.settlements:
+        ref.invalidate(settlementsProvider);
+        return;
+    }
+  }
+
+  void _handleMenuSelection(Object value) {
+    if (value is _AdminSection) {
+      setState(() => _selectedSection = value);
+      return;
+    }
+    if (value == _AdminMenuAction.account) {
+      context.push(AccountSettingsScreen.routePath);
+      return;
+    }
+    if (value == _AdminMenuAction.signOut) {
+      ref.read(authControllerProvider.notifier).logout();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_selectedSection.title),
-        leading: _selectedSection == _AdminSection.dashboard
-            ? null
-            : IconButton(
-                tooltip: 'Back to dashboard',
-                onPressed: () {
-                  setState(() => _selectedSection = _AdminSection.dashboard);
-                },
-                icon: const Icon(Icons.arrow_back_rounded),
+    return PopScope(
+      canPop: _selectedSection == _AdminSection.dashboard,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _selectedSection != _AdminSection.dashboard) {
+          setState(() => _selectedSection = _AdminSection.dashboard);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          title: Text(_selectedSection.title),
+          actions: [
+            if (_selectedSection != _AdminSection.commission)
+              IconButton(
+                tooltip: 'Refresh',
+                onPressed: _refreshCurrent,
+                icon: const Icon(Icons.refresh_rounded),
               ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: () => _refreshAll(ref),
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-          PopupMenuButton<_AdminMenuAction>(
-            tooltip: 'Admin menu',
-            onSelected: (action) {
-              switch (action) {
-                case _AdminMenuAction.section:
-                  break;
-                case _AdminMenuAction.account:
-                  context.push(AccountSettingsScreen.routePath);
-                case _AdminMenuAction.signOut:
-                  ref.read(authControllerProvider.notifier).logout();
-              }
-            },
-            itemBuilder: (context) => [
-              for (final section in _AdminSection.values)
-                PopupMenuItem(
-                  value: _AdminMenuAction.section,
-                  onTap: () {
-                    setState(() => _selectedSection = section);
-                  },
+            PopupMenuButton<Object>(
+              tooltip: 'Open admin navigation',
+              onSelected: _handleMenuSelection,
+              itemBuilder: (context) => [
+                for (final section in _AdminSection.values)
+                  PopupMenuItem<Object>(
+                    value: section,
+                    child: ListTile(
+                      leading: Icon(section.icon),
+                      title: Text(section.menuLabel),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                const PopupMenuDivider(),
+                const PopupMenuItem<Object>(
+                  value: _AdminMenuAction.account,
                   child: ListTile(
-                    leading: Icon(section.icon),
-                    title: Text(section.menuLabel),
+                    leading: Icon(Icons.manage_accounts_outlined),
+                    title: Text('User Profile'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: _AdminMenuAction.account,
-                child: ListTile(
-                  leading: Icon(Icons.manage_accounts_outlined),
-                  title: Text('Account settings'),
-                  contentPadding: EdgeInsets.zero,
+                const PopupMenuItem<Object>(
+                  value: _AdminMenuAction.signOut,
+                  child: ListTile(
+                    leading: Icon(Icons.logout_rounded),
+                    title: Text('Sign Out'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
-              ),
-              const PopupMenuItem(
-                value: _AdminMenuAction.signOut,
-                child: ListTile(
-                  leading: Icon(Icons.logout_rounded),
-                  title: Text('Sign out'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
+        body: SafeArea(child: _selectedSection.content),
       ),
-      body: SafeArea(child: _selectedSection.content),
     );
   }
 }
 
-enum _AdminMenuAction { section, account, signOut }
+enum _AdminMenuAction { account, signOut }
 
 enum _AdminSection {
   dashboard,

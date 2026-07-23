@@ -9,6 +9,7 @@ public interface IMaintenanceRepository
 {
     Task<IReadOnlyCollection<PhysicalRoomDto>> GetRoomsAsync(
         Guid hotelId,
+        Guid? roomTypeId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<MaintenanceRequestDto>> GetRequestsAsync(

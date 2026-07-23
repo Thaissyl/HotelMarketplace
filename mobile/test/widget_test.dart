@@ -37,7 +37,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Home / Search Screen'), findsOneWidget);
-    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.byTooltip('Login'), findsOneWidget);
   });
 
   test('production environment rejects an insecure API URL', () {
