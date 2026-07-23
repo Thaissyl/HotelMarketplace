@@ -12,6 +12,7 @@ import '../domain/operations_models.dart';
 import 'hotel_booking_list_screen.dart';
 import 'owner_physical_room_management_screen.dart';
 import 'owner_room_type_management_screen.dart';
+import 'widgets/hotel_scope_selector.dart';
 
 class ManagerOverviewTab extends ConsumerWidget {
   const ManagerOverviewTab({
@@ -53,6 +54,8 @@ class ManagerOverviewTab extends ConsumerWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(AppSpacing.xl),
         children: [
+          const HotelScopeSelector(),
+          const SizedBox(height: AppSpacing.xl),
           const SrsSectionTitle('Hotel Summary Cards'),
           const SizedBox(height: AppSpacing.sm),
           _SummaryCards(
@@ -138,7 +141,7 @@ class _SummaryCards extends StatelessWidget {
         rooms.isEmpty ? 0 : ((occupiedRooms / rooms.length) * 100).round();
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: _SummaryCard(
@@ -194,20 +197,20 @@ class _SummaryCard extends StatelessWidget {
       child: SrsPanel(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.xs,
-          vertical: AppSpacing.sm,
+          vertical: AppSpacing.xs,
         ),
         child: Column(
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 40,
+              height: 40,
               decoration: const BoxDecoration(
                 color: AppColors.surfaceSoft,
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: AppColors.brandDark),
             ),
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AppSpacing.xs),
             Expanded(
               child: Center(
                 child: FittedBox(
@@ -215,20 +218,20 @@ class _SummaryCard extends StatelessWidget {
                   child: Text(
                     label,
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context).textTheme.labelMedium,
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.xxs),
             FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
                 value,
-                style: Theme.of(context).textTheme.titleLarge,
+                style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AppSpacing.xs),
             Container(
               width: 42,
               height: 4,
@@ -284,7 +287,7 @@ class _OperationalMetrics extends StatelessWidget {
     }).length;
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: _OperationalCard(
@@ -363,22 +366,22 @@ class _OperationalCard extends StatelessWidget {
             child: Column(
               children: [
                 Container(
-                  width: 44,
-                  height: 44,
+                  width: 40,
+                  height: 40,
                   decoration: const BoxDecoration(
                     color: AppColors.surfaceSoft,
                     shape: BoxShape.circle,
                   ),
                   child: Icon(icon, color: AppColors.brandDark),
                 ),
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: AppSpacing.xs),
                 Expanded(
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: Text(
                       label,
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: Theme.of(context).textTheme.labelMedium,
                     ),
                   ),
                 ),
@@ -386,12 +389,12 @@ class _OperationalCard extends StatelessWidget {
                   fit: BoxFit.scaleDown,
                   child: Text(
                     value,
-                    style: Theme.of(context).textTheme.titleLarge,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
                 Text(
                   helper,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: AppColors.mutedInk,
                       ),
                 ),

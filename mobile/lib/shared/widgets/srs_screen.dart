@@ -14,6 +14,7 @@ class SrsScreen extends StatelessWidget {
     this.padding = const EdgeInsets.all(AppSpacing.xl),
     this.scrollable = true,
     this.automaticallyImplyLeading = true,
+    this.titleTextStyle,
   });
 
   final String title;
@@ -23,6 +24,7 @@ class SrsScreen extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final bool scrollable;
   final bool automaticallyImplyLeading;
+  final TextStyle? titleTextStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +40,7 @@ class SrsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(title),
+        title: Text(title, style: titleTextStyle),
         leading: leading,
         automaticallyImplyLeading: automaticallyImplyLeading,
         actions: actions,

@@ -19,13 +19,14 @@ class SelectedHotelController extends StateNotifier<AsyncValue<String?>> {
     required SecureSessionStorage sessionStorage,
     required List<String> availableHotelIds,
   })  : _sessionStorage = sessionStorage,
-        _availableHotelIds = availableHotelIds,
+        _availableHotelIds = List<String>.of(availableHotelIds),
         super(const AsyncLoading()) {
-    load();
+    _initialLoad = load();
   }
 
   final SecureSessionStorage _sessionStorage;
   final List<String> _availableHotelIds;
+  late final Future<void> _initialLoad;
 
   Future<void> load() async {
     final storedHotelId = await _sessionStorage.getCurrentHotelId();
@@ -48,6 +49,8 @@ class SelectedHotelController extends StateNotifier<AsyncValue<String?>> {
   }
 
   Future<void> selectHotel(String hotelId) async {
+    await _initialLoad;
+
     if (!_availableHotelIds.contains(hotelId)) {
       return;
     }
@@ -57,6 +60,8 @@ class SelectedHotelController extends StateNotifier<AsyncValue<String?>> {
   }
 
   Future<void> addAndSelectHotel(String hotelId) async {
+    await _initialLoad;
+
     if (!_availableHotelIds.contains(hotelId)) {
       _availableHotelIds.add(hotelId);
     }
