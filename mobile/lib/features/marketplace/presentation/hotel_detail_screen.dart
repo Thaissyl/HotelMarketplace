@@ -250,11 +250,21 @@ class _HotelDetailContentState extends State<_HotelDetailContent> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _HotelHeaderCard(hotel: widget.hotel),
               if (widget.hotel.images.isNotEmpty) ...[
+                Text(
+                  'Hotel gallery',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
                 const SizedBox(height: AppSpacing.md),
                 _HotelGallery(images: widget.hotel.images),
+                const SizedBox(height: AppSpacing.lg),
               ],
+              Text(
+                'Hotel information',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _HotelHeaderCard(hotel: widget.hotel),
               if (widget.hotel.amenities.isNotEmpty ||
                   widget.hotel.cancellationPolicy != null) ...[
                 const SizedBox(height: AppSpacing.lg),
@@ -269,7 +279,7 @@ class _HotelDetailContentState extends State<_HotelDetailContent> {
               ),
               const SizedBox(height: AppSpacing.lg),
               Text(
-                'Available rooms',
+                'Room type list',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: AppSpacing.md),
@@ -313,7 +323,7 @@ class _HotelDetailContentState extends State<_HotelDetailContent> {
                   );
                 },
                 child: Text(
-                  'Reserve ${AppFormatters.money(selectedRoomType.totalPriceForStay)}',
+                  'Select room - ${AppFormatters.money(selectedRoomType.totalPriceForStay)}',
                 ),
               ),
             ),

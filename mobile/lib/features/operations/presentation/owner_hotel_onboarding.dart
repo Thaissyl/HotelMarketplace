@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_spacing.dart';
@@ -106,21 +107,13 @@ class _OwnerHotelOnboardingState extends ConsumerState<OwnerHotelOnboarding> {
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       children: [
-        Icon(
-          Icons.add_business_rounded,
-          size: 48,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-        const SizedBox(height: AppSpacing.md),
         Text(
-          'Register your first hotel',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.headlineSmall,
+          'Hotel registration',
+          style: Theme.of(context).textTheme.titleLarge,
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
           'The property will remain private until a platform administrator approves it.',
-          textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: AppSpacing.xl),
@@ -131,39 +124,56 @@ class _OwnerHotelOnboardingState extends ConsumerState<OwnerHotelOnboarding> {
               AppTextFormField(
                 controller: _name,
                 labelText: 'Hotel name',
-                validator: _required,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppTextFormField(
-                controller: _city,
-                labelText: 'City',
+                hintText: 'Enter hotel name',
+                inputFormatters: [LengthLimitingTextInputFormatter(150)],
                 validator: _required,
               ),
               const SizedBox(height: AppSpacing.md),
               AppTextFormField(
                 controller: _address,
-                labelText: 'Street address',
+                labelText: 'Address',
+                hintText: 'Enter complete address',
+                maxLines: 3,
+                inputFormatters: [LengthLimitingTextInputFormatter(255)],
                 validator: _required,
               ),
               const SizedBox(height: AppSpacing.md),
               AppTextFormField(
-                controller: _email,
-                labelText: 'Contact email',
-                keyboardType: TextInputType.emailAddress,
-                validator: _emailValidator,
+                controller: _city,
+                labelText: 'City/Destination',
+                hintText: 'Enter city or destination',
+                inputFormatters: [LengthLimitingTextInputFormatter(100)],
+                validator: _required,
               ),
               const SizedBox(height: AppSpacing.md),
               AppTextFormField(
                 controller: _phone,
                 labelText: 'Contact phone',
+                hintText: 'Enter contact phone number',
                 keyboardType: TextInputType.phone,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(20),
+                ],
                 validator: _phoneValidator,
               ),
               const SizedBox(height: AppSpacing.md),
               AppTextFormField(
+                controller: _email,
+                labelText: 'Contact email',
+                hintText: 'Enter contact email address',
+                keyboardType: TextInputType.emailAddress,
+                inputFormatters: [LengthLimitingTextInputFormatter(150)],
+                validator: _emailValidator,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppTextFormField(
                 controller: _description,
-                labelText: 'Property description',
+                labelText: 'Description',
+                hintText: 'Enter hotel description',
                 maxLines: 4,
+                inputFormatters: [LengthLimitingTextInputFormatter(1000)],
+                validator: _required,
               ),
               const SizedBox(height: AppSpacing.lg),
               SizedBox(

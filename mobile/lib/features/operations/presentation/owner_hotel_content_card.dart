@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_spacing.dart';
+import '../../../app/theme/app_colors.dart';
+import '../../../app/theme/app_radii.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
 import '../../../shared/widgets/app_text_form_field.dart';
 import '../application/operations_providers.dart';
@@ -210,20 +212,48 @@ class _ContentEditorState extends ConsumerState<_ContentEditor> {
                 'Manage guest-facing photos, amenities, and cancellation terms.',
               ),
               const SizedBox(height: AppSpacing.md),
+              Text('Images', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: AppSpacing.sm),
+              _ImageGalleryPreview(images: widget.content.images),
+              const SizedBox(height: AppSpacing.sm),
               AppTextFormField(
                 controller: _images,
-                labelText: 'Image URLs (one per line)',
+                labelText: 'Add or reorder image URLs',
+                hintText: 'One HTTPS image URL per line',
                 maxLines: 4,
                 validator: _validateImages,
               ),
               const SizedBox(height: AppSpacing.md),
+              Text('Amenities', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: AppSpacing.sm),
+              if (widget.content.amenities.isEmpty)
+                const Text('No amenities selected.')
+              else
+                Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    for (final amenity in widget.content.amenities)
+                      Chip(
+                        avatar: const Icon(Icons.check_rounded, size: 16),
+                        label: Text(amenity.name),
+                      ),
+                  ],
+                ),
+              const SizedBox(height: AppSpacing.sm),
               AppTextFormField(
                 controller: _amenities,
-                labelText: 'Amenities: code | name | type',
+                labelText: 'Edit amenities',
+                hintText: 'Code | name | type, one amenity per line',
                 maxLines: 4,
                 validator: _validateAmenities,
               ),
               const SizedBox(height: AppSpacing.md),
+              Text(
+                'Cancellation policy',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: AppSpacing.sm),
               AppTextFormField(
                 controller: _policyName,
                 labelText: 'Cancellation policy name',
@@ -273,6 +303,64 @@ class _ContentEditorState extends ConsumerState<_ContentEditor> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ImageGalleryPreview extends StatelessWidget {
+  const _ImageGalleryPreview({required this.images});
+
+  final List<HotelContentImage> images;
+
+  @override
+  Widget build(BuildContext context) {
+    if (images.isEmpty) {
+      return Container(
+        height: 96,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: AppColors.surfaceSoft,
+          border: Border.all(color: AppColors.outline),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
+        ),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.add_photo_alternate_outlined),
+            SizedBox(height: AppSpacing.xxs),
+            Text('No gallery images'),
+          ],
+        ),
+      );
+    }
+
+    final ordered = [...images]
+      ..sort((left, right) => left.displayOrder.compareTo(right.displayOrder));
+    return SizedBox(
+      height: 104,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: ordered.length,
+        separatorBuilder: (context, index) =>
+            const SizedBox(width: AppSpacing.sm),
+        itemBuilder: (context, index) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadii.sm),
+            child: SizedBox(
+              width: 128,
+              child: Image.network(
+                ordered[index].imageUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  color: AppColors.surfaceSoft,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.broken_image_outlined),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

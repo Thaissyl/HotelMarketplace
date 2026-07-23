@@ -29,14 +29,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _fullNameController = TextEditingController();
   final _phoneController = TextEditingController();
   UserRoleCode _role = UserRoleCode.customer;
+  bool _acceptedTerms = false;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _fullNameController.dispose();
     _phoneController.dispose();
     super.dispose();
@@ -70,21 +73,51 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final isLoading = authState.status == AuthStatus.authenticating;
 
     return AuthShell(
-      title: 'Create account',
+      title: 'Register',
       subtitle: 'Start as a traveler or register as a property owner.',
+      showBackButton: false,
       child: Form(
         key: _formKey,
         autovalidateMode: AutovalidateMode.onUserInteraction,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Text(
+              'Account type',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            RadioGroup<UserRoleCode>(
+              groupValue: _role,
+              onChanged: (value) {
+                if (!isLoading && value != null) {
+                  setState(() => _role = value);
+                }
+              },
+              child: const Column(
+                children: [
+                  RadioListTile<UserRoleCode>(
+                    contentPadding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    title: Text('Customer'),
+                    value: UserRoleCode.customer,
+                  ),
+                  RadioListTile<UserRoleCode>(
+                    contentPadding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    title: Text('Property Owner'),
+                    value: UserRoleCode.propertyOwner,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
             AppTextFormField(
               controller: _fullNameController,
               textInputAction: TextInputAction.next,
               autofillHints: const [AutofillHints.name],
               validator: AuthFormValidators.fullName,
               labelText: 'Full name',
-              prefixIcon: const Icon(Icons.person_outline_rounded),
             ),
             const SizedBox(height: AppSpacing.md),
             AppTextFormField(
@@ -94,7 +127,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               autofillHints: const [AutofillHints.email],
               validator: AuthFormValidators.email,
               labelText: 'Email',
-              prefixIcon: const Icon(Icons.mail_outline_rounded),
             ),
             const SizedBox(height: AppSpacing.md),
             AppTextFormField(
@@ -106,43 +138,72 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 LengthLimitingTextInputFormatter(10),
               ],
               validator: AuthFormValidators.phoneNumber,
-              labelText: 'Phone number',
-              prefixIcon: const Icon(Icons.phone_outlined),
+              labelText: 'Phone number (optional)',
             ),
             const SizedBox(height: AppSpacing.md),
             PasswordField(
               controller: _passwordController,
+              textInputAction: TextInputAction.next,
               validator: (value) => AuthFormValidators.password(
                 value,
                 strong: true,
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            SegmentedButton<UserRoleCode>(
-              segments: const [
-                ButtonSegment(
-                  value: UserRoleCode.customer,
-                  label: Text('Customer'),
-                  icon: Icon(Icons.luggage_rounded),
-                ),
-                ButtonSegment(
-                  value: UserRoleCode.propertyOwner,
-                  label: Text('Owner'),
-                  icon: Icon(Icons.apartment_rounded),
-                ),
-              ],
-              selected: {_role},
-              onSelectionChanged: isLoading
-                  ? null
-                  : (selection) {
-                      setState(() {
-                        _role = selection.first;
-                      });
-                    },
+            PasswordField(
+              controller: _confirmPasswordController,
+              labelText: 'Confirm password',
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Confirm your password.';
+                }
+                if (value != _passwordController.text) {
+                  return 'Passwords do not match.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            FormField<bool>(
+              initialValue: _acceptedTerms,
+              validator: (value) =>
+                  value == true ? null : 'Accept the terms to continue.',
+              builder: (field) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      value: _acceptedTerms,
+                      title: const Text(
+                        'I accept the terms',
+                      ),
+                      onChanged: isLoading
+                          ? null
+                          : (value) {
+                              setState(() => _acceptedTerms = value ?? false);
+                              field.didChange(_acceptedTerms);
+                            },
+                    ),
+                    if (field.hasError)
+                      Padding(
+                        padding: const EdgeInsets.only(left: AppSpacing.sm),
+                        child: Text(
+                          field.errorText!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: AppSpacing.xl),
             AuthSubmitButton(
-              label: 'Create account',
+              label: 'Register',
               isLoading: isLoading,
               onPressed: _submit,
             ),

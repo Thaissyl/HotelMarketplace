@@ -28,9 +28,11 @@ class _StaffManagementTabState extends ConsumerState<StaffManagementTab> {
   final _password = TextEditingController();
   final _fullName = TextEditingController();
   final _phone = TextEditingController();
+  final _search = TextEditingController();
   _StaffEntryMode _mode = _StaffEntryMode.create;
   String _role = UserRoleCode.receptionist.apiValue;
   bool _submitting = false;
+  bool _showEntryForm = false;
   String? _updatingAssignmentId;
 
   @override
@@ -39,6 +41,7 @@ class _StaffManagementTabState extends ConsumerState<StaffManagementTab> {
     _password.dispose();
     _fullName.dispose();
     _phone.dispose();
+    _search.dispose();
     super.dispose();
   }
 
@@ -76,6 +79,7 @@ class _StaffManagementTabState extends ConsumerState<StaffManagementTab> {
       _phone.clear();
       ref.invalidate(hotelStaffProvider(widget.hotelId));
       if (mounted) {
+        setState(() => _showEntryForm = false);
         AppErrorPresenter.showSnackBar(
           context,
           _mode == _StaffEntryMode.create
@@ -168,6 +172,8 @@ class _StaffManagementTabState extends ConsumerState<StaffManagementTab> {
                       },
                     ),
                     const SizedBox(height: AppSpacing.lg),
+                    _PermissionSummary(role: selectedRole),
+                    const SizedBox(height: AppSpacing.lg),
                     FilledButton(
                       onPressed: selectedRole == member.role
                           ? null
@@ -224,30 +230,79 @@ class _StaffManagementTabState extends ConsumerState<StaffManagementTab> {
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: AppSpacing.md),
-          _StaffEntryCard(
-            formKey: _formKey,
-            mode: _mode,
-            email: _email,
-            password: _password,
-            fullName: _fullName,
-            phone: _phone,
-            role: _role,
-            availableRoles: availableRoles,
-            submitting: _submitting,
-            onModeChanged: (value) => setState(() => _mode = value),
-            onRoleChanged: (value) => setState(() => _role = value),
-            onSubmit: _submit,
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => setState(() => _showEntryForm = !_showEntryForm),
+              icon: Icon(
+                _showEntryForm
+                    ? Icons.close_rounded
+                    : Icons.person_add_alt_1_rounded,
+              ),
+              label: Text(
+                _showEntryForm ? 'Close staff form' : 'Invite/Create staff',
+              ),
+            ),
+          ),
+          if (_showEntryForm) ...[
+            const SizedBox(height: AppSpacing.md),
+            _StaffEntryCard(
+              formKey: _formKey,
+              mode: _mode,
+              email: _email,
+              password: _password,
+              fullName: _fullName,
+              phone: _phone,
+              role: _role,
+              availableRoles: availableRoles,
+              submitting: _submitting,
+              onModeChanged: (value) => setState(() => _mode = value),
+              onRoleChanged: (value) => setState(() => _role = value),
+              onSubmit: _submit,
+            ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          Text('Staff list', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.sm),
+          TextField(
+            controller: _search,
+            decoration: InputDecoration(
+              labelText: 'Search staff',
+              hintText: 'Name, email, phone, or role',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _search.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      onPressed: () {
+                        _search.clear();
+                        setState(() {});
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+            ),
+            onChanged: (value) => setState(() {}),
           ),
           const SizedBox(height: AppSpacing.md),
           staff.when(
             data: (items) {
-              if (items.isEmpty) {
+              final query = _search.text.trim().toLowerCase();
+              final filteredItems = items.where((item) {
+                if (query.isEmpty) {
+                  return true;
+                }
+                return '${item.fullName} ${item.email} ${item.phoneNumber ?? ''} '
+                        '${_roleLabel(item.role)} ${item.status}'
+                    .toLowerCase()
+                    .contains(query);
+              }).toList(growable: false);
+              if (filteredItems.isEmpty) {
                 return const _EmptyStaff();
               }
 
               return Column(
                 children: [
-                  for (final item in items)
+                  for (final item in filteredItems)
                     Padding(
                       padding: const EdgeInsets.only(bottom: AppSpacing.md),
                       child: _StaffCard(
@@ -545,6 +600,50 @@ class _StaffCard extends StatelessWidget {
   }
 }
 
+class _PermissionSummary extends StatelessWidget {
+  const _PermissionSummary({required this.role});
+
+  final String role;
+
+  @override
+  Widget build(BuildContext context) {
+    final permissions = _permissionsFor(role);
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        border: Border.all(color: AppColors.outline),
+        borderRadius: BorderRadius.circular(AppRadii.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Permission summary',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          for (final permission in permissions)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+              child: Row(
+                children: [
+                  Icon(permission.$1, size: 20, color: AppColors.brand),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(child: Text(permission.$2)),
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    size: 18,
+                    color: AppColors.success,
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _StaffPill extends StatelessWidget {
   const _StaffPill({required this.label, required this.color});
 
@@ -578,7 +677,7 @@ class _EmptyStaff extends StatelessWidget {
     return const Card(
       child: Padding(
         padding: EdgeInsets.all(AppSpacing.xl),
-        child: Text('No staff accounts are assigned to this hotel yet.'),
+        child: Text('No staff accounts match the current hotel and search.'),
       ),
     );
   }
@@ -617,6 +716,35 @@ String _roleLabel(String role) {
     'HousekeepingStaff' => 'Housekeeping staff',
     'MaintenanceStaff' => 'Maintenance staff',
     _ => role,
+  };
+}
+
+List<(IconData, String)> _permissionsFor(String role) {
+  return switch (role) {
+    'HotelManager' => const [
+        (Icons.dashboard_outlined, 'View hotel dashboard'),
+        (Icons.book_online_outlined, 'Manage bookings and guests'),
+        (Icons.meeting_room_outlined, 'Manage rooms and availability'),
+        (Icons.groups_outlined, 'Manage operational staff'),
+        (Icons.assignment_outlined, 'Manage hotel operations'),
+      ],
+    'Receptionist' => const [
+        (Icons.dashboard_outlined, 'View front desk dashboard'),
+        (Icons.book_online_outlined, 'Manage bookings and guests'),
+        (Icons.login_rounded, 'Check in and check out guests'),
+        (Icons.meeting_room_outlined, 'Assign and temporarily block rooms'),
+      ],
+    'HousekeepingStaff' => const [
+        (Icons.cleaning_services_outlined, 'View assigned cleaning tasks'),
+        (Icons.fact_check_outlined, 'Update cleaning progress'),
+        (Icons.report_problem_outlined, 'Report room issues'),
+      ],
+    'MaintenanceStaff' => const [
+        (Icons.handyman_outlined, 'View assigned maintenance requests'),
+        (Icons.build_outlined, 'Update repair progress'),
+        (Icons.task_alt_outlined, 'Resolve and release eligible rooms'),
+      ],
+    _ => const [(Icons.visibility_outlined, 'View assigned hotel work')],
   };
 }
 

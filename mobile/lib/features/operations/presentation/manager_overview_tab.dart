@@ -13,10 +13,12 @@ class ManagerOverviewTab extends ConsumerWidget {
     super.key,
     required this.hotelId,
     required this.roles,
+    required this.onOpenSection,
   });
 
   final String hotelId;
   final List<String> roles;
+  final ValueChanged<int>? onOpenSection;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -27,6 +29,20 @@ class ManagerOverviewTab extends ConsumerWidget {
     final maintenance = ref.watch(
       maintenanceRequestsProvider(MaintenanceRequestsRequest(hotelId: hotelId)),
     );
+    final roomsRequest = PhysicalRoomsRequest(hotelId: hotelId);
+    final confirmedRequest = FrontDeskBookingsRequest(
+      hotelId: hotelId,
+      status: FrontDeskBookingListStatus.confirmed,
+    );
+    final checkedInRequest = FrontDeskBookingsRequest(
+      hotelId: hotelId,
+      status: FrontDeskBookingListStatus.checkedIn,
+    );
+    final rooms = ref.watch(physicalRoomsProvider(roomsRequest));
+    final confirmedBookings =
+        ref.watch(frontDeskBookingsProvider(confirmedRequest));
+    final checkedInBookings =
+        ref.watch(frontDeskBookingsProvider(checkedInRequest));
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -39,6 +55,9 @@ class ManagerOverviewTab extends ConsumerWidget {
             MaintenanceRequestsRequest(hotelId: hotelId),
           ),
         );
+        ref.invalidate(physicalRoomsProvider(roomsRequest));
+        ref.invalidate(frontDeskBookingsProvider(confirmedRequest));
+        ref.invalidate(frontDeskBookingsProvider(checkedInRequest));
       },
       child: ListView(
         padding: const EdgeInsets.all(AppSpacing.md),
@@ -60,6 +79,20 @@ class ManagerOverviewTab extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           const _SectionTitle(
+            title: 'Hotel summary',
+            subtitle: 'Room capacity, arrivals, revenue, and occupancy.',
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _HotelSummaryBoard(
+            rooms: rooms.asData?.value ?? const [],
+            confirmedBookings: confirmedBookings.asData?.value ?? const [],
+            checkedInBookings: checkedInBookings.asData?.value ?? const [],
+            isLoading: rooms.isLoading ||
+                confirmedBookings.isLoading ||
+                checkedInBookings.isLoading,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          const _SectionTitle(
             title: 'Today at a glance',
             subtitle: 'Operational pressure for the selected hotel.',
           ),
@@ -70,6 +103,11 @@ class ManagerOverviewTab extends ConsumerWidget {
                 data: (maintenanceItems) => _StatusBoard(
                   housekeepingTasks: housekeepingItems,
                   maintenanceRequests: maintenanceItems,
+                  rooms: rooms.asData?.value ?? const [],
+                  bookings: [
+                    ...(confirmedBookings.asData?.value ?? const []),
+                    ...(checkedInBookings.asData?.value ?? const []),
+                  ],
                 ),
                 error: (error, stackTrace) => const _StatusBoardError(),
                 loading: () => const _MetricSkeletonGrid(),
@@ -78,6 +116,8 @@ class ManagerOverviewTab extends ConsumerWidget {
             error: (error, stackTrace) => const _StatusBoardError(),
             loading: () => const _MetricSkeletonGrid(),
           ),
+          const SizedBox(height: AppSpacing.lg),
+          _ManagerNavigationMenu(onOpenSection: onOpenSection),
           const SizedBox(height: AppSpacing.lg),
           const _SectionTitle(
             title: 'Cleaning assignments',
@@ -116,6 +156,141 @@ class ManagerOverviewTab extends ConsumerWidget {
           const _ManagerWorkflowCard(),
         ],
       ),
+    );
+  }
+}
+
+class _HotelSummaryBoard extends StatelessWidget {
+  const _HotelSummaryBoard({
+    required this.rooms,
+    required this.confirmedBookings,
+    required this.checkedInBookings,
+    required this.isLoading,
+  });
+
+  final List<RoomInventoryItem> rooms;
+  final List<FrontDeskBookingSummary> confirmedBookings;
+  final List<FrontDeskBookingSummary> checkedInBookings;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return const _MetricSkeletonGrid();
+    }
+
+    final today = DateUtils.dateOnly(DateTime.now());
+    final todayBookings = confirmedBookings
+        .where((booking) => DateUtils.isSameDay(booking.checkInDate, today))
+        .toList(growable: false);
+    final todayRevenue = [...confirmedBookings, ...checkedInBookings]
+        .where(
+          (booking) =>
+              DateUtils.isSameDay(booking.createdAtUtc.toLocal(), today),
+        )
+        .fold<double>(0, (sum, booking) => sum + booking.totalAmount);
+    final occupiedRooms =
+        rooms.where((room) => room.status == 'Occupied').length;
+    final occupancy =
+        rooms.isEmpty ? 0 : ((occupiedRooms / rooms.length) * 100).round();
+
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: AppSpacing.sm,
+      crossAxisSpacing: AppSpacing.sm,
+      childAspectRatio: 1.35,
+      children: [
+        _StatusTile(
+          title: 'Total rooms',
+          value: rooms.length.toString(),
+          helper: 'Physical rooms in inventory',
+          icon: Icons.bed_rounded,
+          color: AppColors.brand,
+        ),
+        _StatusTile(
+          title: 'Today arrivals',
+          value: todayBookings.length.toString(),
+          helper: 'Confirmed check-ins today',
+          icon: Icons.calendar_today_rounded,
+          color: AppColors.success,
+        ),
+        _StatusTile(
+          title: 'Today revenue',
+          value: _compactMoney(todayRevenue),
+          helper: 'Bookings created today',
+          icon: Icons.payments_outlined,
+          color: AppColors.success,
+        ),
+        _StatusTile(
+          title: 'Occupancy',
+          value: '$occupancy%',
+          helper: '$occupiedRooms of ${rooms.length} rooms',
+          icon: Icons.bar_chart_rounded,
+          color: AppColors.warning,
+        ),
+      ],
+    );
+  }
+
+  String _compactMoney(double amount) {
+    if (amount >= 1000000000) {
+      return '${(amount / 1000000000).toStringAsFixed(1)}B';
+    }
+    if (amount >= 1000000) {
+      return '${(amount / 1000000).toStringAsFixed(1)}M';
+    }
+    if (amount >= 1000) {
+      return '${(amount / 1000).toStringAsFixed(0)}K';
+    }
+    return amount.toStringAsFixed(0);
+  }
+}
+
+class _ManagerNavigationMenu extends StatelessWidget {
+  const _ManagerNavigationMenu({required this.onOpenSection});
+
+  final ValueChanged<int>? onOpenSection;
+
+  @override
+  Widget build(BuildContext context) {
+    const destinations = [
+      ('Hotel profile', Icons.apartment_rounded, 1),
+      ('Availability and rooms', Icons.meeting_room_rounded, 2),
+      ('Front desk', Icons.room_service_rounded, 3),
+      ('Housekeeping', Icons.cleaning_services_rounded, 4),
+      ('Maintenance', Icons.handyman_rounded, 5),
+      ('Staff', Icons.manage_accounts_rounded, 6),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionTitle(
+          title: 'Management menu',
+          subtitle: 'Open a hotel setup or operational workspace.',
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Card(
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (var index = 0; index < destinations.length; index++) ...[
+                ListTile(
+                  leading: Icon(destinations[index].$2),
+                  title: Text(destinations[index].$1),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: onOpenSection == null
+                      ? null
+                      : () => onOpenSection!(destinations[index].$3),
+                ),
+                if (index < destinations.length - 1) const Divider(height: 1),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -221,21 +396,22 @@ class _StatusBoard extends StatelessWidget {
   const _StatusBoard({
     required this.housekeepingTasks,
     required this.maintenanceRequests,
+    required this.rooms,
+    required this.bookings,
   });
 
   final List<HousekeepingTask> housekeepingTasks;
   final List<MaintenanceRequestItem> maintenanceRequests;
+  final List<RoomInventoryItem> rooms;
+  final List<FrontDeskBookingSummary> bookings;
 
   @override
   Widget build(BuildContext context) {
     final waitingCleaning = housekeepingTasks
         .where((task) => task.status == HousekeepingTaskStatus.open.apiValue)
         .length;
-    final inProgressCleaning = housekeepingTasks
-        .where(
-          (task) => task.status == HousekeepingTaskStatus.inProgress.apiValue,
-        )
-        .length;
+    final occupiedRooms =
+        rooms.where((room) => room.status == 'Occupied').length;
     final openMaintenance = maintenanceRequests
         .where((item) => item.status == MaintenanceStatus.open.apiValue)
         .length;
@@ -252,31 +428,32 @@ class _StatusBoard extends StatelessWidget {
       childAspectRatio: 1.35,
       children: [
         _StatusTile(
-          title: 'Waiting clean',
+          title: 'Bookings',
+          value: bookings.length.toString(),
+          helper: 'Confirmed and in-house',
+          icon: Icons.calendar_month_rounded,
+          color: AppColors.brand,
+        ),
+        _StatusTile(
+          title: 'Rooms',
+          value: '$occupiedRooms / ${rooms.length}',
+          helper: 'Occupied',
+          icon: Icons.meeting_room_rounded,
+          color: AppColors.brand,
+        ),
+        _StatusTile(
+          title: 'Housekeeping',
           value: waitingCleaning.toString(),
-          helper: 'Rooms that cannot be sold yet',
+          helper: 'Pending',
           icon: Icons.cleaning_services_rounded,
           color: AppColors.warning,
         ),
         _StatusTile(
-          title: 'Cleaning now',
-          value: inProgressCleaning.toString(),
-          helper: 'Tasks currently handled by staff',
-          icon: Icons.local_laundry_service_rounded,
-          color: AppColors.brand,
-        ),
-        _StatusTile(
-          title: 'Open repairs',
+          title: 'Maintenance',
           value: openMaintenance.toString(),
-          helper: 'Maintenance requests not resolved',
+          helper:
+              urgentMaintenance == 0 ? 'Open' : '$urgentMaintenance critical',
           icon: Icons.handyman_rounded,
-          color: AppColors.danger,
-        ),
-        _StatusTile(
-          title: 'Critical',
-          value: urgentMaintenance.toString(),
-          helper: 'High-priority room blockers',
-          icon: Icons.priority_high_rounded,
           color: AppColors.danger,
         ),
       ],

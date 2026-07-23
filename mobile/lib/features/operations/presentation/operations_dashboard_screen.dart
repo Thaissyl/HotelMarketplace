@@ -18,14 +18,23 @@ import 'owner_property_tab.dart';
 import 'staff_management_tab.dart';
 import 'widgets/hotel_scope_selector.dart';
 
-class OperationsDashboardScreen extends ConsumerWidget {
+class OperationsDashboardScreen extends ConsumerStatefulWidget {
   const OperationsDashboardScreen({super.key});
 
   static const String routeName = 'operations';
   static const String routePath = '/operations';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<OperationsDashboardScreen> createState() =>
+      _OperationsDashboardScreenState();
+}
+
+class _OperationsDashboardScreenState
+    extends ConsumerState<OperationsDashboardScreen> {
+  int _selectedSectionIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
     final selectedHotelState = ref.watch(selectedHotelControllerProvider);
     final userSession = ref.watch(authControllerProvider).userSession;
     final hotelIds = userSession?.hotelIds ?? const [];
@@ -36,7 +45,6 @@ class OperationsDashboardScreen extends ConsumerWidget {
     final canUseCustomerMarketplace =
         roles.contains(UserRoleCode.customer.apiValue);
     final isPropertyOwner = roles.contains(UserRoleCode.propertyOwner.apiValue);
-
     if (sections.isEmpty) {
       return Scaffold(
         appBar: AppBar(
@@ -60,82 +68,110 @@ class OperationsDashboardScreen extends ConsumerWidget {
       );
     }
 
-    return DefaultTabController(
-      length: sections.length,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(_workspaceTitle(roles)),
-          automaticallyImplyLeading: canUseCustomerMarketplace,
-          leading: canUseCustomerMarketplace
-              ? IconButton(
-                  tooltip: 'Back',
-                  onPressed: () {
-                    if (context.canPop()) {
-                      context.pop();
-                      return;
-                    }
+    if (_selectedSectionIndex >= sections.length) {
+      _selectedSectionIndex = 0;
+    }
+    final selectedSection = sections[_selectedSectionIndex];
+    final canReturnToOverview = sections.first == _OperationSection.overview &&
+        selectedSection != _OperationSection.overview;
 
-                    context.go(MarketplaceScreen.routePath);
-                  },
-                  icon: const Icon(Icons.arrow_back_rounded),
-                )
-              : null,
-          actions: [
-            IconButton(
-              tooltip: 'Account settings',
-              onPressed: () => context.push(AccountSettingsScreen.routePath),
-              icon: const Icon(Icons.manage_accounts_rounded),
-            ),
-            IconButton(
-              tooltip: 'Sign out',
-              onPressed: () {
-                ref.read(authControllerProvider.notifier).logout();
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          selectedSection == _OperationSection.overview
+              ? _workspaceTitle(roles)
+              : selectedSection.screenTitle,
+        ),
+        automaticallyImplyLeading:
+            canReturnToOverview || canUseCustomerMarketplace,
+        leading: canReturnToOverview
+            ? IconButton(
+                tooltip: 'Back to dashboard',
+                onPressed: () => setState(() => _selectedSectionIndex = 0),
+                icon: const Icon(Icons.arrow_back_rounded),
+              )
+            : canUseCustomerMarketplace
+                ? IconButton(
+                    tooltip: 'Back',
+                    onPressed: () {
+                      if (context.canPop()) {
+                        context.pop();
+                        return;
+                      }
+                      context.go(MarketplaceScreen.routePath);
+                    },
+                    icon: const Icon(Icons.arrow_back_rounded),
+                  )
+                : null,
+        actions: [
+          if (sections.length > 1)
+            PopupMenuButton<int>(
+              tooltip: 'Open workspace',
+              onSelected: (index) {
+                setState(() => _selectedSectionIndex = index);
               },
-              icon: const Icon(Icons.logout_rounded),
+              itemBuilder: (context) => [
+                for (var index = 0; index < sections.length; index++)
+                  PopupMenuItem<int>(
+                    value: index,
+                    child: Row(
+                      children: [
+                        Icon(sections[index].icon, size: 20),
+                        const SizedBox(width: AppSpacing.sm),
+                        Text(sections[index].label),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          IconButton(
+            tooltip: 'Account settings',
+            onPressed: () => context.push(AccountSettingsScreen.routePath),
+            icon: const Icon(Icons.manage_accounts_rounded),
+          ),
+          IconButton(
+            tooltip: 'Sign out',
+            onPressed: () {
+              ref.read(authControllerProvider.notifier).logout();
+            },
+            icon: const Icon(Icons.logout_rounded),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(AppSpacing.md),
+              child: HotelScopeSelector(),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: selectedHotelId == null
+                  ? isPropertyOwner
+                      ? const OwnerHotelOnboarding()
+                      : const _NoHotelScope()
+                  : KeyedSubtree(
+                      key: ValueKey(
+                        '${selectedSection.name}-$selectedHotelId',
+                      ),
+                      child: selectedSection == _OperationSection.overview
+                          ? ManagerOverviewTab(
+                              hotelId: selectedHotelId,
+                              roles: roles,
+                              onOpenSection: (sectionIndex) {
+                                if (sectionIndex >= 0 &&
+                                    sectionIndex < sections.length) {
+                                  setState(
+                                    () => _selectedSectionIndex = sectionIndex,
+                                  );
+                                }
+                              },
+                            )
+                          : selectedSection.buildTab(selectedHotelId, roles),
+                    ),
             ),
           ],
-          bottom: sections.length == 1
-              ? null
-              : TabBar(
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  tabs: [
-                    for (final section in sections)
-                      Tab(icon: Icon(section.icon), text: section.label),
-                  ],
-                ),
-        ),
-        body: SafeArea(
-          child: Column(
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(AppSpacing.md),
-                child: HotelScopeSelector(),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: selectedHotelId == null
-                    ? isPropertyOwner
-                        ? const OwnerHotelOnboarding()
-                        : const _NoHotelScope()
-                    : sections.length == 1
-                        ? KeyedSubtree(
-                            key: ValueKey(
-                              '${sections.first.name}-$selectedHotelId',
-                            ),
-                            child: sections.first.buildTab(
-                              selectedHotelId,
-                              roles,
-                            ),
-                          )
-                        : _OperationTabBody(
-                            hotelId: selectedHotelId,
-                            sections: sections,
-                            roles: roles,
-                          ),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -204,6 +240,16 @@ enum _OperationSection {
   final String label;
   final IconData icon;
 
+  String get screenTitle => switch (this) {
+        overview => 'Owner/Manager Dashboard',
+        frontDesk => 'Front Desk Dashboard',
+        availability => 'Availability Calendar',
+        housekeeping => 'Housekeeping Dashboard',
+        maintenance => 'Maintenance Requests',
+        staff => 'Staff Management',
+        property => 'Hotel Profile Management',
+      };
+
   static List<_OperationSection> visibleFor(List<String> roles) {
     final hasAllHotelOperations = roles.any((role) {
       return role == UserRoleCode.propertyOwner.apiValue ||
@@ -237,6 +283,7 @@ enum _OperationSection {
       _OperationSection.overview => ManagerOverviewTab(
           hotelId: hotelId,
           roles: roles,
+          onOpenSection: null,
         ),
       _OperationSection.frontDesk => FrontDeskTab(hotelId: hotelId),
       _OperationSection.availability => AvailabilityCalendarTab(
@@ -248,70 +295,6 @@ enum _OperationSection {
       _OperationSection.staff => StaffManagementTab(hotelId: hotelId),
       _OperationSection.property => OwnerPropertyTab(hotelId: hotelId),
     };
-  }
-}
-
-class _OperationTabBody extends StatefulWidget {
-  const _OperationTabBody({
-    required this.hotelId,
-    required this.sections,
-    required this.roles,
-  });
-
-  final String hotelId;
-  final List<_OperationSection> sections;
-  final List<String> roles;
-
-  @override
-  State<_OperationTabBody> createState() => _OperationTabBodyState();
-}
-
-class _OperationTabBodyState extends State<_OperationTabBody> {
-  TabController? _tabController;
-  int _selectedIndex = 0;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final nextController = DefaultTabController.of(context);
-    if (identical(_tabController, nextController)) {
-      return;
-    }
-
-    _tabController?.removeListener(_handleTabChanged);
-    _tabController = nextController;
-    _selectedIndex = nextController.index;
-    nextController.addListener(_handleTabChanged);
-  }
-
-  @override
-  void didUpdateWidget(covariant _OperationTabBody oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_selectedIndex >= widget.sections.length) {
-      _selectedIndex = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _tabController?.removeListener(_handleTabChanged);
-    super.dispose();
-  }
-
-  void _handleTabChanged() {
-    final nextIndex = _tabController?.index ?? 0;
-    if (mounted && nextIndex != _selectedIndex) {
-      setState(() => _selectedIndex = nextIndex);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final section = widget.sections[_selectedIndex];
-    return KeyedSubtree(
-      key: ValueKey('${section.name}-${widget.hotelId}'),
-      child: section.buildTab(widget.hotelId, widget.roles),
-    );
   }
 }
 

@@ -8,6 +8,7 @@ import '../../../app/theme/app_spacing.dart';
 import '../../../features/auth/application/auth_controller.dart';
 import '../../../features/auth/presentation/auth_form_validators.dart';
 import '../../../features/customer/application/customer_state.dart';
+import '../../../features/customer/application/customer_account_providers.dart';
 import '../../../shared/utils/app_formatters.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
 import '../../../shared/widgets/app_text_form_field.dart';
@@ -46,6 +47,17 @@ class _BookingConfirmationScreenState
     _guestNameController = TextEditingController(
       text: session?.email.split('@').first.replaceAll('.', ' ') ?? '',
     );
+    Future<void>.microtask(() async {
+      try {
+        final profile = await ref.read(customerProfileProvider.future);
+        if (mounted) {
+          _guestNameController.text = profile.fullName;
+          _guestPhoneController.text = profile.phoneNumber ?? '';
+        }
+      } catch (_) {
+        // The form remains editable when profile prefill is unavailable.
+      }
+    });
   }
 
   @override
@@ -90,7 +102,12 @@ class _BookingConfirmationScreenState
 
     ref.read(customerStateProvider.notifier).addBooking(booking);
 
-    if (booking.paymentMode == 'PlatformCollect') {
+    final payNow = await _showBookingConfirmation(booking);
+    if (!mounted) {
+      return;
+    }
+
+    if (payNow == true && booking.paymentMode == 'PlatformCollect') {
       context.push(
         PendingPaymentScreen.pathFor(booking.id),
         extra: booking,
@@ -98,25 +115,56 @@ class _BookingConfirmationScreenState
       return;
     }
 
-    await showDialog<void>(
+    context.go('/customer');
+  }
+
+  Future<bool?> _showBookingConfirmation(Booking booking) {
+    final pendingPayment = booking.paymentMode == 'PlatformCollect';
+    return showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Reservation confirmed'),
-        content: Text(
-          'Booking ${booking.bookingCode} is confirmed. Pay ${AppFormatters.money(booking.totalAmount)} at the property.',
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Continue'),
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Booking confirmation'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _SummaryRow(label: 'Booking code', value: booking.bookingCode),
+              _SummaryRow(
+                label: 'Booking status',
+                value: pendingPayment ? 'Pending payment' : 'Confirmed',
+              ),
+              _SummaryRow(
+                label: 'Payment mode',
+                value: pendingPayment ? 'Platform Collect' : 'Pay at property',
+              ),
+              _SummaryRow(
+                label: 'Room price amount',
+                value: AppFormatters.money(booking.totalAmount),
+              ),
+              if (booking.paymentExpiresAtUtc != null)
+                _SummaryRow(
+                  label: 'Payment deadline',
+                  value: AppFormatters.displayDate(
+                    booking.paymentExpiresAtUtc!,
+                  ),
+                ),
+            ],
           ),
-        ],
-      ),
+          actions: [
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('View booking'),
+            ),
+            if (pendingPayment)
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Pay now'),
+              ),
+          ],
+        );
+      },
     );
-    if (mounted) {
-      context.go('/customer');
-    }
   }
 
   @override
@@ -127,7 +175,7 @@ class _BookingConfirmationScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Confirm booking'),
+        title: const Text('Booking form'),
       ),
       body: SafeArea(
         child: ListView(
@@ -143,7 +191,7 @@ class _BookingConfirmationScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Payment option',
+                      'Payment mode',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: AppSpacing.sm),
@@ -152,12 +200,12 @@ class _BookingConfirmationScreenState
                         ButtonSegment(
                           value: 'PlatformCollect',
                           icon: Icon(Icons.science_outlined),
-                          label: Text('Demo now'),
+                          label: Text('Platform Collect'),
                         ),
                         ButtonSegment(
                           value: 'PayAtProperty',
                           icon: Icon(Icons.hotel_outlined),
-                          label: Text('At property'),
+                          label: Text('Pay at property'),
                         ),
                       ],
                       selected: {_paymentMode},
@@ -189,7 +237,7 @@ class _BookingConfirmationScreenState
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        'Guest information',
+                        'Contact information',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: AppSpacing.md),
@@ -197,7 +245,7 @@ class _BookingConfirmationScreenState
                         controller: _guestNameController,
                         textInputAction: TextInputAction.next,
                         validator: AuthFormValidators.fullName,
-                        labelText: 'Guest full name',
+                        labelText: 'Contact name',
                         prefixIcon: const Icon(Icons.person_outline_rounded),
                       ),
                       const SizedBox(height: AppSpacing.md),
@@ -216,13 +264,26 @@ class _BookingConfirmationScreenState
                           }
 
                           if ((value ?? '').trim().isEmpty) {
-                            return 'Guest phone is required.';
+                            return 'Contact phone is required.';
                           }
 
                           return null;
                         },
-                        labelText: 'Guest phone',
+                        labelText: 'Contact phone',
                         prefixIcon: const Icon(Icons.phone_outlined),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Contact email',
+                        ),
+                        child: Text(
+                          ref
+                                  .watch(authControllerProvider)
+                                  .userSession
+                                  ?.email ??
+                              '',
+                        ),
                       ),
                       const SizedBox(height: AppSpacing.xl),
                       FilledButton(
@@ -239,7 +300,7 @@ class _BookingConfirmationScreenState
                                   ),
                                 )
                               : const Text(
-                                  'Confirm reservation',
+                                  'Confirm booking',
                                   key: ValueKey('label'),
                                 ),
                         ),

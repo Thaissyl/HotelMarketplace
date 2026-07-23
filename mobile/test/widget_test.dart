@@ -36,7 +36,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1200));
     await tester.pumpAndSettle();
 
-    expect(find.text('Find stays'), findsOneWidget);
+    expect(find.text('Home / Search Screen'), findsOneWidget);
     expect(find.text('Sign in'), findsOneWidget);
   });
 

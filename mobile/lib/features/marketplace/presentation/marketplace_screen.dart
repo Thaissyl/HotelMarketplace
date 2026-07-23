@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -50,10 +48,10 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
 
   late final TextEditingController _locationController;
   late HotelSearchQuery _draftQuery;
-  Timer? _searchDebounce;
   int _pageIndex = 0;
   String? _selectedCity;
   _HotelSortOption _sortOption = _HotelSortOption.recommended;
+  bool _showSearchResults = false;
 
   @override
   void initState() {
@@ -67,21 +65,18 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
 
   @override
   void dispose() {
-    _searchDebounce?.cancel();
     _locationController.removeListener(_scheduleLocationSearch);
     _locationController.dispose();
     super.dispose();
   }
 
   void _scheduleLocationSearch() {
-    final query = ref.read(hotelSearchQueryProvider);
+    final query = _draftQuery;
     if (_locationController.text.trim() == query.location.trim()) {
       return;
     }
 
-    _setSearchQueryDebounced(
-      query.copyWith(location: _locationController.text),
-    );
+    _updateDraftQuery(query.copyWith(location: _locationController.text));
   }
 
   Future<void> _pickDateRange(HotelSearchQuery query) async {
@@ -111,7 +106,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       return;
     }
 
-    _setSearchQueryDebounced(
+    _updateDraftQuery(
       _draftQuery.copyWith(
         checkInDate: picked.start,
         checkOutDate: picked.end,
@@ -122,21 +117,14 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
   void _applySearch(HotelSearchQuery query) {
     FocusScope.of(context).unfocus();
     _setSearchQuery(query.copyWith(location: _locationController.text));
+    setState(() => _showSearchResults = true);
   }
 
-  void _setSearchQueryDebounced(HotelSearchQuery query) {
-    _searchDebounce?.cancel();
+  void _updateDraftQuery(HotelSearchQuery query) {
     setState(() {
       _draftQuery = query;
       _pageIndex = 0;
       _selectedCity = null;
-    });
-    _searchDebounce = Timer(const Duration(milliseconds: 420), () {
-      if (!mounted) {
-        return;
-      }
-
-      _setSearchQuery(query);
     });
   }
 
@@ -198,7 +186,20 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
     return Scaffold(
       appBar: widget.showAppBar
           ? AppBar(
-              title: const Text('Find stays'),
+              title: Text(
+                _showSearchResults
+                    ? 'Hotel Search Result Screen'
+                    : 'Home / Search Screen',
+              ),
+              leading: _showSearchResults
+                  ? IconButton(
+                      tooltip: 'Back to search',
+                      onPressed: () {
+                        setState(() => _showSearchResults = false);
+                      },
+                      icon: const Icon(Icons.arrow_back_rounded),
+                    )
+                  : null,
               actions: [
                 if (canOpenOperations)
                   IconButton(
@@ -242,77 +243,104 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
             key: const PageStorageKey<String>('marketplace-search-list'),
             padding: const EdgeInsets.all(AppSpacing.xl),
             children: [
-              _SearchPanel(
-                query: _draftQuery,
-                locationController: _locationController,
-                onPickDates: () => _pickDateRange(_draftQuery),
-                onApplySearch: () => _applySearch(query),
-                onGuestChanged: (value) {
-                  _setSearchQueryDebounced(
-                    _draftQuery.copyWith(guestCount: value),
-                  );
-                },
-                onRoomChanged: (value) {
-                  _setSearchQueryDebounced(
-                    _draftQuery.copyWith(roomCount: value),
-                  );
-                },
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              results.when(
-                data: (hotels) {
-                  if (hotels.isEmpty) {
-                    return const _EmptySearchResult();
-                  }
-
-                  return _HotelResultPagedList(
-                    hotels: hotels,
-                    query: query,
-                    pageIndex: _pageIndex,
-                    pageSize: _pageSize,
-                    selectedCity: _selectedCity,
-                    sortOption: _sortOption,
-                    onPageChanged: _goToPage,
-                    onCityChanged: _setCityFilter,
-                    onSortChanged: _setSortOption,
-                    onToggleSaved: (hotel) async {
-                      if (session == null) {
-                        context.push(LoginScreen.routePath);
-                        return;
-                      }
-                      if (!roles.contains(UserRoleCode.customer.apiValue)) {
-                        AppErrorPresenter.showSnackBar(
-                          context,
-                          'Saved hotels are available for customer accounts.',
-                        );
-                        return;
-                      }
-                      try {
-                        await ref
-                            .read(customerStateProvider.notifier)
-                            .toggleSavedHotel(hotel);
-                      } catch (error) {
-                        if (context.mounted) {
-                          AppErrorPresenter.showSnackBar(context, error);
-                        }
-                      }
-                    },
-                    isSaved: (hotelId) {
-                      return ref
-                          .watch(customerStateProvider)
-                          .savedHotels
-                          .any((hotel) => hotel.id == hotelId);
-                    },
-                  );
-                },
-                error: (error, stackTrace) => _ErrorPanel(
-                  error: error,
-                  onRetry: () {
-                    ref.invalidate(hotelSearchResultsProvider(query));
+              if (!_showSearchResults)
+                _SearchPanel(
+                  query: _draftQuery,
+                  locationController: _locationController,
+                  onPickDates: () => _pickDateRange(_draftQuery),
+                  onApplySearch: () => _applySearch(_draftQuery),
+                  onGuestChanged: (value) {
+                    _updateDraftQuery(
+                      _draftQuery.copyWith(guestCount: value),
+                    );
                   },
+                  onRoomChanged: (value) {
+                    _updateDraftQuery(
+                      _draftQuery.copyWith(roomCount: value),
+                    );
+                  },
+                )
+              else ...[
+                if (!widget.showAppBar)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        setState(() => _showSearchResults = false);
+                      },
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      label: const Text('Back to search'),
+                    ),
+                  ),
+                if (!widget.showAppBar) const SizedBox(height: AppSpacing.sm),
+                results.when(
+                  data: (hotels) {
+                    if (hotels.isEmpty) {
+                      return Column(
+                        children: [
+                          _SearchCriteriaSummary(query: query),
+                          const SizedBox(height: AppSpacing.md),
+                          const _EmptySearchResult(),
+                        ],
+                      );
+                    }
+
+                    return Column(
+                      children: [
+                        _SearchCriteriaSummary(query: query),
+                        const SizedBox(height: AppSpacing.md),
+                        _HotelResultPagedList(
+                          hotels: hotels,
+                          query: query,
+                          pageIndex: _pageIndex,
+                          pageSize: _pageSize,
+                          selectedCity: _selectedCity,
+                          sortOption: _sortOption,
+                          onPageChanged: _goToPage,
+                          onCityChanged: _setCityFilter,
+                          onSortChanged: _setSortOption,
+                          onToggleSaved: (hotel) async {
+                            if (session == null) {
+                              context.push(LoginScreen.routePath);
+                              return;
+                            }
+                            if (!roles
+                                .contains(UserRoleCode.customer.apiValue)) {
+                              AppErrorPresenter.showSnackBar(
+                                context,
+                                'Saved hotels are available for customer accounts.',
+                              );
+                              return;
+                            }
+                            try {
+                              await ref
+                                  .read(customerStateProvider.notifier)
+                                  .toggleSavedHotel(hotel);
+                            } catch (error) {
+                              if (context.mounted) {
+                                AppErrorPresenter.showSnackBar(context, error);
+                              }
+                            }
+                          },
+                          isSaved: (hotelId) {
+                            return ref
+                                .watch(customerStateProvider)
+                                .savedHotels
+                                .any((hotel) => hotel.id == hotelId);
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                  error: (error, stackTrace) => _ErrorPanel(
+                    error: error,
+                    onRetry: () {
+                      ref.invalidate(hotelSearchResultsProvider(query));
+                    },
+                  ),
+                  loading: () => const HotelCardSkeletonList(),
                 ),
-                loading: () => const HotelCardSkeletonList(),
-              ),
+              ],
             ],
           ),
         ),
@@ -605,7 +633,7 @@ class _HotelResultControls extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Refine results',
+                    'Filter panel',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
@@ -693,59 +721,123 @@ class _SearchPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppTextFormField(
+          controller: locationController,
+          textInputAction: TextInputAction.search,
+          onFieldSubmitted: (_) => onApplySearch(),
+          labelText: 'Destination',
+          hintText: 'City or destination',
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        _DateFieldButton(
+          label: 'Check-in Date',
+          value: AppFormatters.displayDate(query.checkInDate),
+          onPressed: onPickDates,
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        _DateFieldButton(
+          label: 'Check-out Date',
+          value: AppFormatters.displayDate(query.checkOutDate),
+          onPressed: onPickDates,
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        QuantityStepper(
+          label: 'Guest Count',
+          value: query.guestCount,
+          minimum: 1,
+          maximum: 30,
+          onChanged: onGuestChanged,
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        QuantityStepper(
+          label: 'Room Quantity',
+          value: query.roomCount,
+          minimum: 1,
+          maximum: 10,
+          onChanged: onRoomChanged,
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: onApplySearch,
+            child: const Text('Search'),
+          ),
+        ),
+      ],
+    );
+  }
+}
 
+class _SearchCriteriaSummary extends StatelessWidget {
+  const _SearchCriteriaSummary({required this.query});
+
+  final HotelSearchQuery query;
+
+  @override
+  Widget build(BuildContext context) {
+    final destination =
+        query.location.trim().isEmpty ? 'All destinations' : query.location;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Where to next?', style: textTheme.headlineSmall),
-            const SizedBox(height: AppSpacing.xs),
             Text(
-              'Search approved hotels. Guests and rooms update automatically.',
-              style: textTheme.bodyMedium,
+              'Search criteria summary',
+              style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: AppSpacing.xl),
-            AppTextFormField(
-              controller: locationController,
-              textInputAction: TextInputAction.search,
-              onFieldSubmitted: (_) => onApplySearch(),
-              labelText: 'Destination',
-              hintText: 'City or area',
-              prefixIcon: const Icon(Icons.search_rounded),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            OutlinedButton.icon(
-              onPressed: onPickDates,
-              icon: const Icon(Icons.calendar_month_rounded),
-              label: Text(
-                '${AppFormatters.displayDate(query.checkInDate)} - ${AppFormatters.displayDate(query.checkOutDate)}',
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            QuantityStepper(
-              label: 'Guests',
-              value: query.guestCount,
-              minimum: 1,
-              maximum: 30,
-              onChanged: onGuestChanged,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            QuantityStepper(
-              label: 'Rooms',
-              value: query.roomCount,
-              minimum: 1,
-              maximum: 10,
-              onChanged: onRoomChanged,
-            ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.sm),
+            Text(destination),
+            const SizedBox(height: AppSpacing.xxs),
             Text(
-              'Type a destination or adjust dates, guests, and rooms to refresh results.',
-              style: Theme.of(context).textTheme.bodySmall,
+              '${AppFormatters.displayDate(query.checkInDate)} - '
+              '${AppFormatters.displayDate(query.checkOutDate)} | '
+              '${query.guestCount} guest${query.guestCount == 1 ? '' : 's'} | '
+              '${query.roomCount} room${query.roomCount == 1 ? '' : 's'}',
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DateFieldButton extends StatelessWidget {
+  const _DateFieldButton({
+    required this.label,
+    required this.value,
+    required this.onPressed,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '$label, $value',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        onTap: onPressed,
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: label,
+            suffixIcon: const Icon(Icons.calendar_month_rounded),
+          ),
+          child: Text(
+            value,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
         ),
       ),
     );
