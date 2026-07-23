@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/theme/app_colors.dart';
-import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
-import '../../../shared/widgets/app_text_form_field.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../auth/domain/auth_models.dart';
 import '../application/operations_providers.dart';
 import '../domain/operations_models.dart';
+import 'front_desk_components.dart';
+import 'staff_components.dart';
+import 'staff_entry_screen.dart';
+import 'staff_role_assignment_screen.dart';
 
 class StaffManagementTab extends ConsumerStatefulWidget {
   const StaffManagementTab({super.key, required this.hotelId});
@@ -20,103 +21,74 @@ class StaffManagementTab extends ConsumerStatefulWidget {
   ConsumerState<StaffManagementTab> createState() => _StaffManagementTabState();
 }
 
-enum _StaffEntryMode { create, attach }
-
 class _StaffManagementTabState extends ConsumerState<StaffManagementTab> {
-  final _formKey = GlobalKey<FormState>();
-  final _email = TextEditingController();
-  final _password = TextEditingController();
-  final _fullName = TextEditingController();
-  final _phone = TextEditingController();
-  final _search = TextEditingController();
-  _StaffEntryMode _mode = _StaffEntryMode.create;
-  String _role = UserRoleCode.receptionist.apiValue;
-  bool _submitting = false;
-  bool _showEntryForm = false;
   String? _updatingAssignmentId;
 
-  @override
-  void dispose() {
-    _email.dispose();
-    _password.dispose();
-    _fullName.dispose();
-    _phone.dispose();
-    _search.dispose();
-    super.dispose();
+  Future<void> _refresh() async {
+    ref.invalidate(hotelStaffProvider(widget.hotelId));
   }
 
-  Future<void> _submit() async {
-    if (!(_formKey.currentState?.validate() ?? false)) {
-      return;
-    }
-
-    setState(() => _submitting = true);
-    try {
-      if (_mode == _StaffEntryMode.create) {
-        await ref.read(operationsApiProvider).createStaff(
-              hotelId: widget.hotelId,
-              request: CreateStaffRequest(
-                email: _email.text,
-                password: _password.text,
-                fullName: _fullName.text,
-                phoneNumber: _phone.text,
-                role: _role,
-              ),
-            );
-      } else {
-        await ref.read(operationsApiProvider).attachStaff(
-              hotelId: widget.hotelId,
-              request: AttachStaffRequest(
-                email: _email.text,
-                role: _role,
-              ),
-            );
-      }
-
-      _email.clear();
-      _password.clear();
-      _fullName.clear();
-      _phone.clear();
-      ref.invalidate(hotelStaffProvider(widget.hotelId));
-      if (mounted) {
-        setState(() => _showEntryForm = false);
-        AppErrorPresenter.showSnackBar(
-          context,
-          _mode == _StaffEntryMode.create
-              ? 'Staff account created and assigned.'
-              : 'Existing account assigned to this hotel.',
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        await AppErrorPresenter.showBottomSheet(context, error);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _submitting = false);
-      }
+  Future<void> _openStaffEntry(
+    List<String> availableRoles,
+  ) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => StaffEntryScreen(
+          hotelId: widget.hotelId,
+          availableRoles: availableRoles,
+        ),
+      ),
+    );
+    if (changed == true && mounted) {
+      await _refresh();
     }
   }
 
-  Future<void> _updateAssignment(
+  Future<void> _openRoleAssignment({
+    required HotelStaffMember member,
+    required List<HotelStaffMember> staff,
+    required List<String> availableRoles,
+  }) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => StaffRoleAssignmentScreen(
+          currentHotelId: widget.hotelId,
+          staffMembers: staff,
+          initialStaffMember: member,
+          availableRoles: availableRoles,
+        ),
+      ),
+    );
+    if (changed == true && mounted) {
+      await _refresh();
+    }
+  }
+
+  Future<void> _setAssignmentActive(
     HotelStaffMember member,
-    UpdateStaffAssignmentRequest request,
-    String successMessage,
+    bool active,
   ) async {
     setState(() => _updatingAssignmentId = member.assignmentId);
     try {
       await ref.read(operationsApiProvider).updateStaffAssignment(
             hotelId: widget.hotelId,
             assignmentId: member.assignmentId,
-            request: request,
+            request: UpdateStaffAssignmentRequest(isActive: active),
           );
-      ref.invalidate(hotelStaffProvider(widget.hotelId));
+      await _refresh();
       if (mounted) {
-        AppErrorPresenter.showSnackBar(context, successMessage);
+        AppErrorPresenter.showSnackBar(
+          context,
+          active ? 'Hotel access activated.' : 'Hotel access deactivated.',
+        );
       }
     } catch (error) {
       if (mounted) {
-        await AppErrorPresenter.showBottomSheet(context, error);
+        await AppErrorPresenter.showBottomSheet(
+          context,
+          error,
+          title: 'Staff status not updated',
+        );
       }
     } finally {
       if (mounted) {
@@ -125,627 +97,279 @@ class _StaffManagementTabState extends ConsumerState<StaffManagementTab> {
     }
   }
 
-  Future<void> _chooseRole(
-    HotelStaffMember member,
-    List<String> availableRoles,
-  ) async {
-    String selectedRole = member.role;
-    final result = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  AppSpacing.sm,
-                  AppSpacing.lg,
-                  AppSpacing.xl,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Change hotel role',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text('Update access for ${member.fullName}.'),
-                    const SizedBox(height: AppSpacing.lg),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedRole,
-                      decoration: const InputDecoration(labelText: 'Role'),
-                      items: [
-                        for (final role in availableRoles)
-                          DropdownMenuItem(
-                            value: role,
-                            child: Text(_roleLabel(role)),
-                          ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setModalState(() => selectedRole = value);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    _PermissionSummary(role: selectedRole),
-                    const SizedBox(height: AppSpacing.lg),
-                    FilledButton(
-                      onPressed: selectedRole == member.role
-                          ? null
-                          : () => Navigator.of(context).pop(selectedRole),
-                      child: const Text('Save role'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    if (result != null && mounted) {
-      await _updateAssignment(
-        member,
-        UpdateStaffAssignmentRequest(role: result),
-        'Hotel role updated.',
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(authControllerProvider).userSession;
-    final isOwner = session?.roles.contains(
-          UserRoleCode.propertyOwner.apiValue,
-        ) ??
-        false;
-    final availableRoles = <String>[
-      if (isOwner) UserRoleCode.hotelManager.apiValue,
-      UserRoleCode.receptionist.apiValue,
-      UserRoleCode.housekeepingStaff.apiValue,
-      UserRoleCode.maintenanceStaff.apiValue,
-    ];
-    if (!availableRoles.contains(_role)) {
-      _role = UserRoleCode.receptionist.apiValue;
-    }
-    final staff = ref.watch(hotelStaffProvider(widget.hotelId));
+    final isPropertyOwner =
+        session?.roles.contains(UserRoleCode.propertyOwner.apiValue) ?? false;
+    final roles = availableHotelStaffRoles(
+      isPropertyOwner: isPropertyOwner,
+    );
+    final staffState = ref.watch(hotelStaffProvider(widget.hotelId));
 
     return RefreshIndicator(
-      onRefresh: () async => ref.invalidate(hotelStaffProvider(widget.hotelId)),
+      onRefresh: _refresh,
       child: ListView(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
-          Text('Staff access', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            isOwner
-                ? 'Create or attach accounts, assign hotel roles, and control access.'
-                : 'Manage operational staff assigned to your working hotel.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: AppSpacing.md),
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: () => setState(() => _showEntryForm = !_showEntryForm),
-              icon: Icon(
-                _showEntryForm
-                    ? Icons.close_rounded
-                    : Icons.person_add_alt_1_rounded,
-              ),
-              label: Text(
-                _showEntryForm ? 'Close staff form' : 'Invite/Create staff',
-              ),
+              onPressed: () => _openStaffEntry(roles),
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+              label: const Text('Invite/Create Staff'),
             ),
           ),
-          if (_showEntryForm) ...[
-            const SizedBox(height: AppSpacing.md),
-            _StaffEntryCard(
-              formKey: _formKey,
-              mode: _mode,
-              email: _email,
-              password: _password,
-              fullName: _fullName,
-              phone: _phone,
-              role: _role,
-              availableRoles: availableRoles,
-              submitting: _submitting,
-              onModeChanged: (value) => setState(() => _mode = value),
-              onRoleChanged: (value) => setState(() => _role = value),
-              onSubmit: _submit,
-            ),
-          ],
+          const SizedBox(height: AppSpacing.xl),
+          Text('Staff List', style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: AppSpacing.md),
-          Text('Staff list', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: AppSpacing.sm),
-          TextField(
-            controller: _search,
-            decoration: InputDecoration(
-              labelText: 'Search staff',
-              hintText: 'Name, email, phone, or role',
-              prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: _search.text.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: 'Clear search',
-                      onPressed: () {
-                        _search.clear();
-                        setState(() {});
-                      },
-                      icon: const Icon(Icons.close_rounded),
-                    ),
+          staffState.when(
+            loading: () => const FrontDeskLoadingState(),
+            error: (error, stackTrace) => FrontDeskErrorState(
+              error: error,
+              title: 'Unable to load staff accounts',
+              onRetry: _refresh,
             ),
-            onChanged: (value) => setState(() {}),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          staff.when(
-            data: (items) {
-              final query = _search.text.trim().toLowerCase();
-              final filteredItems = items.where((item) {
-                if (query.isEmpty) {
-                  return true;
-                }
-                return '${item.fullName} ${item.email} ${item.phoneNumber ?? ''} '
-                        '${_roleLabel(item.role)} ${item.status}'
-                    .toLowerCase()
-                    .contains(query);
-              }).toList(growable: false);
-              if (filteredItems.isEmpty) {
-                return const _EmptyStaff();
+            data: (staff) {
+              if (staff.isEmpty) {
+                return const FrontDeskEmptyState(
+                  title: 'No staff assigned',
+                  message: 'Invite or attach a staff account to this hotel.',
+                );
               }
-
-              return Column(
-                children: [
-                  for (final item in filteredItems)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                      child: _StaffCard(
-                        member: item,
-                        busy: _updatingAssignmentId == item.assignmentId,
-                        canManage: isOwner ||
-                            (item.role != UserRoleCode.hotelManager.apiValue &&
-                                item.userAccountId != session?.userId),
-                        availableRoles: availableRoles,
-                        onChangeRole: () => _chooseRole(item, availableRoles),
-                        onToggleAccess: () => _updateAssignment(
-                          item,
-                          UpdateStaffAssignmentRequest(
-                            isActive: !item.isAssignmentActive,
-                          ),
-                          item.isAssignmentActive
-                              ? 'Hotel access paused.'
-                              : 'Hotel access restored.',
-                        ),
-                      ),
-                    ),
-                ],
+              return _StaffTable(
+                staff: staff,
+                currentUserId: session?.userId,
+                manageableRoles: roles,
+                updatingAssignmentId: _updatingAssignmentId,
+                onOpenMember: (member) => _openRoleAssignment(
+                  member: member,
+                  staff: staff
+                      .where((item) => roles.contains(item.role))
+                      .toList(growable: false),
+                  availableRoles: roles,
+                ),
+                onSetActive: _setAssignmentActive,
               );
             },
-            error: (error, stackTrace) => _StaffError(
-              onRetry: () => ref.invalidate(hotelStaffProvider(widget.hotelId)),
-            ),
-            loading: () => const Center(child: CircularProgressIndicator()),
           ),
+          const SizedBox(height: AppSpacing.lg),
         ],
       ),
     );
   }
 }
 
-class _StaffEntryCard extends StatelessWidget {
-  const _StaffEntryCard({
-    required this.formKey,
-    required this.mode,
-    required this.email,
-    required this.password,
-    required this.fullName,
-    required this.phone,
-    required this.role,
-    required this.availableRoles,
-    required this.submitting,
-    required this.onModeChanged,
-    required this.onRoleChanged,
-    required this.onSubmit,
+class _StaffTable extends StatelessWidget {
+  const _StaffTable({
+    required this.staff,
+    required this.currentUserId,
+    required this.manageableRoles,
+    required this.updatingAssignmentId,
+    required this.onOpenMember,
+    required this.onSetActive,
   });
 
-  final GlobalKey<FormState> formKey;
-  final _StaffEntryMode mode;
-  final TextEditingController email;
-  final TextEditingController password;
-  final TextEditingController fullName;
-  final TextEditingController phone;
-  final String role;
-  final List<String> availableRoles;
-  final bool submitting;
-  final ValueChanged<_StaffEntryMode> onModeChanged;
-  final ValueChanged<String> onRoleChanged;
-  final VoidCallback onSubmit;
+  final List<HotelStaffMember> staff;
+  final String? currentUserId;
+  final List<String> manageableRoles;
+  final String? updatingAssignmentId;
+  final ValueChanged<HotelStaffMember> onOpenMember;
+  final Future<void> Function(HotelStaffMember member, bool active) onSetActive;
 
   @override
   Widget build(BuildContext context) {
-    final createsAccount = mode == _StaffEntryMode.create;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Form(
-          key: formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SegmentedButton<_StaffEntryMode>(
-                segments: const [
-                  ButtonSegment(
-                    value: _StaffEntryMode.create,
-                    icon: Icon(Icons.person_add_alt_1_rounded),
-                    label: Text('Create account'),
-                  ),
-                  ButtonSegment(
-                    value: _StaffEntryMode.attach,
-                    icon: Icon(Icons.link_rounded),
-                    label: Text('Attach existing'),
-                  ),
-                ],
-                selected: {mode},
-                onSelectionChanged: (selection) {
-                  onModeChanged(selection.first);
-                },
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              if (createsAccount) ...[
-                AppTextFormField(
-                  controller: fullName,
-                  labelText: 'Full name',
-                  validator: (value) =>
-                      (value == null || value.trim().length < 2)
-                          ? 'Enter the staff member full name.'
-                          : null,
-                ),
-                const SizedBox(height: AppSpacing.md),
-              ],
-              AppTextFormField(
-                controller: email,
-                labelText: createsAccount ? 'Work email' : 'Existing email',
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  final text = value?.trim() ?? '';
-                  return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text)
-                      ? null
-                      : 'Enter a valid email address.';
-                },
-              ),
-              if (createsAccount) ...[
-                const SizedBox(height: AppSpacing.md),
-                AppTextFormField(
-                  controller: phone,
-                  labelText: 'Phone number',
-                  keyboardType: TextInputType.phone,
-                  validator: (value) {
-                    final text = value?.trim() ?? '';
-                    return RegExp(r'^\d{10}$').hasMatch(text)
-                        ? null
-                        : 'Phone number must contain 10 digits.';
-                  },
-                ),
-                const SizedBox(height: AppSpacing.md),
-                AppTextFormField(
-                  controller: password,
-                  labelText: 'Initial password',
-                  obscureText: true,
-                  validator: (value) => (value == null || value.length < 8)
-                      ? 'Password must have at least 8 characters.'
-                      : null,
-                ),
-              ],
-              const SizedBox(height: AppSpacing.md),
-              DropdownButtonFormField<String>(
-                initialValue: role,
-                decoration: const InputDecoration(labelText: 'Hotel role'),
-                items: [
-                  for (final value in availableRoles)
-                    DropdownMenuItem(
-                      value: value,
-                      child: Text(_roleLabel(value)),
-                    ),
-                ],
-                onChanged: (value) {
-                  if (value != null) {
-                    onRoleChanged(value);
-                  }
-                },
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              FilledButton.icon(
-                onPressed: submitting ? null : onSubmit,
-                icon: submitting
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        createsAccount
-                            ? Icons.person_add_alt_1_rounded
-                            : Icons.link_rounded,
-                      ),
-                label: Text(
-                  createsAccount ? 'Create and assign' : 'Assign account',
-                ),
-              ),
-            ],
-          ),
-        ),
+    return FrontDeskPanel(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          const _StaffTableHeader(),
+          for (var index = 0; index < staff.length; index++) ...[
+            const Divider(height: 1),
+            _StaffTableRow(
+              member: staff[index],
+              isCurrentUser: staff[index].userAccountId == currentUserId,
+              canManageRole: manageableRoles.contains(staff[index].role),
+              busy: updatingAssignmentId == staff[index].assignmentId,
+              onOpen: () => onOpenMember(staff[index]),
+              onSetActive: (active) => onSetActive(staff[index], active),
+            ),
+          ],
+        ],
       ),
     );
   }
 }
 
-class _StaffCard extends StatelessWidget {
-  const _StaffCard({
+class _StaffTableHeader extends StatelessWidget {
+  const _StaffTableHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.labelLarge;
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.md,
+      ),
+      child: Row(
+        children: [
+          Expanded(flex: 5, child: Text('Staff Name', style: style)),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(flex: 5, child: Text('Email/Phone', style: style)),
+          const SizedBox(width: AppSpacing.xs),
+          SizedBox(width: 82, child: Text('Status', style: style)),
+          const SizedBox(width: 76),
+        ],
+      ),
+    );
+  }
+}
+
+class _StaffTableRow extends StatelessWidget {
+  const _StaffTableRow({
     required this.member,
+    required this.isCurrentUser,
+    required this.canManageRole,
     required this.busy,
-    required this.canManage,
-    required this.availableRoles,
-    required this.onChangeRole,
-    required this.onToggleAccess,
+    required this.onOpen,
+    required this.onSetActive,
   });
 
   final HotelStaffMember member;
+  final bool isCurrentUser;
+  final bool canManageRole;
   final bool busy;
-  final bool canManage;
-  final List<String> availableRoles;
-  final VoidCallback onChangeRole;
-  final VoidCallback onToggleAccess;
+  final VoidCallback onOpen;
+  final ValueChanged<bool> onSetActive;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: member.isAssignmentActive
-                      ? AppColors.brand
-                      : Theme.of(context).colorScheme.outline,
-                  foregroundColor: Colors.white,
-                  child: Text(_initials(member.fullName, member.email)),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        member.fullName,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      Text(member.email),
-                      if (member.phoneNumber?.isNotEmpty == true)
-                        Text(member.phoneNumber!),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.xs,
-              children: [
-                _StaffPill(
-                  label: _roleLabel(member.role),
-                  color: AppColors.brand,
-                ),
-                _StaffPill(
-                  label: member.isAssignmentActive
-                      ? 'Hotel access active'
-                      : 'Hotel access paused',
-                  color: member.isAssignmentActive
-                      ? AppColors.success
-                      : AppColors.warning,
-                ),
-                if (member.status != 'Active')
-                  _StaffPill(
-                    label: 'Account ${member.status.toLowerCase()}',
-                    color: AppColors.danger,
-                  ),
-              ],
-            ),
-            if (canManage) ...[
-              const SizedBox(height: AppSpacing.md),
-              const Divider(),
-              if (busy)
-                const Center(child: CircularProgressIndicator())
-              else
-                Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  alignment: WrapAlignment.end,
-                  children: [
-                    if (member.isAssignmentActive &&
-                        availableRoles.any((role) => role != member.role))
-                      OutlinedButton.icon(
-                        onPressed: onChangeRole,
-                        icon: const Icon(Icons.manage_accounts_rounded),
-                        label: const Text('Change role'),
-                      ),
-                    FilledButton.tonalIcon(
-                      onPressed: onToggleAccess,
-                      icon: Icon(
-                        member.isAssignmentActive
-                            ? Icons.pause_circle_outline_rounded
-                            : Icons.play_circle_outline_rounded,
-                      ),
-                      label: Text(
-                        member.isAssignmentActive
-                            ? 'Pause access'
-                            : 'Restore access',
-                      ),
-                    ),
-                  ],
-                ),
-            ],
-          ],
-        ),
+    final accountActive = member.status == 'Active';
+    final assignmentActive = member.isAssignmentActive && accountActive;
+    final canManage = !isCurrentUser && canManageRole && accountActive;
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.md,
       ),
-    );
-  }
-}
-
-class _PermissionSummary extends StatelessWidget {
-  const _PermissionSummary({required this.role});
-
-  final String role;
-
-  @override
-  Widget build(BuildContext context) {
-    final permissions = _permissionsFor(role);
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        border: Border.all(color: AppColors.outline),
-        borderRadius: BorderRadius.circular(AppRadii.md),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text(
-            'Permission summary',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          for (final permission in permissions)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+          Expanded(
+            flex: 5,
+            child: InkWell(
+              onTap: canManage ? onOpen : null,
               child: Row(
                 children: [
-                  Icon(permission.$1, size: 20, color: AppColors.brand),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(child: Text(permission.$2)),
-                  const Icon(
-                    Icons.check_circle_rounded,
-                    size: 18,
-                    color: AppColors.success,
+                  CircleAvatar(
+                    radius: 18,
+                    child: Text(_initials(member.fullName, member.email)),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      member.fullName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   ),
                 ],
               ),
             ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            flex: 5,
+            child: InkWell(
+              onTap: canManage ? onOpen : null,
+              child: Text(
+                member.email,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          SizedBox(
+            width: 82,
+            child: busy
+                ? const Center(
+                    child: SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : _StatusDropdown(
+                    active: assignmentActive,
+                    enabled: canManage,
+                    onChanged: onSetActive,
+                  ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          SizedBox(
+            width: 68,
+            child: OutlinedButton(
+              onPressed: busy || !canManage
+                  ? null
+                  : () => onSetActive(!assignmentActive),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                minimumSize: const Size(0, 44),
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(assignmentActive ? 'Deactivate' : 'Activate'),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _StaffPill extends StatelessWidget {
-  const _StaffPill({required this.label, required this.color});
+class _StatusDropdown extends StatelessWidget {
+  const _StatusDropdown({
+    required this.active,
+    required this.enabled,
+    required this.onChanged,
+  });
 
-  final String label;
-  final Color color;
+  final bool active;
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xxs,
-      ),
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(AppRadii.xl),
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
+        borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color),
-      ),
-    );
-  }
-}
-
-class _EmptyStaff extends StatelessWidget {
-  const _EmptyStaff();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Card(
-      child: Padding(
-        padding: EdgeInsets.all(AppSpacing.xl),
-        child: Text('No staff accounts match the current hotel and search.'),
-      ),
-    );
-  }
-}
-
-class _StaffError extends StatelessWidget {
-  const _StaffError({required this.onRetry});
-
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          children: [
-            const Text('Unable to load staff accounts.'),
-            const SizedBox(height: AppSpacing.md),
-            OutlinedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Retry'),
-            ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<bool>(
+          value: active,
+          isExpanded: true,
+          style: Theme.of(context).textTheme.bodySmall,
+          items: const [
+            DropdownMenuItem(value: true, child: Text('Active')),
+            DropdownMenuItem(value: false, child: Text('Inactive')),
           ],
+          onChanged: !enabled
+              ? null
+              : (value) {
+                  if (value != null && value != active) {
+                    onChanged(value);
+                  }
+                },
         ),
       ),
     );
   }
-}
-
-String _roleLabel(String role) {
-  return switch (role) {
-    'HotelManager' => 'Hotel manager',
-    'Receptionist' => 'Receptionist',
-    'HousekeepingStaff' => 'Housekeeping staff',
-    'MaintenanceStaff' => 'Maintenance staff',
-    _ => role,
-  };
-}
-
-List<(IconData, String)> _permissionsFor(String role) {
-  return switch (role) {
-    'HotelManager' => const [
-        (Icons.dashboard_outlined, 'View hotel dashboard'),
-        (Icons.book_online_outlined, 'Manage bookings and guests'),
-        (Icons.meeting_room_outlined, 'Manage rooms and availability'),
-        (Icons.groups_outlined, 'Manage operational staff'),
-        (Icons.assignment_outlined, 'Manage hotel operations'),
-      ],
-    'Receptionist' => const [
-        (Icons.dashboard_outlined, 'View front desk dashboard'),
-        (Icons.book_online_outlined, 'Manage bookings and guests'),
-        (Icons.login_rounded, 'Check in and check out guests'),
-        (Icons.meeting_room_outlined, 'Assign and temporarily block rooms'),
-      ],
-    'HousekeepingStaff' => const [
-        (Icons.cleaning_services_outlined, 'View assigned cleaning tasks'),
-        (Icons.fact_check_outlined, 'Update cleaning progress'),
-        (Icons.report_problem_outlined, 'Report room issues'),
-      ],
-    'MaintenanceStaff' => const [
-        (Icons.handyman_outlined, 'View assigned maintenance requests'),
-        (Icons.build_outlined, 'Update repair progress'),
-        (Icons.task_alt_outlined, 'Resolve and release eligible rooms'),
-      ],
-    _ => const [(Icons.visibility_outlined, 'View assigned hotel work')],
-  };
 }
 
 String _initials(String fullName, String email) {
@@ -753,7 +377,7 @@ String _initials(String fullName, String email) {
       .trim()
       .split(RegExp(r'\s+'))
       .where((part) => part.isNotEmpty)
-      .toList();
+      .toList(growable: false);
   if (parts.length >= 2) {
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }

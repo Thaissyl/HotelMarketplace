@@ -7,6 +7,7 @@ class HotelSearchQuery {
     required this.checkOutDate,
     required this.guestCount,
     required this.roomCount,
+    this.filters = const HotelSearchFilters(),
   });
 
   final String location;
@@ -14,6 +15,7 @@ class HotelSearchQuery {
   final DateTime checkOutDate;
   final int guestCount;
   final int roomCount;
+  final HotelSearchFilters filters;
 
   int get nights => checkOutDate.difference(checkInDate).inDays;
 
@@ -33,6 +35,7 @@ class HotelSearchQuery {
     DateTime? checkOutDate,
     int? guestCount,
     int? roomCount,
+    HotelSearchFilters? filters,
   }) {
     return HotelSearchQuery(
       location: location ?? this.location,
@@ -40,6 +43,7 @@ class HotelSearchQuery {
       checkOutDate: checkOutDate ?? this.checkOutDate,
       guestCount: guestCount ?? this.guestCount,
       roomCount: roomCount ?? this.roomCount,
+      filters: filters ?? this.filters,
     );
   }
 
@@ -50,7 +54,8 @@ class HotelSearchQuery {
         other.checkInDate == checkInDate &&
         other.checkOutDate == checkOutDate &&
         other.guestCount == guestCount &&
-        other.roomCount == roomCount;
+        other.roomCount == roomCount &&
+        other.filters == filters;
   }
 
   @override
@@ -61,8 +66,89 @@ class HotelSearchQuery {
       checkOutDate,
       guestCount,
       roomCount,
+      filters,
     );
   }
+}
+
+class HotelSearchFilters {
+  const HotelSearchFilters({
+    this.minimumPrice,
+    this.maximumPrice,
+    this.amenities = const <String>[],
+    this.availableOnly = true,
+  });
+
+  final double? minimumPrice;
+  final double? maximumPrice;
+  final List<String> amenities;
+  final bool availableOnly;
+
+  bool get hasPriceRange => minimumPrice != null || maximumPrice != null;
+  bool get hasAmenities => amenities.isNotEmpty;
+  bool get isActive => hasPriceRange || hasAmenities || !availableOnly;
+
+  HotelSearchFilters copyWith({
+    double? minimumPrice,
+    double? maximumPrice,
+    List<String>? amenities,
+    bool? availableOnly,
+    bool clearMinimumPrice = false,
+    bool clearMaximumPrice = false,
+  }) {
+    return HotelSearchFilters(
+      minimumPrice:
+          clearMinimumPrice ? null : minimumPrice ?? this.minimumPrice,
+      maximumPrice:
+          clearMaximumPrice ? null : maximumPrice ?? this.maximumPrice,
+      amenities: amenities ?? this.amenities,
+      availableOnly: availableOnly ?? this.availableOnly,
+    );
+  }
+
+  bool allows(HotelSearchResult hotel) {
+    if (minimumPrice != null && hotel.minimumPricePerNight < minimumPrice!) {
+      return false;
+    }
+    if (maximumPrice != null && hotel.minimumPricePerNight > maximumPrice!) {
+      return false;
+    }
+    if (availableOnly && hotel.availableRoomTypeCount <= 0) {
+      return false;
+    }
+
+    final availableAmenities =
+        hotel.amenityNames.map((value) => value.toLowerCase()).toSet();
+    return amenities.every(
+      (amenity) => availableAmenities.contains(amenity.toLowerCase()),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! HotelSearchFilters ||
+        other.minimumPrice != minimumPrice ||
+        other.maximumPrice != maximumPrice ||
+        other.availableOnly != availableOnly ||
+        other.amenities.length != amenities.length) {
+      return false;
+    }
+
+    for (var index = 0; index < amenities.length; index++) {
+      if (other.amenities[index] != amenities[index]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        minimumPrice,
+        maximumPrice,
+        availableOnly,
+        Object.hashAll(amenities),
+      );
 }
 
 class HotelSearchResult {

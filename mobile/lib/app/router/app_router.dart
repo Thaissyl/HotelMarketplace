@@ -11,11 +11,17 @@ import '../../features/account/presentation/account_settings_screen.dart';
 import '../../features/bookings/domain/booking_draft.dart';
 import '../../features/bookings/domain/booking_models.dart';
 import '../../features/bookings/presentation/booking_confirmation_screen.dart';
+import '../../features/bookings/presentation/booking_form_screen.dart';
+import '../../features/bookings/presentation/customer_booking_detail_screen.dart';
+import '../../features/bookings/presentation/customer_refund_status_screen.dart';
+import '../../features/bookings/presentation/my_bookings_screen.dart';
+import '../../features/bookings/presentation/payment_result_screen.dart';
 import '../../features/bookings/presentation/pending_payment_screen.dart';
 import '../../features/customer/presentation/customer_home_screen.dart';
 import '../../features/marketplace/application/marketplace_providers.dart';
 import '../../features/marketplace/domain/marketplace_models.dart';
 import '../../features/marketplace/presentation/hotel_detail_screen.dart';
+import '../../features/marketplace/presentation/hotel_search_results_screen.dart';
 import '../../features/marketplace/presentation/marketplace_screen.dart';
 import '../../features/operations/presentation/operations_dashboard_screen.dart';
 import '../../features/platform_admin/presentation/platform_admin_dashboard_screen.dart';
@@ -32,8 +38,17 @@ final goRouterRefreshNotifierProvider = Provider<GoRouterRefreshNotifier>((
 });
 
 final appRouterProvider = Provider<GoRouter>((ref) {
+  final isAuthenticated = ref.watch(
+    authControllerProvider.select((state) => state.isAuthenticated),
+  );
+  final initialLocation = isAuthenticated
+      ? _landingPathForRoles(
+          ref.read(authControllerProvider).userSession?.roles ?? const [],
+        )
+      : SplashScreen.routePath;
+
   return GoRouter(
-    initialLocation: SplashScreen.routePath,
+    initialLocation: initialLocation,
     refreshListenable: ref.watch(goRouterRefreshNotifierProvider),
     redirect: (context, state) {
       final authState = ref.read(authControllerProvider);
@@ -44,11 +59,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isAuthRoute = isLogin || isRegister;
       final isPublicMarketplaceRoute =
           location == MarketplaceScreen.routePath ||
-              location == HotelDetailScreen.routePath;
+              location == HotelSearchResultsScreen.routePath ||
+              location.startsWith('/hotels/');
       final isCustomerHomeRoute = location == CustomerHomeScreen.routePath;
       final isCustomerOnlyRoute = isCustomerHomeRoute ||
-          location == BookingConfirmationScreen.routePath ||
-          location == PendingPaymentScreen.routePath;
+          location == BookingFormScreen.routePath ||
+          location.startsWith('/booking/confirmation/') ||
+          location.startsWith('/bookings/');
       final isOperationsRoute = location == OperationsDashboardScreen.routePath;
       final isPlatformAdminRoute =
           location == PlatformAdminDashboardScreen.routePath;
@@ -139,6 +156,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: HotelSearchResultsScreen.routePath,
+        name: HotelSearchResultsScreen.routeName,
+        pageBuilder: (context, state) {
+          final query = state.extra is HotelSearchQuery
+              ? state.extra! as HotelSearchQuery
+              : ref.read(hotelSearchQueryProvider);
+          return _slideFadePage(
+            key: state.pageKey,
+            child: HotelSearchResultsScreen(query: query),
+          );
+        },
+      ),
+      GoRoute(
         path: HotelDetailScreen.routePath,
         name: HotelDetailScreen.routeName,
         pageBuilder: (context, state) {
@@ -157,8 +187,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
-        path: BookingConfirmationScreen.routePath,
-        name: BookingConfirmationScreen.routeName,
+        path: BookingFormScreen.routePath,
+        name: BookingFormScreen.routeName,
         pageBuilder: (context, state) {
           final extra = state.extra;
           if (extra is! BookingDraft) {
@@ -170,7 +200,25 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
           return _slideFadePage(
             key: state.pageKey,
-            child: BookingConfirmationScreen(draft: extra),
+            child: BookingFormScreen(draft: extra),
+          );
+        },
+      ),
+      GoRoute(
+        path: BookingConfirmationScreen.routePath,
+        name: BookingConfirmationScreen.routeName,
+        pageBuilder: (context, state) {
+          final extra = state.extra;
+          if (extra is! Booking) {
+            return _slideFadePage(
+              key: state.pageKey,
+              child: const CustomerHomeScreen(),
+            );
+          }
+
+          return _slideFadePage(
+            key: state.pageKey,
+            child: BookingConfirmationScreen(booking: extra),
           );
         },
       ),
@@ -189,6 +237,65 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return _slideFadePage(
             key: state.pageKey,
             child: PendingPaymentScreen(booking: extra),
+          );
+        },
+      ),
+      GoRoute(
+        path: PaymentResultScreen.routePath,
+        name: PaymentResultScreen.routeName,
+        pageBuilder: (context, state) {
+          final extra = state.extra;
+          if (extra is! PaymentResultArguments) {
+            return _slideFadePage(
+              key: state.pageKey,
+              child: const MyBookingsScreen(),
+            );
+          }
+          return _slideFadePage(
+            key: state.pageKey,
+            child: PaymentResultScreen(arguments: extra),
+          );
+        },
+      ),
+      GoRoute(
+        path: MyBookingsScreen.routePath,
+        name: MyBookingsScreen.routeName,
+        pageBuilder: (context, state) => _slideFadePage(
+          key: state.pageKey,
+          child: const MyBookingsScreen(),
+        ),
+      ),
+      GoRoute(
+        path: CustomerRefundStatusScreen.routePath,
+        name: CustomerRefundStatusScreen.routeName,
+        pageBuilder: (context, state) {
+          final extra = state.extra;
+          if (extra is! Booking) {
+            return _slideFadePage(
+              key: state.pageKey,
+              child: const MyBookingsScreen(),
+            );
+          }
+          return _slideFadePage(
+            key: state.pageKey,
+            child: CustomerRefundStatusScreen(booking: extra),
+          );
+        },
+      ),
+      GoRoute(
+        path: CustomerBookingDetailScreen.routePath,
+        name: CustomerBookingDetailScreen.routeName,
+        pageBuilder: (context, state) {
+          final extra = state.extra;
+          if (extra is! Booking) {
+            return _slideFadePage(
+              key: state.pageKey,
+              child: const MyBookingsScreen(),
+            );
+          }
+          return _slideFadePage(
+            key: state.pageKey,
+            child: CustomerBookingDetailScreen(booking: extra),
           );
         },
       ),
@@ -229,7 +336,7 @@ String _landingPathForRoles(List<String> roles) {
     return OperationsDashboardScreen.routePath;
   }
 
-  return CustomerHomeScreen.routePath;
+  return MarketplaceScreen.routePath;
 }
 
 bool _isCustomer(List<String> roles) {

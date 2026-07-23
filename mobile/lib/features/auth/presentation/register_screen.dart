@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/app_spacing.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
@@ -12,7 +11,6 @@ import '../domain/auth_models.dart';
 import 'auth_form_validators.dart';
 import 'auth_shell.dart';
 import 'auth_submit_button.dart';
-import 'login_screen.dart';
 import 'password_field.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
@@ -74,7 +72,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     return AuthShell(
       title: 'Register',
-      subtitle: 'Start as a traveler or register as a property owner.',
       showBackButton: false,
       child: Form(
         key: _formKey,
@@ -83,8 +80,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Account type',
-              style: Theme.of(context).textTheme.labelLarge,
+              'Account Type',
+              style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: AppSpacing.sm),
             RadioGroup<UserRoleCode>(
@@ -111,15 +108,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.md),
             AppTextFormField(
               controller: _fullNameController,
               textInputAction: TextInputAction.next,
               autofillHints: const [AutofillHints.name],
               validator: AuthFormValidators.fullName,
-              labelText: 'Full name',
+              labelText: 'Full Name',
+              externalLabel: true,
+              required: true,
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.lg),
             AppTextFormField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
@@ -127,8 +126,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               autofillHints: const [AutofillHints.email],
               validator: AuthFormValidators.email,
               labelText: 'Email',
+              externalLabel: true,
+              required: true,
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.lg),
             AppTextFormField(
               controller: _phoneController,
               keyboardType: TextInputType.phone,
@@ -138,9 +139,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 LengthLimitingTextInputFormatter(10),
               ],
               validator: AuthFormValidators.phoneNumber,
-              labelText: 'Phone number (optional)',
+              labelText: 'Phone Number (optional)',
+              externalLabel: true,
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.lg),
             PasswordField(
               controller: _passwordController,
               textInputAction: TextInputAction.next,
@@ -148,8 +150,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 value,
                 strong: true,
               ),
+              externalLabel: true,
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.lg),
             PasswordField(
               controller: _confirmPasswordController,
               labelText: 'Confirm password',
@@ -162,6 +165,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 }
                 return null;
               },
+              externalLabel: true,
             ),
             const SizedBox(height: AppSpacing.sm),
             FormField<bool>(
@@ -206,15 +210,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               label: 'Register',
               isLoading: isLoading,
               onPressed: _submit,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            TextButton(
-              onPressed: isLoading
-                  ? null
-                  : () {
-                      context.go(LoginScreen.routePath);
-                    },
-              child: const Text('I already have an account'),
             ),
           ],
         ),

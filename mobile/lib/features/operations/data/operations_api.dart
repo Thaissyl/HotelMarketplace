@@ -79,7 +79,7 @@ class OperationsApi {
     String? roomTypeId,
   }) {
     return _apiClient.get<List<RoomInventoryItem>>(
-      '/api/hotels/$hotelId/front-desk/physical-rooms',
+      '/api/hotels/$hotelId/maintenance/rooms',
       queryParameters: {
         if (roomTypeId != null && roomTypeId.isNotEmpty)
           'roomTypeId': roomTypeId,
@@ -321,6 +321,40 @@ class OperationsApi {
       options: AuthHeaderInterceptor.hotelScopedOptions(),
       data: {'physicalRoomIds': physicalRoomIds},
       decoder: FrontDeskBookingResult.fromJson,
+    );
+  }
+
+  Future<PaymentCollectionSummary> getPaymentCollections({
+    required String hotelId,
+    required String bookingId,
+  }) {
+    return _apiClient.get<PaymentCollectionSummary>(
+      '/api/hotels/$hotelId/front-desk/bookings/$bookingId/payment-collections',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      decoder: PaymentCollectionSummary.fromJson,
+    );
+  }
+
+  Future<PaymentCollectionSummary> recordPaymentCollection({
+    required String hotelId,
+    required String bookingId,
+    required double amount,
+    required String method,
+    required DateTime collectedAtUtc,
+    required String reference,
+    required String? note,
+  }) {
+    return _apiClient.post<PaymentCollectionSummary>(
+      '/api/hotels/$hotelId/front-desk/bookings/$bookingId/payment-collections',
+      options: AuthHeaderInterceptor.hotelScopedOptions(),
+      data: {
+        'amount': amount,
+        'method': method,
+        'collectedAtUtc': collectedAtUtc.toUtc().toIso8601String(),
+        'reference': reference.trim(),
+        'note': note == null || note.trim().isEmpty ? null : note.trim(),
+      },
+      decoder: PaymentCollectionSummary.fromJson,
     );
   }
 

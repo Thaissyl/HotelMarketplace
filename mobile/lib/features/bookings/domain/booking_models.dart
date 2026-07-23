@@ -59,6 +59,9 @@ class Booking {
     required this.guestPhone,
     this.refundStatus,
     this.refundRequestedAmount,
+    this.hotelName,
+    this.roomTypeName,
+    this.refundApprovedAmount,
   });
 
   final String id;
@@ -80,12 +83,18 @@ class Booking {
   final String guestPhone;
   final String? refundStatus;
   final double? refundRequestedAmount;
+  final String? hotelName;
+  final String? roomTypeName;
+  final double? refundApprovedAmount;
 
   bool get isPendingPayment => status == 'PendingPayment';
 
   Booking copyWith({
     String? status,
     DateTime? paymentExpiresAtUtc,
+    String? hotelName,
+    String? roomTypeName,
+    double? refundApprovedAmount,
   }) {
     return Booking(
       id: id,
@@ -107,6 +116,9 @@ class Booking {
       guestPhone: guestPhone,
       refundStatus: refundStatus,
       refundRequestedAmount: refundRequestedAmount,
+      hotelName: hotelName ?? this.hotelName,
+      roomTypeName: roomTypeName ?? this.roomTypeName,
+      refundApprovedAmount: refundApprovedAmount ?? this.refundApprovedAmount,
     );
   }
 
@@ -139,6 +151,9 @@ class Booking {
       refundStatus: json['refundStatus']?.toString(),
       refundRequestedAmount:
           (json['refundRequestedAmount'] as num?)?.toDouble(),
+      hotelName: json['hotelName']?.toString(),
+      roomTypeName: json['roomTypeName']?.toString(),
+      refundApprovedAmount: (json['refundApprovedAmount'] as num?)?.toDouble(),
     );
   }
 }

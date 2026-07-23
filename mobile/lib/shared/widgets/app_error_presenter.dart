@@ -9,6 +9,10 @@ import '../../core/network/api_exception.dart';
 class AppErrorPresenter {
   const AppErrorPresenter._();
 
+  static bool isUnauthorized(Object error) {
+    return _unwrap(error) is UnauthorizedApiException;
+  }
+
   static void showSnackBar(
     BuildContext context,
     Object error, {
@@ -101,12 +105,10 @@ class AppErrorPresenter {
   }
 
   static String friendlyMessage(Object error) {
+    error = _unwrap(error);
+
     if (error is String) {
       return error;
-    }
-
-    if (error is DioException && error.error != null) {
-      return friendlyMessage(error.error!);
     }
 
     if (error is UnauthorizedApiException) {
@@ -149,12 +151,10 @@ class AppErrorPresenter {
   }
 
   static String friendlyTitle(Object error) {
+    error = _unwrap(error);
+
     if (error is String) {
       return 'Check this information';
-    }
-
-    if (error is DioException && error.error != null) {
-      return friendlyTitle(error.error!);
     }
 
     if (error is UnauthorizedApiException) {
@@ -190,5 +190,15 @@ class AppErrorPresenter {
     }
 
     return 'Request failed';
+  }
+
+  static Object _unwrap(Object error) {
+    var current = error;
+
+    while (current is DioException && current.error != null) {
+      current = current.error!;
+    }
+
+    return current;
   }
 }

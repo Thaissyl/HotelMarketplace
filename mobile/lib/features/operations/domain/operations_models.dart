@@ -610,6 +610,7 @@ class FrontDeskBookingSummary {
     required this.source,
     required this.checkInDate,
     required this.checkOutDate,
+    required this.guestCount,
     required this.totalAmount,
     required this.guestFullName,
     required this.guestPhone,
@@ -631,6 +632,7 @@ class FrontDeskBookingSummary {
   final String source;
   final DateTime checkInDate;
   final DateTime checkOutDate;
+  final int guestCount;
   final double totalAmount;
   final String guestFullName;
   final String guestPhone;
@@ -670,6 +672,7 @@ class FrontDeskBookingSummary {
           DateTime.now(),
       checkOutDate: DateTime.tryParse(json['checkOutDate']?.toString() ?? '') ??
           DateTime.now().add(const Duration(days: 1)),
+      guestCount: (json['guestCount'] as num?)?.toInt() ?? 0,
       totalAmount: (json['totalAmount'] as num?)?.toDouble() ?? 0,
       guestFullName: json['guestFullName']?.toString() ?? '',
       guestPhone: json['guestPhone']?.toString() ?? '',
@@ -965,6 +968,88 @@ class AvailabilityCommitment {
       assignedPhysicalRoomIds: _asList(json['assignedPhysicalRoomIds'])
           .map((item) => item.toString())
           .toList(growable: false),
+    );
+  }
+}
+
+class PaymentCollectionSummary {
+  const PaymentCollectionSummary({
+    required this.bookingId,
+    required this.bookingCode,
+    required this.paymentMode,
+    required this.expectedAmount,
+    required this.collectedAmount,
+    required this.remainingBalance,
+    required this.status,
+    required this.collections,
+  });
+
+  final String bookingId;
+  final String bookingCode;
+  final String paymentMode;
+  final double expectedAmount;
+  final double collectedAmount;
+  final double remainingBalance;
+  final String status;
+  final List<PaymentCollectionRecord> collections;
+
+  static PaymentCollectionSummary fromJson(Object? data) {
+    final json = _asMap(data);
+    return PaymentCollectionSummary(
+      bookingId: json['bookingId']?.toString() ?? '',
+      bookingCode: json['bookingCode']?.toString() ?? '',
+      paymentMode: json['paymentMode']?.toString() ?? '',
+      expectedAmount: (json['expectedAmount'] as num?)?.toDouble() ?? 0,
+      collectedAmount: (json['collectedAmount'] as num?)?.toDouble() ?? 0,
+      remainingBalance: (json['remainingBalance'] as num?)?.toDouble() ?? 0,
+      status: json['status']?.toString() ?? '',
+      collections: _asList(json['collections'])
+          .map(PaymentCollectionRecord.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
+class PaymentCollectionRecord {
+  const PaymentCollectionRecord({
+    required this.id,
+    required this.amount,
+    required this.balanceBefore,
+    required this.balanceAfter,
+    required this.method,
+    required this.reference,
+    required this.note,
+    required this.status,
+    required this.collectedAtUtc,
+  });
+
+  final String id;
+  final double amount;
+  final double balanceBefore;
+  final double balanceAfter;
+  final String method;
+  final String reference;
+  final String? note;
+  final String status;
+  final DateTime collectedAtUtc;
+
+  String get methodLabel => method == 'BankTransfer' ? 'Bank Transfer' : method;
+
+  static PaymentCollectionRecord fromJson(Object? data) {
+    final json = _asMap(data);
+    return PaymentCollectionRecord(
+      id: json['id']?.toString() ?? '',
+      amount: (json['amount'] as num?)?.toDouble() ?? 0,
+      balanceBefore: (json['balanceBefore'] as num?)?.toDouble() ?? 0,
+      balanceAfter: (json['balanceAfter'] as num?)?.toDouble() ?? 0,
+      method: json['method']?.toString() ?? 'Unknown',
+      reference: json['reference']?.toString() ?? '',
+      note: json['note']?.toString(),
+      status: json['status']?.toString() ?? '',
+      collectedAtUtc: DateTime.tryParse(
+            json['collectedAtUtc']?.toString() ?? '',
+          )?.toUtc() ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
     );
   }
 }

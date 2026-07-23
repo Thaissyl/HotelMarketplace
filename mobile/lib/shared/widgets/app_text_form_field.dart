@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../app/theme/app_spacing.dart';
+import 'srs_screen.dart';
+
 class AppTextFormField extends StatefulWidget {
   const AppTextFormField({
     super.key,
@@ -21,6 +24,8 @@ class AppTextFormField extends StatefulWidget {
     this.enableSuggestions = true,
     this.autocorrect = true,
     this.maxLines = 1,
+    this.externalLabel = false,
+    this.required = false,
   });
 
   final TextEditingController controller;
@@ -40,6 +45,8 @@ class AppTextFormField extends StatefulWidget {
   final bool enableSuggestions;
   final bool autocorrect;
   final int maxLines;
+  final bool externalLabel;
+  final bool required;
 
   @override
   State<AppTextFormField> createState() => _AppTextFormFieldState();
@@ -84,7 +91,7 @@ class _AppTextFormFieldState extends State<AppTextFormField> {
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
+    final field = TextFormField(
       controller: widget.controller,
       focusNode: _focusNode,
       keyboardType: widget.keyboardType,
@@ -103,12 +110,26 @@ class _AppTextFormFieldState extends State<AppTextFormField> {
         FocusManager.instance.primaryFocus?.unfocus();
       },
       decoration: InputDecoration(
-        labelText: widget.labelText,
+        labelText: widget.externalLabel ? null : widget.labelText,
+        semanticCounterText: widget.labelText,
         hintText: widget.hintText,
         errorText: widget.errorText,
         prefixIcon: widget.prefixIcon,
         suffixIcon: widget.suffixIcon,
       ),
+    );
+
+    if (!widget.externalLabel) {
+      return field;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SrsFieldLabel(widget.labelText, required: widget.required),
+        field,
+        if (widget.errorText != null) const SizedBox(height: AppSpacing.xxs),
+      ],
     );
   }
 }

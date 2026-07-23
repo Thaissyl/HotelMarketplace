@@ -8,27 +8,27 @@ class AppTypography {
   static TextTheme textTheme() {
     return const TextTheme(
       displaySmall: TextStyle(
-        fontSize: 34,
+        fontSize: 32,
         fontWeight: FontWeight.w700,
-        height: 1.12,
+        height: 1.15,
         color: AppColors.ink,
       ),
       headlineSmall: TextStyle(
-        fontSize: 24,
+        fontSize: 26,
         fontWeight: FontWeight.w700,
         height: 1.2,
         color: AppColors.ink,
       ),
       titleLarge: TextStyle(
-        fontSize: 20,
+        fontSize: 22,
         fontWeight: FontWeight.w700,
         height: 1.25,
         color: AppColors.ink,
       ),
       titleMedium: TextStyle(
-        fontSize: 16,
+        fontSize: 18,
         fontWeight: FontWeight.w600,
-        height: 1.35,
+        height: 1.3,
         color: AppColors.ink,
       ),
       bodyLarge: TextStyle(
@@ -44,7 +44,7 @@ class AppTypography {
         color: AppColors.mutedInk,
       ),
       labelLarge: TextStyle(
-        fontSize: 14,
+        fontSize: 16,
         fontWeight: FontWeight.w700,
         height: 1.25,
         color: AppColors.ink,

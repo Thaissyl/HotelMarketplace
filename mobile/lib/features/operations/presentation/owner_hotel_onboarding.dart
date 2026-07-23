@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/theme/app_colors.dart';
+import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
 import '../../../shared/widgets/app_text_form_field.dart';
+import '../../../shared/widgets/srs_screen.dart';
 import '../application/operations_providers.dart';
 import '../application/selected_hotel_controller.dart';
 import '../domain/operations_models.dart';
@@ -18,6 +21,22 @@ class OwnerHotelOnboarding extends ConsumerStatefulWidget {
 }
 
 class _OwnerHotelOnboardingState extends ConsumerState<OwnerHotelOnboarding> {
+  static const _availableAmenities = <String>[
+    'Wi-Fi',
+    'Parking',
+    'Swimming Pool',
+    'Restaurant',
+    'Gym',
+    'Spa',
+    'Air Conditioning',
+    'Room Service',
+    'Laundry',
+    'Bar',
+    'Conference Room',
+    'Airport Shuttle',
+    'Pet Friendly',
+  ];
+
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _city = TextEditingController();
@@ -25,6 +44,8 @@ class _OwnerHotelOnboardingState extends ConsumerState<OwnerHotelOnboarding> {
   final _email = TextEditingController();
   final _phone = TextEditingController();
   final _description = TextEditingController();
+  final List<String> _imageUrls = <String>[];
+  final Set<String> _amenities = <String>{};
   bool _submitting = false;
 
   @override
@@ -39,7 +60,7 @@ class _OwnerHotelOnboardingState extends ConsumerState<OwnerHotelOnboarding> {
   }
 
   Future<void> _submit() async {
-    FocusScope.of(context).unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
     if (_formKey.currentState?.validate() != true) {
       return;
     }
@@ -59,6 +80,37 @@ class _OwnerHotelOnboardingState extends ConsumerState<OwnerHotelOnboarding> {
       await ref
           .read(selectedHotelControllerProvider.notifier)
           .addAndSelectHotel(hotel.id);
+
+      if (_imageUrls.isNotEmpty || _amenities.isNotEmpty) {
+        await ref.read(operationsApiProvider).updateHotelContent(
+              hotelId: hotel.id,
+              request: UpdateHotelContentRequest(
+                images: [
+                  for (var index = 0; index < _imageUrls.length; index++)
+                    HotelContentImage(
+                      imageUrl: _imageUrls[index],
+                      displayOrder: index,
+                    ),
+                ],
+                amenities: [
+                  for (final amenity in _amenities)
+                    HotelContentAmenity(
+                      code: _amenityCode(amenity),
+                      name: amenity,
+                      type: 'Hotel',
+                    ),
+                ],
+                cancellationPolicy: const HotelCancellationPolicy(
+                  name: 'Flexible',
+                  freeCancellationHours: 24,
+                  refundPercentage: 100,
+                  description:
+                      'Free cancellation is available until 24 hours before check-in.',
+                ),
+              ),
+            );
+      }
+
       ref.invalidate(workingHotelsProvider);
       if (mounted) {
         AppErrorPresenter.showSnackBar(
@@ -77,54 +129,107 @@ class _OwnerHotelOnboardingState extends ConsumerState<OwnerHotelOnboarding> {
     }
   }
 
-  String? _required(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'This field is required.';
+  Future<void> _addImageUrl() async {
+    if (_imageUrls.length >= 5) {
+      AppErrorPresenter.showSnackBar(
+        context,
+        'The registration mockup supports up to 5 preview images.',
+      );
+      return;
     }
-    return null;
+
+    final controller = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Hotel Image'),
+        content: AppTextFormField(
+          controller: controller,
+          labelText: 'Image URL',
+          hintText: 'https://example.com/hotel.jpg',
+          externalLabel: true,
+          keyboardType: TextInputType.url,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = controller.text.trim();
+              final uri = Uri.tryParse(value);
+              if (uri == null ||
+                  !uri.hasScheme ||
+                  (uri.scheme != 'http' && uri.scheme != 'https')) {
+                AppErrorPresenter.showSnackBar(
+                  context,
+                  'Enter an absolute HTTP or HTTPS image URL.',
+                );
+                return;
+              }
+              Navigator.of(context).pop(value);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (url != null && mounted) {
+      setState(() => _imageUrls.add(url));
+    }
   }
 
-  String? _emailValidator(String? value) {
-    final requiredError = _required(value);
-    if (requiredError != null) {
-      return requiredError;
+  Future<void> _addAmenity() async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Amenity'),
+        content: AppTextFormField(
+          controller: controller,
+          labelText: 'Amenity Name',
+          externalLabel: true,
+          inputFormatters: [LengthLimitingTextInputFormatter(80)],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final text = controller.text.trim();
+              Navigator.of(context).pop(text.isEmpty ? null : text);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value != null && mounted) {
+      setState(() => _amenities.add(value));
     }
-    final emailPattern = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
-    return emailPattern.hasMatch(value!.trim())
-        ? null
-        : 'Enter a valid email address.';
-  }
-
-  String? _phoneValidator(String? value) {
-    final normalized = value?.replaceAll(RegExp(r'\D'), '') ?? '';
-    return normalized.length == 10
-        ? null
-        : 'Phone number must contain exactly 10 digits.';
   }
 
   @override
   Widget build(BuildContext context) {
     return ListView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.all(AppSpacing.xl),
       children: [
-        Text(
-          'Hotel registration',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          'The property will remain private until a platform administrator approves it.',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        const SizedBox(height: AppSpacing.xl),
         Form(
           key: _formKey,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               AppTextFormField(
                 controller: _name,
-                labelText: 'Hotel name',
+                labelText: 'Hotel Name',
                 hintText: 'Enter hotel name',
+                externalLabel: true,
                 inputFormatters: [LengthLimitingTextInputFormatter(150)],
                 validator: _required,
               ),
@@ -133,6 +238,7 @@ class _OwnerHotelOnboardingState extends ConsumerState<OwnerHotelOnboarding> {
                 controller: _address,
                 labelText: 'Address',
                 hintText: 'Enter complete address',
+                externalLabel: true,
                 maxLines: 3,
                 inputFormatters: [LengthLimitingTextInputFormatter(255)],
                 validator: _required,
@@ -142,26 +248,29 @@ class _OwnerHotelOnboardingState extends ConsumerState<OwnerHotelOnboarding> {
                 controller: _city,
                 labelText: 'City/Destination',
                 hintText: 'Enter city or destination',
+                externalLabel: true,
                 inputFormatters: [LengthLimitingTextInputFormatter(100)],
                 validator: _required,
               ),
               const SizedBox(height: AppSpacing.md),
               AppTextFormField(
                 controller: _phone,
-                labelText: 'Contact phone',
+                labelText: 'Contact Phone',
                 hintText: 'Enter contact phone number',
+                externalLabel: true,
                 keyboardType: TextInputType.phone,
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(20),
+                  LengthLimitingTextInputFormatter(10),
                 ],
                 validator: _phoneValidator,
               ),
               const SizedBox(height: AppSpacing.md),
               AppTextFormField(
                 controller: _email,
-                labelText: 'Contact email',
+                labelText: 'Contact Email',
                 hintText: 'Enter contact email address',
+                externalLabel: true,
                 keyboardType: TextInputType.emailAddress,
                 inputFormatters: [LengthLimitingTextInputFormatter(150)],
                 validator: _emailValidator,
@@ -171,25 +280,59 @@ class _OwnerHotelOnboardingState extends ConsumerState<OwnerHotelOnboarding> {
                 controller: _description,
                 labelText: 'Description',
                 hintText: 'Enter hotel description',
+                externalLabel: true,
                 maxLines: 4,
                 inputFormatters: [LengthLimitingTextInputFormatter(1000)],
                 validator: _required,
               ),
-              const SizedBox(height: AppSpacing.lg),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _submitting ? null : _submit,
-                  icon: _submitting
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.send_rounded),
-                  label: Text(
-                    _submitting ? 'Submitting' : 'Submit for review',
-                  ),
+              const SizedBox(height: AppSpacing.md),
+              const SrsFieldLabel('Images'),
+              _RegistrationImagePicker(
+                imageUrls: _imageUrls,
+                onAdd: _addImageUrl,
+                onRemove: (url) => setState(() => _imageUrls.remove(url)),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              const SrsFieldLabel('Amenities'),
+              SrsPanel(
+                child: Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    for (final amenity in {
+                      ..._availableAmenities,
+                      ..._amenities,
+                    })
+                      FilterChip(
+                        label: Text(amenity),
+                        selected: _amenities.contains(amenity),
+                        onSelected: (selected) {
+                          setState(() {
+                            if (selected) {
+                              _amenities.add(amenity);
+                            } else {
+                              _amenities.remove(amenity);
+                            }
+                          });
+                        },
+                      ),
+                    ActionChip(
+                      avatar: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text('Add More'),
+                      onPressed: _addAmenity,
+                    ),
+                  ],
                 ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              FilledButton(
+                onPressed: _submitting ? null : _submit,
+                child: _submitting
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Register Hotel'),
               ),
             ],
           ),
@@ -197,4 +340,138 @@ class _OwnerHotelOnboardingState extends ConsumerState<OwnerHotelOnboarding> {
       ],
     );
   }
+}
+
+class _RegistrationImagePicker extends StatelessWidget {
+  const _RegistrationImagePicker({
+    required this.imageUrls,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final List<String> imageUrls;
+  final VoidCallback onAdd;
+  final ValueChanged<String> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onAdd,
+      borderRadius: BorderRadius.circular(AppRadii.sm),
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          border: Border.all(color: AppColors.outline),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                for (var index = 0; index < 5; index++) ...[
+                  Expanded(
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: _ImageSlot(
+                        url: index < imageUrls.length ? imageUrls[index] : null,
+                        onRemove: index < imageUrls.length
+                            ? () => onRemove(imageUrls[index])
+                            : null,
+                      ),
+                    ),
+                  ),
+                  if (index < 4) const SizedBox(width: AppSpacing.xs),
+                ],
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.cloud_upload_outlined),
+                SizedBox(width: AppSpacing.xs),
+                Text('Tap to upload images'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ImageSlot extends StatelessWidget {
+  const _ImageSlot({required this.url, required this.onRemove});
+
+  final String? url;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: AppColors.surfaceSoft,
+              border: Border.all(color: AppColors.outlineSoft),
+              borderRadius: BorderRadius.circular(AppRadii.sm),
+            ),
+            child: url == null
+                ? const Icon(Icons.image_outlined, color: AppColors.subtleInk)
+                : Image.network(
+                    url!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const Icon(Icons.broken_image_outlined),
+                  ),
+          ),
+        ),
+        if (onRemove != null)
+          Positioned(
+            right: -5,
+            top: -5,
+            child: IconButton.filled(
+              visualDensity: VisualDensity.compact,
+              iconSize: 14,
+              tooltip: 'Remove image',
+              onPressed: onRemove,
+              icon: const Icon(Icons.close_rounded),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+String? _required(String? value) {
+  return value == null || value.trim().isEmpty
+      ? 'This field is required.'
+      : null;
+}
+
+String? _emailValidator(String? value) {
+  final requiredError = _required(value);
+  if (requiredError != null) {
+    return requiredError;
+  }
+  return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value!.trim())
+      ? null
+      : 'Enter a valid email address.';
+}
+
+String? _phoneValidator(String? value) {
+  return RegExp(r'^\d{10}$').hasMatch(value?.trim() ?? '')
+      ? null
+      : 'Phone number must contain exactly 10 digits.';
+}
+
+String _amenityCode(String name) {
+  return name
+      .trim()
+      .toUpperCase()
+      .replaceAll(RegExp(r'[^A-Z0-9]+'), '_')
+      .replaceAll(RegExp(r'^_+|_+$'), '');
 }
