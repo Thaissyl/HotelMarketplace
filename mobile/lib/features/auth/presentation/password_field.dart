@@ -7,12 +7,14 @@ class PasswordField extends StatefulWidget {
     super.key,
     required this.controller,
     required this.validator,
+    this.labelText = 'Password',
     this.textInputAction = TextInputAction.done,
     this.onFieldSubmitted,
   });
 
   final TextEditingController controller;
   final FormFieldValidator<String> validator;
+  final String labelText;
   final TextInputAction textInputAction;
   final ValueChanged<String>? onFieldSubmitted;
 
@@ -33,8 +35,7 @@ class _PasswordFieldState extends State<PasswordField> {
       textInputAction: widget.textInputAction,
       validator: widget.validator,
       onFieldSubmitted: widget.onFieldSubmitted,
-      labelText: 'Password',
-      prefixIcon: const Icon(Icons.lock_outline_rounded),
+      labelText: widget.labelText,
       suffixIcon: IconButton(
         tooltip: _obscureText ? 'Show password' : 'Hide password',
         onPressed: () {

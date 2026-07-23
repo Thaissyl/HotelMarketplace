@@ -11,21 +11,29 @@ import '../../../shared/widgets/app_text_form_field.dart';
 import '../application/operations_providers.dart';
 import '../domain/operations_models.dart';
 
-class FrontDeskTab extends StatefulWidget {
+class FrontDeskTab extends ConsumerStatefulWidget {
   const FrontDeskTab({super.key, required this.hotelId});
 
   final String hotelId;
 
   @override
-  State<FrontDeskTab> createState() => _FrontDeskTabState();
+  ConsumerState<FrontDeskTab> createState() => _FrontDeskTabState();
 }
 
-class _FrontDeskTabState extends State<FrontDeskTab> {
+class _FrontDeskTabState extends ConsumerState<FrontDeskTab> {
   int _selectedIndex = 0;
 
   Widget _buildCurrentPanel() {
     return switch (_selectedIndex) {
-      0 => _BookingQueuePanel(
+      0 => _FrontDeskDashboard(
+          hotelId: widget.hotelId,
+          onOpenArrivals: () => setState(() => _selectedIndex = 1),
+          onOpenDepartures: () => setState(() => _selectedIndex = 3),
+          onOpenInHouse: () => setState(() => _selectedIndex = 2),
+          onOpenNoShows: () => setState(() => _selectedIndex = 4),
+          onOpenRooms: () => setState(() => _selectedIndex = 6),
+        ),
+      1 => _BookingQueuePanel(
           hotelId: widget.hotelId,
           title: 'Arrivals',
           subtitle:
@@ -33,9 +41,9 @@ class _FrontDeskTabState extends State<FrontDeskTab> {
           emptyMessage: 'No confirmed arrivals are waiting for check-in.',
           status: FrontDeskBookingListStatus.confirmed,
           mode: _QueueMode.checkIn,
-          onCreateWalkIn: () => setState(() => _selectedIndex = 5),
+          onCreateWalkIn: () => setState(() => _selectedIndex = 7),
         ),
-      1 => _BookingQueuePanel(
+      2 => _BookingQueuePanel(
           hotelId: widget.hotelId,
           title: 'Checked in',
           subtitle: 'Guests currently staying at this hotel.',
@@ -43,7 +51,7 @@ class _FrontDeskTabState extends State<FrontDeskTab> {
           status: FrontDeskBookingListStatus.checkedIn,
           mode: _QueueMode.viewStay,
         ),
-      2 => _BookingQueuePanel(
+      3 => _BookingQueuePanel(
           hotelId: widget.hotelId,
           title: 'Departures',
           subtitle: 'Checked-in guests ready for checkout and payment closing.',
@@ -51,7 +59,15 @@ class _FrontDeskTabState extends State<FrontDeskTab> {
           status: FrontDeskBookingListStatus.checkedIn,
           mode: _QueueMode.checkOut,
         ),
-      3 => _BookingQueuePanel(
+      4 => _BookingQueuePanel(
+          hotelId: widget.hotelId,
+          title: 'No-show review',
+          subtitle: 'Confirmed bookings past their scheduled arrival date.',
+          emptyMessage: 'No bookings are eligible for no-show review.',
+          status: FrontDeskBookingListStatus.confirmed,
+          mode: _QueueMode.noShow,
+        ),
+      5 => _BookingQueuePanel(
           hotelId: widget.hotelId,
           title: 'History',
           subtitle: 'Completed stays with checkout and invoice records.',
@@ -59,7 +75,7 @@ class _FrontDeskTabState extends State<FrontDeskTab> {
           status: FrontDeskBookingListStatus.checkedOut,
           mode: _QueueMode.history,
         ),
-      4 => _RoomOverviewPanel(hotelId: widget.hotelId),
+      6 => _RoomOverviewPanel(hotelId: widget.hotelId),
       _ => _WalkInPanel(hotelId: widget.hotelId),
     };
   }
@@ -83,39 +99,51 @@ class _FrontDeskTabState extends State<FrontDeskTab> {
                 child: Row(
                   children: [
                     _FrontDeskSegmentButton(
-                      label: 'Arrivals',
+                      label: 'Dashboard',
                       selected: _selectedIndex == 0,
                       onPressed: () => setState(() => _selectedIndex = 0),
                     ),
                     const SizedBox(width: AppSpacing.sm),
                     _FrontDeskSegmentButton(
-                      label: 'Checked In',
+                      label: 'Arrivals',
                       selected: _selectedIndex == 1,
                       onPressed: () => setState(() => _selectedIndex = 1),
                     ),
                     const SizedBox(width: AppSpacing.sm),
                     _FrontDeskSegmentButton(
-                      label: 'Departures',
+                      label: 'Checked In',
                       selected: _selectedIndex == 2,
                       onPressed: () => setState(() => _selectedIndex = 2),
                     ),
                     const SizedBox(width: AppSpacing.sm),
                     _FrontDeskSegmentButton(
-                      label: 'History',
+                      label: 'Departures',
                       selected: _selectedIndex == 3,
                       onPressed: () => setState(() => _selectedIndex = 3),
                     ),
                     const SizedBox(width: AppSpacing.sm),
                     _FrontDeskSegmentButton(
-                      label: 'Walk-in',
+                      label: 'No-show',
+                      selected: _selectedIndex == 4,
+                      onPressed: () => setState(() => _selectedIndex = 4),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    _FrontDeskSegmentButton(
+                      label: 'History',
                       selected: _selectedIndex == 5,
                       onPressed: () => setState(() => _selectedIndex = 5),
                     ),
                     const SizedBox(width: AppSpacing.sm),
                     _FrontDeskSegmentButton(
+                      label: 'Walk-in',
+                      selected: _selectedIndex == 7,
+                      onPressed: () => setState(() => _selectedIndex = 7),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    _FrontDeskSegmentButton(
                       label: 'Rooms',
-                      selected: _selectedIndex == 4,
-                      onPressed: () => setState(() => _selectedIndex = 4),
+                      selected: _selectedIndex == 6,
+                      onPressed: () => setState(() => _selectedIndex = 6),
                     ),
                   ],
                 ),
@@ -125,6 +153,233 @@ class _FrontDeskTabState extends State<FrontDeskTab> {
           Expanded(child: _buildCurrentPanel()),
         ],
       ),
+    );
+  }
+}
+
+class _FrontDeskDashboard extends ConsumerWidget {
+  const _FrontDeskDashboard({
+    required this.hotelId,
+    required this.onOpenArrivals,
+    required this.onOpenDepartures,
+    required this.onOpenInHouse,
+    required this.onOpenNoShows,
+    required this.onOpenRooms,
+  });
+
+  final String hotelId;
+  final VoidCallback onOpenArrivals;
+  final VoidCallback onOpenDepartures;
+  final VoidCallback onOpenInHouse;
+  final VoidCallback onOpenNoShows;
+  final VoidCallback onOpenRooms;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final arrivalsRequest = FrontDeskBookingsRequest(
+      hotelId: hotelId,
+      status: FrontDeskBookingListStatus.confirmed,
+    );
+    final inHouseRequest = FrontDeskBookingsRequest(
+      hotelId: hotelId,
+      status: FrontDeskBookingListStatus.checkedIn,
+    );
+    final roomsRequest = PhysicalRoomsRequest(hotelId: hotelId);
+    final arrivals = ref.watch(frontDeskBookingsProvider(arrivalsRequest));
+    final inHouse = ref.watch(frontDeskBookingsProvider(inHouseRequest));
+    final rooms = ref.watch(physicalRoomsProvider(roomsRequest));
+    final arrivalItems = arrivals.asData?.value ?? const [];
+    final inHouseItems = inHouse.asData?.value ?? const [];
+    final roomItems = rooms.asData?.value ?? const [];
+    final today = DateUtils.dateOnly(DateTime.now());
+    final todayArrivals = arrivalItems
+        .where((item) => DateUtils.isSameDay(item.checkInDate, today))
+        .toList(growable: false);
+    final todayDepartures = inHouseItems
+        .where((item) => DateUtils.isSameDay(item.checkOutDate, today))
+        .toList(growable: false);
+    final noShowCandidates = arrivalItems
+        .where((item) => DateUtils.dateOnly(item.checkInDate).isBefore(today))
+        .length;
+    final isLoading =
+        arrivals.isLoading || inHouse.isLoading || rooms.isLoading;
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.invalidate(frontDeskBookingsProvider(arrivalsRequest));
+        ref.invalidate(frontDeskBookingsProvider(inHouseRequest));
+        ref.invalidate(physicalRoomsProvider(roomsRequest));
+      },
+      child: ListView(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        children: [
+          const _PanelHeader(
+            icon: Icons.room_service_rounded,
+            title: 'Front desk dashboard',
+            subtitle:
+                'Today\'s arrivals, departures, in-house guests, and room status.',
+          ),
+          if (isLoading) ...[
+            const SizedBox(height: AppSpacing.md),
+            const LinearProgressIndicator(),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          _FrontDeskSummaryCard(
+            title: 'Arrivals',
+            count: todayArrivals.length,
+            icon: Icons.login_rounded,
+            detail: todayArrivals.isEmpty
+                ? 'No arrivals scheduled for today'
+                : 'Next: ${todayArrivals.first.guestFullName}',
+            onTap: onOpenArrivals,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _FrontDeskSummaryCard(
+            title: 'Departures',
+            count: todayDepartures.length,
+            icon: Icons.logout_rounded,
+            detail: todayDepartures.isEmpty
+                ? 'No departures scheduled for today'
+                : 'Next: ${todayDepartures.first.guestFullName}',
+            onTap: onOpenDepartures,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _FrontDeskSummaryCard(
+            title: 'In-house guests',
+            count: inHouseItems.length,
+            icon: Icons.hotel_rounded,
+            detail: '${inHouseItems.length} active stay records',
+            onTap: onOpenInHouse,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _FrontDeskSummaryCard(
+            title: 'No-show candidates',
+            count: noShowCandidates,
+            icon: Icons.person_off_rounded,
+            detail: noShowCandidates == 0
+                ? 'No overdue confirmed arrivals'
+                : 'Review overdue arrivals before marking no-show',
+            onTap: onOpenNoShows,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Text(
+            'Room status summary',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _RoomStatusSummary(
+            rooms: roomItems,
+            onTap: onOpenRooms,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FrontDeskSummaryCard extends StatelessWidget {
+  const _FrontDeskSummaryCard({
+    required this.title,
+    required this.count,
+    required this.icon,
+    required this.detail,
+    required this.onTap,
+  });
+
+  final String title;
+  final int count;
+  final IconData icon;
+  final String detail;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: AppColors.brand.withValues(alpha: 0.12),
+                foregroundColor: AppColors.brand,
+                child: Icon(icon),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(detail, style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              Text(
+                count.toString(),
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoomStatusSummary extends StatelessWidget {
+  const _RoomStatusSummary({required this.rooms, required this.onTap});
+
+  final List<RoomInventoryItem> rooms;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const statuses = [
+      ('Available', Icons.check_circle_outline_rounded, AppColors.success),
+      ('Occupied', Icons.bed_rounded, AppColors.brand),
+      ('Dirty', Icons.cleaning_services_rounded, AppColors.warning),
+      ('Maintenance', Icons.handyman_rounded, AppColors.danger),
+    ];
+
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: AppSpacing.sm,
+      crossAxisSpacing: AppSpacing.sm,
+      childAspectRatio: 1.65,
+      children: [
+        for (final status in statuses)
+          Card(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppRadii.md),
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Row(
+                  children: [
+                    Icon(status.$2, color: status.$3),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(child: Text(status.$1)),
+                    Text(
+                      rooms
+                          .where((room) => room.status == status.$1)
+                          .length
+                          .toString(),
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -269,9 +524,9 @@ class _FrontDeskSegmentButton extends StatelessWidget {
   }
 }
 
-enum _QueueMode { checkIn, viewStay, checkOut, history }
+enum _QueueMode { checkIn, viewStay, checkOut, noShow, history }
 
-class _BookingQueuePanel extends ConsumerWidget {
+class _BookingQueuePanel extends ConsumerStatefulWidget {
   const _BookingQueuePanel({
     required this.hotelId,
     required this.title,
@@ -291,8 +546,51 @@ class _BookingQueuePanel extends ConsumerWidget {
   final VoidCallback? onCreateWalkIn;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final request = FrontDeskBookingsRequest(hotelId: hotelId, status: status);
+  ConsumerState<_BookingQueuePanel> createState() => _BookingQueuePanelState();
+}
+
+class _BookingQueuePanelState extends ConsumerState<_BookingQueuePanel> {
+  late DateTime _targetDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _targetDate = DateUtils.dateOnly(DateTime.now());
+  }
+
+  Future<void> _pickTargetDate() async {
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _targetDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 730)),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (selected != null && mounted) {
+      setState(() => _targetDate = DateUtils.dateOnly(selected));
+    }
+  }
+
+  bool _matchesTargetDate(FrontDeskBookingSummary booking) {
+    return switch (widget.mode) {
+      _QueueMode.checkIn =>
+        DateUtils.isSameDay(booking.checkInDate, _targetDate),
+      _QueueMode.checkOut =>
+        DateUtils.isSameDay(booking.checkOutDate, _targetDate),
+      _QueueMode.viewStay =>
+        !DateUtils.dateOnly(booking.checkInDate).isAfter(_targetDate) &&
+            DateUtils.dateOnly(booking.checkOutDate).isAfter(_targetDate),
+      _QueueMode.noShow =>
+        DateUtils.dateOnly(booking.checkInDate).isBefore(_targetDate),
+      _QueueMode.history => true,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final request = FrontDeskBookingsRequest(
+      hotelId: widget.hotelId,
+      status: widget.status,
+    );
     final bookings = ref.watch(frontDeskBookingsProvider(request));
 
     return RefreshIndicator(
@@ -301,33 +599,49 @@ class _BookingQueuePanel extends ConsumerWidget {
       },
       child: bookings.when(
         data: (items) {
+          final visibleItems =
+              items.where(_matchesTargetDate).toList(growable: false);
           return ListView.separated(
             padding: const EdgeInsets.all(AppSpacing.md),
             itemBuilder: (context, index) {
               if (index == 0) {
                 return _PanelHeader(
-                  icon: mode == _QueueMode.checkIn
+                  icon: widget.mode == _QueueMode.checkIn
                       ? Icons.login_rounded
-                      : mode == _QueueMode.checkOut
+                      : widget.mode == _QueueMode.checkOut
                           ? Icons.logout_rounded
-                          : Icons.hotel_rounded,
-                  title: title,
-                  subtitle: subtitle,
+                          : widget.mode == _QueueMode.noShow
+                              ? Icons.person_off_rounded
+                              : Icons.hotel_rounded,
+                  title: widget.title,
+                  subtitle: widget.subtitle,
                 );
               }
 
-              if (items.isEmpty) {
+              if (index == 1 && widget.mode != _QueueMode.history) {
+                return OutlinedButton.icon(
+                  onPressed: _pickTargetDate,
+                  icon: const Icon(Icons.calendar_today_rounded),
+                  label: Text(
+                    'Operation date: ${AppFormatters.displayDate(_targetDate)}',
+                  ),
+                );
+              }
+
+              if (visibleItems.isEmpty) {
                 return _EmptyQueue(
-                  message: emptyMessage,
-                  actionLabel: onCreateWalkIn == null ? null : 'Create walk-in',
-                  onAction: onCreateWalkIn,
+                  message: widget.emptyMessage,
+                  actionLabel:
+                      widget.onCreateWalkIn == null ? null : 'Create walk-in',
+                  onAction: widget.onCreateWalkIn,
                 );
               }
 
-              final booking = items[index - 1];
+              final dataOffset = widget.mode == _QueueMode.history ? 1 : 2;
+              final booking = visibleItems[index - dataOffset];
               return _FrontDeskBookingCard(
                 booking: booking,
-                mode: mode,
+                mode: widget.mode,
                 onViewDetails: () => _showDetailsSheet(context, ref, booking),
                 onCheckIn: () => _showCheckInSheet(context, ref, booking),
                 onCheckOut: () => _showCheckOutSheet(context, ref, booking),
@@ -335,7 +649,10 @@ class _BookingQueuePanel extends ConsumerWidget {
             },
             separatorBuilder: (context, index) =>
                 const SizedBox(height: AppSpacing.md),
-            itemCount: items.isEmpty ? 2 : items.length + 1,
+            itemCount: visibleItems.isEmpty
+                ? (widget.mode == _QueueMode.history ? 2 : 3)
+                : visibleItems.length +
+                    (widget.mode == _QueueMode.history ? 1 : 2),
           );
         },
         error: (error, stackTrace) => ListView(
@@ -343,7 +660,7 @@ class _BookingQueuePanel extends ConsumerWidget {
           children: [
             _PanelHeader(
               icon: Icons.error_outline_rounded,
-              title: title,
+              title: widget.title,
               subtitle: 'Unable to load the front desk queue.',
             ),
             const SizedBox(height: AppSpacing.md),
@@ -372,7 +689,7 @@ class _BookingQueuePanel extends ConsumerWidget {
       useSafeArea: true,
       builder: (context) => _BookingDetailsSheet(
         booking: booking,
-        mode: mode,
+        mode: widget.mode,
       ),
     );
 
@@ -403,7 +720,7 @@ class _BookingQueuePanel extends ConsumerWidget {
       isScrollControlled: true,
       useSafeArea: true,
       builder: (context) => _CheckInSheet(
-        hotelId: hotelId,
+        hotelId: widget.hotelId,
         booking: booking,
       ),
     );
@@ -412,7 +729,7 @@ class _BookingQueuePanel extends ConsumerWidget {
       ref.invalidate(
         frontDeskBookingsProvider(
           FrontDeskBookingsRequest(
-            hotelId: hotelId,
+            hotelId: widget.hotelId,
             status: FrontDeskBookingListStatus.confirmed,
           ),
         ),
@@ -420,7 +737,7 @@ class _BookingQueuePanel extends ConsumerWidget {
       ref.invalidate(
         frontDeskBookingsProvider(
           FrontDeskBookingsRequest(
-            hotelId: hotelId,
+            hotelId: widget.hotelId,
             status: FrontDeskBookingListStatus.checkedIn,
           ),
         ),
@@ -441,7 +758,7 @@ class _BookingQueuePanel extends ConsumerWidget {
       isScrollControlled: true,
       useSafeArea: true,
       builder: (context) => _RoomAssignmentSheet(
-        hotelId: hotelId,
+        hotelId: widget.hotelId,
         booking: booking,
       ),
     );
@@ -450,7 +767,7 @@ class _BookingQueuePanel extends ConsumerWidget {
       ref.invalidate(
         frontDeskBookingsProvider(
           FrontDeskBookingsRequest(
-            hotelId: hotelId,
+            hotelId: widget.hotelId,
             status: FrontDeskBookingListStatus.confirmed,
           ),
         ),
@@ -471,7 +788,7 @@ class _BookingQueuePanel extends ConsumerWidget {
       isScrollControlled: true,
       useSafeArea: true,
       builder: (context) => _CheckOutSheet(
-        hotelId: hotelId,
+        hotelId: widget.hotelId,
         booking: booking,
       ),
     );
@@ -480,7 +797,7 @@ class _BookingQueuePanel extends ConsumerWidget {
       ref.invalidate(
         frontDeskBookingsProvider(
           FrontDeskBookingsRequest(
-            hotelId: hotelId,
+            hotelId: widget.hotelId,
             status: FrontDeskBookingListStatus.checkedIn,
           ),
         ),
@@ -501,7 +818,7 @@ class _BookingQueuePanel extends ConsumerWidget {
       isScrollControlled: true,
       useSafeArea: true,
       builder: (context) => _NoShowSheet(
-        hotelId: hotelId,
+        hotelId: widget.hotelId,
         booking: booking,
       ),
     );
@@ -510,7 +827,7 @@ class _BookingQueuePanel extends ConsumerWidget {
       ref.invalidate(
         frontDeskBookingsProvider(
           FrontDeskBookingsRequest(
-            hotelId: hotelId,
+            hotelId: widget.hotelId,
             status: FrontDeskBookingListStatus.confirmed,
           ),
         ),
@@ -599,6 +916,7 @@ class _FrontDeskBookingCard extends StatelessWidget {
                     child: _BookingActionButton(
                       booking: booking,
                       mode: mode,
+                      onViewDetails: onViewDetails,
                       onCheckIn: onCheckIn,
                       onCheckOut: onCheckOut,
                     ),
@@ -617,12 +935,14 @@ class _BookingActionButton extends StatelessWidget {
   const _BookingActionButton({
     required this.booking,
     required this.mode,
+    required this.onViewDetails,
     required this.onCheckIn,
     required this.onCheckOut,
   });
 
   final FrontDeskBookingSummary booking;
   final _QueueMode mode;
+  final VoidCallback onViewDetails;
   final VoidCallback onCheckIn;
   final VoidCallback onCheckOut;
 
@@ -647,6 +967,11 @@ class _BookingActionButton extends StatelessWidget {
           onPressed: onCheckOut,
           icon: const Icon(Icons.logout_rounded),
           label: const Text('Checkout'),
+        ),
+      _QueueMode.noShow => OutlinedButton.icon(
+          onPressed: onViewDetails,
+          icon: const Icon(Icons.person_off_rounded),
+          label: const Text('Review'),
         ),
       _QueueMode.history => OutlinedButton.icon(
           onPressed: null,
@@ -785,7 +1110,14 @@ class _BookingDetailsSheet extends StatelessWidget {
             icon: const Icon(Icons.person_off_rounded),
             label: const Text('Mark as no-show'),
           ),
-        ] else if (mode == _QueueMode.checkOut || mode == _QueueMode.viewStay)
+        ] else if (mode == _QueueMode.noShow)
+          FilledButton.icon(
+            onPressed: () =>
+                Navigator.of(context).pop(_BookingDetailAction.noShow),
+            icon: const Icon(Icons.person_off_rounded),
+            label: const Text('Review no-show decision'),
+          )
+        else if (mode == _QueueMode.checkOut || mode == _QueueMode.viewStay)
           FilledButton.icon(
             onPressed: () =>
                 Navigator.of(context).pop(_BookingDetailAction.checkOut),

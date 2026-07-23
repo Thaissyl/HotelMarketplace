@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../shared/widgets/app_error_presenter.dart';
 import '../../../shared/widgets/app_text_form_field.dart';
+import '../../auth/application/auth_controller.dart';
+import '../../auth/domain/auth_models.dart';
 import '../../auth/presentation/auth_form_validators.dart';
 import '../../customer/application/customer_account_providers.dart';
 import '../../customer/domain/customer_account_models.dart';
@@ -104,6 +106,7 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final profile = ref.watch(customerProfileProvider);
+    final session = ref.watch(authControllerProvider).userSession;
     profile.whenData((value) {
       if (!_hydrated) {
         _hydrated = true;
@@ -113,7 +116,7 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
     });
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Account settings')),
+      appBar: AppBar(title: const Text('User profile')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.xl),
@@ -126,24 +129,17 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        'Profile',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      profile.when(
-                        data: (value) => Text(value.email),
-                        loading: () => const LinearProgressIndicator(),
-                        error: (error, stackTrace) => Text(
-                          AppErrorPresenter.friendlyMessage(error),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
                       AppTextFormField(
                         controller: _name,
                         labelText: 'Full name',
                         prefixIcon: const Icon(Icons.person_outline_rounded),
                         validator: AuthFormValidators.fullName,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      _ReadOnlyProfileField(
+                        label: 'Email',
+                        value:
+                            profile.valueOrNull?.email ?? session?.email ?? '',
                       ),
                       const SizedBox(height: AppSpacing.md),
                       AppTextFormField(
@@ -157,6 +153,28 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
                         ],
                         validator: AuthFormValidators.phoneNumber,
                       ),
+                      const SizedBox(height: AppSpacing.md),
+                      _ReadOnlyProfileField(
+                        label: 'Role',
+                        value: _roleLabels(session?.roles),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      _ReadOnlyProfileField(
+                        label: 'Hotel assignments',
+                        value: session?.hotelIds.isEmpty ?? true
+                            ? 'No hotel assignments'
+                            : session!.hotelIds.join('\n'),
+                      ),
+                      if (profile.isLoading) ...[
+                        const SizedBox(height: AppSpacing.md),
+                        const LinearProgressIndicator(),
+                      ],
+                      if (profile.hasError) ...[
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          AppErrorPresenter.friendlyMessage(profile.error!),
+                        ),
+                      ],
                       const SizedBox(height: AppSpacing.lg),
                       FilledButton.icon(
                         onPressed: _savingProfile ? null : _saveProfile,
@@ -167,7 +185,7 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.save_rounded),
-                        label: Text(_savingProfile ? 'Saving' : 'Save profile'),
+                        label: Text(_savingProfile ? 'Saving' : 'Save'),
                       ),
                     ],
                   ),
@@ -237,4 +255,41 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
       ),
     );
   }
+}
+
+class _ReadOnlyProfileField extends StatelessWidget {
+  const _ReadOnlyProfileField({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(labelText: label),
+      child: Text(value),
+    );
+  }
+}
+
+String _roleLabels(List<String>? roles) {
+  if (roles == null || roles.isEmpty) {
+    return 'No role assigned';
+  }
+
+  return roles.map((value) {
+    final role = UserRoleCode.fromApiValue(value);
+    return switch (role) {
+      UserRoleCode.customer => 'Customer',
+      UserRoleCode.propertyOwner => 'Property owner',
+      UserRoleCode.hotelManager => 'Hotel manager',
+      UserRoleCode.receptionist => 'Receptionist',
+      UserRoleCode.housekeepingStaff => 'Housekeeping staff',
+      UserRoleCode.maintenanceStaff => 'Maintenance staff',
+      UserRoleCode.platformAdministrator => 'Platform administrator',
+    };
+  }).join(', ');
 }

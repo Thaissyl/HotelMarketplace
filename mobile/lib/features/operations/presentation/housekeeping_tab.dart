@@ -19,18 +19,23 @@ class HousekeepingTab extends ConsumerStatefulWidget {
 }
 
 class _HousekeepingTabState extends ConsumerState<HousekeepingTab> {
+  final _roomFilterController = TextEditingController();
   HousekeepingTaskStatus? _statusFilter;
+  String? _taskTypeFilter;
 
   void _setStatusFilter(HousekeepingTaskStatus? status) {
     setState(() => _statusFilter = status);
   }
 
   @override
+  void dispose() {
+    _roomFilterController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final request = HousekeepingTasksRequest(
-      hotelId: widget.hotelId,
-      status: _statusFilter,
-    );
+    final request = HousekeepingTasksRequest(hotelId: widget.hotelId);
     final tasks = ref.watch(housekeepingTasksProvider(request));
 
     return RefreshIndicator(
@@ -58,36 +63,83 @@ class _HousekeepingTabState extends ConsumerState<HousekeepingTab> {
             selectedStatus: _statusFilter,
             onChanged: _setStatusFilter,
           ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _roomFilterController,
+                  decoration: const InputDecoration(
+                    labelText: 'Room filter',
+                    hintText: 'Room number',
+                    prefixIcon: Icon(Icons.meeting_room_outlined),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: DropdownButtonFormField<String?>(
+                  initialValue: _taskTypeFilter,
+                  decoration: const InputDecoration(
+                    labelText: 'Task type',
+                    prefixIcon: Icon(Icons.checklist_rounded),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: null,
+                      child: Text('All types'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'CheckoutCleaning',
+                      child: Text('Checkout'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'DeepCleaning',
+                      child: Text('Deep clean'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Inspection',
+                      child: Text('Inspection'),
+                    ),
+                  ],
+                  onChanged: (value) => setState(() => _taskTypeFilter = value),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: AppSpacing.md),
           tasks.when(
             data: (items) {
-              if (items.isEmpty) {
+              final roomTerm = _roomFilterController.text.trim().toLowerCase();
+              final visibleItems = items.where((task) {
+                final matchesStatus = _statusFilter == null ||
+                    task.status == _statusFilter!.apiValue;
+                final matchesRoom = roomTerm.isEmpty ||
+                    task.roomNumber.toLowerCase().contains(roomTerm);
+                final matchesType =
+                    _taskTypeFilter == null || task.taskType == _taskTypeFilter;
+                return matchesStatus && matchesRoom && matchesType;
+              }).toList(growable: false);
+
+              if (visibleItems.isEmpty) {
                 return const _EmptyTasks();
               }
 
-              return LayoutBuilder(
-                builder: (context, constraints) {
-                  final columns = constraints.maxWidth >= 720 ? 2 : 1;
-                  return GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
-                      childAspectRatio: columns == 1 ? 1.35 : 1.15,
-                      crossAxisSpacing: AppSpacing.md,
-                      mainAxisSpacing: AppSpacing.md,
-                    ),
-                    itemCount: items.length,
-                    itemBuilder: (context, index) {
-                      return _HousekeepingTaskCard(
+              return Column(
+                children: [
+                  for (final task in visibleItems)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                      child: _HousekeepingTaskCard(
                         hotelId: widget.hotelId,
-                        task: items[index],
+                        task: task,
                         onUpdated: () =>
                             ref.invalidate(housekeepingTasksProvider(request)),
-                      );
-                    },
-                  );
-                },
+                      ),
+                    ),
+                ],
               );
             },
             error: (error, stackTrace) => _ErrorList(
@@ -109,38 +161,44 @@ class _HousekeepingSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final open = tasks.where((task) => task.status == 'Open').length;
+    final dirty = tasks.where((task) => task.roomStatus == 'Dirty').length;
     final inProgress =
         tasks.where((task) => task.status == 'InProgress').length;
+    final inspection =
+        tasks.where((task) => task.status == 'InspectionRequired').length;
     final completed = tasks.where((task) => task.status == 'Completed').length;
 
-    return Row(
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: AppSpacing.sm,
+      crossAxisSpacing: AppSpacing.sm,
+      childAspectRatio: 1.55,
       children: [
-        Expanded(
-          child: _HousekeepingMetricCard(
-            label: 'Waiting',
-            value: open.toString(),
-            icon: Icons.schedule_rounded,
-            color: AppColors.warning,
-          ),
+        _HousekeepingMetricCard(
+          label: 'Dirty',
+          value: dirty.toString(),
+          icon: Icons.schedule_rounded,
+          color: AppColors.warning,
         ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: _HousekeepingMetricCard(
-            label: 'Cleaning',
-            value: inProgress.toString(),
-            icon: Icons.cleaning_services_rounded,
-            color: AppColors.brand,
-          ),
+        _HousekeepingMetricCard(
+          label: 'Cleaning',
+          value: inProgress.toString(),
+          icon: Icons.cleaning_services_rounded,
+          color: AppColors.brand,
         ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: _HousekeepingMetricCard(
-            label: 'Done',
-            value: completed.toString(),
-            icon: Icons.check_circle_outline_rounded,
-            color: AppColors.success,
-          ),
+        _HousekeepingMetricCard(
+          label: 'Inspection',
+          value: inspection.toString(),
+          icon: Icons.fact_check_outlined,
+          color: AppColors.warning,
+        ),
+        _HousekeepingMetricCard(
+          label: 'Completed',
+          value: completed.toString(),
+          icon: Icons.check_circle_outline_rounded,
+          color: AppColors.success,
         ),
       ],
     );
@@ -222,7 +280,7 @@ class _HousekeepingStatusFilter extends StatelessWidget {
   }
 }
 
-class _HousekeepingTaskCard extends ConsumerStatefulWidget {
+class _HousekeepingTaskCard extends StatelessWidget {
   const _HousekeepingTaskCard({
     required this.hotelId,
     required this.task,
@@ -233,23 +291,130 @@ class _HousekeepingTaskCard extends ConsumerStatefulWidget {
   final HousekeepingTask task;
   final VoidCallback onUpdated;
 
+  Future<void> _openDetails(BuildContext context) async {
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _HousekeepingTaskSheet(
+        hotelId: hotelId,
+        task: task,
+      ),
+    );
+    if (changed == true) {
+      onUpdated();
+    }
+  }
+
   @override
-  ConsumerState<_HousekeepingTaskCard> createState() =>
-      _HousekeepingTaskCardState();
+  Widget build(BuildContext context) {
+    final statusColor = _housekeepingStatusColor(task.status);
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openDetails(context),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(AppRadii.md),
+                ),
+                child: Icon(Icons.meeting_room_rounded, color: statusColor),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Room ${task.roomNumber}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(_taskTypeLabel(task.taskType)),
+                    const SizedBox(height: AppSpacing.sm),
+                    Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      children: [
+                        _TaskPill(
+                          label: _taskStatusLabel(task.status),
+                          color: statusColor,
+                        ),
+                        _TaskPill(
+                          label: task.roomStatus,
+                          color: _roomStatusColor(task.roomStatus),
+                        ),
+                        _TaskPill(
+                          label: task.isAssigned ? 'Assigned' : 'Unassigned',
+                          color: task.isAssigned
+                              ? AppColors.brand
+                              : AppColors.warning,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Open task',
+                onPressed: () => _openDetails(context),
+                icon: const Icon(Icons.chevron_right_rounded),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _HousekeepingTaskCardState extends ConsumerState<_HousekeepingTaskCard> {
+class _HousekeepingTaskSheet extends ConsumerStatefulWidget {
+  const _HousekeepingTaskSheet({
+    required this.hotelId,
+    required this.task,
+  });
+
+  final String hotelId;
+  final HousekeepingTask task;
+
+  @override
+  ConsumerState<_HousekeepingTaskSheet> createState() =>
+      _HousekeepingTaskSheetState();
+}
+
+class _HousekeepingTaskSheetState
+    extends ConsumerState<_HousekeepingTaskSheet> {
   bool _loading = false;
 
   Future<void> _setStatus(HousekeepingTaskStatus status) async {
     setState(() => _loading = true);
     try {
+      final session = ref.read(authControllerProvider).userSession;
+      if (!widget.task.isAssigned &&
+          session != null &&
+          session.roles.contains('HousekeepingStaff')) {
+        await ref.read(operationsApiProvider).assignHousekeepingTask(
+              hotelId: widget.hotelId,
+              taskId: widget.task.id,
+              assignedToUserAccountId: session.userId,
+            );
+      }
       await ref.read(operationsApiProvider).updateHousekeepingTaskStatus(
             hotelId: widget.hotelId,
             taskId: widget.task.id,
             status: status,
           );
-      widget.onUpdated();
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
     } catch (error) {
       if (mounted) {
         await AppErrorPresenter.showBottomSheet(context, error);
@@ -268,7 +433,187 @@ class _HousekeepingTaskCardState extends ConsumerState<_HousekeepingTaskCard> {
             hotelId: widget.hotelId,
             taskId: widget.task.id,
           );
-      widget.onUpdated();
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (error) {
+      if (mounted) {
+        await AppErrorPresenter.showBottomSheet(context, error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _reportIssue() async {
+    final reported = await showDialog<bool>(
+      context: context,
+      builder: (context) => _HousekeepingIssueDialog(
+        hotelId: widget.hotelId,
+        task: widget.task,
+      ),
+    );
+    if (reported == true && mounted) {
+      Navigator.of(context).pop(true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final task = widget.task;
+    final roles = ref.watch(authControllerProvider).userSession?.roles ??
+        const <String>[];
+    final canInspect =
+        roles.contains('HotelManager') || roles.contains('PropertyOwner');
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: AppSpacing.md,
+        top: AppSpacing.md,
+        right: AppSpacing.md,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + AppSpacing.md,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Housekeeping task',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Room ${task.roomNumber}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _HousekeepingDetailRow(
+                      label: 'Task type',
+                      value: _taskTypeLabel(task.taskType),
+                    ),
+                    _HousekeepingDetailRow(
+                      label: 'Cleaning status',
+                      value: _taskStatusLabel(task.status),
+                    ),
+                    _HousekeepingDetailRow(
+                      label: 'Room status',
+                      value: task.roomStatus,
+                    ),
+                    _HousekeepingDetailRow(
+                      label: 'Assignment',
+                      value: task.isAssigned ? 'Assigned' : 'Unassigned',
+                    ),
+                    if (task.bookingId != null)
+                      _HousekeepingDetailRow(
+                        label: 'Booking',
+                        value: _shortCode(task.bookingId!, 'Booking'),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            OutlinedButton.icon(
+              onPressed: _loading ? null : _reportIssue,
+              icon: const Icon(Icons.report_problem_outlined),
+              label: const Text('Report room issue'),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            if (_loading)
+              const LinearProgressIndicator()
+            else if (task.status == 'Open')
+              FilledButton.icon(
+                onPressed: () => _setStatus(HousekeepingTaskStatus.inProgress),
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: Text(task.isAssigned ? 'Start cleaning' : 'Claim task'),
+              )
+            else if (task.status == 'InProgress')
+              FilledButton.icon(
+                onPressed: () => _setStatus(HousekeepingTaskStatus.completed),
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('Mark cleaning complete'),
+              )
+            else if (task.status == 'InspectionRequired')
+              FilledButton.icon(
+                onPressed: canInspect ? _completeInspection : null,
+                icon: const Icon(Icons.fact_check_outlined),
+                label: Text(
+                  canInspect
+                      ? 'Complete inspection'
+                      : 'Manager inspection required',
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HousekeepingIssueDialog extends ConsumerStatefulWidget {
+  const _HousekeepingIssueDialog({
+    required this.hotelId,
+    required this.task,
+  });
+
+  final String hotelId;
+  final HousekeepingTask task;
+
+  @override
+  ConsumerState<_HousekeepingIssueDialog> createState() =>
+      _HousekeepingIssueDialogState();
+}
+
+class _HousekeepingIssueDialogState
+    extends ConsumerState<_HousekeepingIssueDialog> {
+  final _description = TextEditingController();
+  MaintenanceSeverity _severity = MaintenanceSeverity.medium;
+  String _targetRoomStatus = 'Maintenance';
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _description.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final description = _description.text.trim();
+    if (description.isEmpty) {
+      AppErrorPresenter.showSnackBar(context, 'Enter issue details.');
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      await ref.read(operationsApiProvider).reportMaintenanceIssue(
+            hotelId: widget.hotelId,
+            physicalRoomId: widget.task.physicalRoomId,
+            description: description,
+            severity: _severity,
+            targetRoomStatus: _targetRoomStatus,
+          );
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
     } catch (error) {
       if (mounted) {
         await AppErrorPresenter.showBottomSheet(context, error);
@@ -282,135 +627,105 @@ class _HousekeepingTaskCardState extends ConsumerState<_HousekeepingTaskCard> {
 
   @override
   Widget build(BuildContext context) {
-    final task = widget.task;
-    final statusColor = _statusColor(task.status);
-    final roles = ref.watch(authControllerProvider).userSession?.roles ??
-        const <String>[];
-    final canInspect =
-        roles.contains('HotelManager') || roles.contains('PropertyOwner');
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+    return AlertDialog(
+      title: Text('Report issue: room ${widget.task.roomNumber}'),
+      content: SingleChildScrollView(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(AppRadii.md),
-                  ),
-                  child: Icon(Icons.meeting_room_rounded, color: statusColor),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Room ${task.roomNumber}',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: AppSpacing.xxs),
-                      Text(
-                        _taskTypeLabel(task.taskType),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                _TaskPill(
-                  label: _taskStatusLabel(task.status),
-                  color: statusColor,
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: [
-                _TaskPill(
-                  label: 'Room ${task.roomStatus}',
-                  color: _roomStatusColor(task.roomStatus),
-                ),
-                _TaskPill(
-                  label: task.isAssigned ? 'Assigned to me' : 'Unclaimed',
-                  color: task.isAssigned ? AppColors.brand : AppColors.warning,
-                ),
-                if (task.bookingId != null)
-                  _TaskPill(
-                    label: _shortCode(task.bookingId!, 'Booking'),
-                    color: AppColors.subtleInk,
-                  ),
-              ],
+            TextField(
+              controller: _description,
+              maxLength: 500,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Issue description',
+                alignLabelWithHint: true,
+              ),
             ),
             const SizedBox(height: AppSpacing.sm),
-            Text(
-              task.status == 'Open'
-                  ? 'Claim this task when you start cleaning the room.'
-                  : task.status == 'InProgress'
-                      ? 'Mark clean after the room is ready for guests.'
-                      : 'Room cleaning has been completed.',
-              style: Theme.of(context).textTheme.bodySmall,
+            DropdownButtonFormField<MaintenanceSeverity>(
+              initialValue: _severity,
+              decoration: const InputDecoration(labelText: 'Severity'),
+              items: [
+                for (final severity in MaintenanceSeverity.values)
+                  DropdownMenuItem(
+                    value: severity,
+                    child: Text(severity.apiValue),
+                  ),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _severity = value);
+                }
+              },
             ),
-            const Spacer(),
-            if (_loading)
-              const LinearProgressIndicator()
-            else
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: task.status == 'Open'
-                          ? () => _setStatus(HousekeepingTaskStatus.inProgress)
-                          : null,
-                      icon: const Icon(Icons.play_arrow_rounded),
-                      label: const Text('Claim'),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: task.status == 'InProgress'
-                          ? () => _setStatus(HousekeepingTaskStatus.completed)
-                          : task.status == 'InspectionRequired' && canInspect
-                              ? _completeInspection
-                              : null,
-                      icon: Icon(
-                        task.status == 'InspectionRequired'
-                            ? Icons.fact_check_outlined
-                            : Icons.check_rounded,
-                      ),
-                      label: Text(
-                        task.status == 'InspectionRequired'
-                            ? canInspect
-                                ? 'Inspect & release'
-                                : 'Awaiting inspection'
-                            : 'Mark clean',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            const SizedBox(height: AppSpacing.sm),
+            DropdownButtonFormField<String>(
+              initialValue: _targetRoomStatus,
+              decoration: const InputDecoration(labelText: 'Room impact'),
+              items: const [
+                DropdownMenuItem(
+                  value: 'Maintenance',
+                  child: Text('Maintenance'),
+                ),
+                DropdownMenuItem(
+                  value: 'OutOfService',
+                  child: Text('Out of service'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _targetRoomStatus = value);
+                }
+              },
+            ),
           ],
         ),
       ),
+      actions: [
+        TextButton(
+          onPressed: _loading ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: _loading ? null : _submit,
+          icon: _loading
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.report_problem_rounded),
+          label: const Text('Create request'),
+        ),
+      ],
     );
   }
+}
 
-  Color _statusColor(String status) {
-    return switch (status) {
-      'Open' => AppColors.warning,
-      'InProgress' => AppColors.brand,
-      'InspectionRequired' => AppColors.warning,
-      'Completed' => AppColors.success,
-      _ => AppColors.subtleInk,
-    };
+class _HousekeepingDetailRow extends StatelessWidget {
+  const _HousekeepingDetailRow({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 116,
+            child: Text(label, style: Theme.of(context).textTheme.bodySmall),
+          ),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
   }
 }
 
@@ -418,28 +733,24 @@ class _EmptyTasks extends StatelessWidget {
   const _EmptyTasks();
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.xl),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            child: Column(
-              children: [
-                const Icon(
-                  Icons.check_circle_rounded,
-                  color: AppColors.success,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  'No housekeeping tasks',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ],
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          children: [
+            const Icon(
+              Icons.check_circle_rounded,
+              color: AppColors.success,
             ),
-          ),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'No housekeeping tasks match the filters',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -476,9 +787,20 @@ String _taskStatusLabel(String status) {
   return switch (status) {
     'Open' => 'Waiting',
     'InProgress' => 'Cleaning',
+    'InspectionRequired' => 'Inspection required',
     'Completed' => 'Completed',
     'Cancelled' => 'Cancelled',
     _ => status,
+  };
+}
+
+Color _housekeepingStatusColor(String status) {
+  return switch (status) {
+    'Open' => AppColors.warning,
+    'InProgress' => AppColors.brand,
+    'InspectionRequired' => AppColors.warning,
+    'Completed' => AppColors.success,
+    _ => AppColors.subtleInk,
   };
 }
 
@@ -514,26 +836,21 @@ class _ErrorList extends StatelessWidget {
   final VoidCallback onRetry;
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.xl),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            child: Column(
-              children: [
-                Text(message),
-                const SizedBox(height: AppSpacing.md),
-                OutlinedButton.icon(
-                  onPressed: onRetry,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Retry'),
-                ),
-              ],
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          children: [
+            Text(message),
+            const SizedBox(height: AppSpacing.md),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry'),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

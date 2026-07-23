@@ -69,8 +69,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final isLoading = authState.status == AuthStatus.authenticating;
 
     return AuthShell(
-      title: 'Welcome back',
-      subtitle: 'Sign in to continue managing stays and bookings.',
+      title: 'Login Screen',
+      subtitle: 'Sign in with your registered email.',
       showBackButton: false,
       child: Form(
         key: _formKey,
@@ -85,7 +85,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               autofillHints: const [AutofillHints.email],
               validator: AuthFormValidators.email,
               labelText: 'Email',
-              prefixIcon: const Icon(Icons.mail_outline_rounded),
             ),
             const SizedBox(height: AppSpacing.md),
             PasswordField(
@@ -93,9 +92,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               validator: AuthFormValidators.password,
               onFieldSubmitted: (_) => isLoading ? null : _submit(),
             ),
-            const SizedBox(height: AppSpacing.xl),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: isLoading
+                    ? null
+                    : () => showDialog<void>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Password recovery'),
+                            content: const Text(
+                              'Password recovery is not available in this MVP. '
+                              'Contact the property owner or platform administrator '
+                              'to restore access to a managed account.',
+                            ),
+                            actions: [
+                              FilledButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text('Close'),
+                              ),
+                            ],
+                          ),
+                        ),
+                child: const Text('Forgot password?'),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
             AuthSubmitButton(
-              label: 'Sign in',
+              label: 'Login',
               isLoading: isLoading,
               onPressed: _submit,
             ),
@@ -106,7 +130,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   : () {
                       context.go(RegisterScreen.routePath);
                     },
-              child: const Text('Create a new account'),
+              child: const Text('Register'),
             ),
           ],
         ),

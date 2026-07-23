@@ -33,7 +33,7 @@ void main() {
         child: MaterialApp(home: PendingPaymentScreen(booking: booking)),
       ),
     );
-    expect(find.text('Confirm demo payment'), findsOneWidget);
+    expect(find.text('Continue payment'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 2));

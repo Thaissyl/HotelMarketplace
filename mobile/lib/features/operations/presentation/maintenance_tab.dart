@@ -22,10 +22,13 @@ class _MaintenanceTabState extends ConsumerState<MaintenanceTab> {
   static const int _pageSize = 5;
 
   final _roomSearch = TextEditingController();
+  final _requestRoomSearch = TextEditingController();
   final _description = TextEditingController();
   String? _selectedRoomId;
   MaintenanceSeverity _severity = MaintenanceSeverity.medium;
   MaintenanceStatus? _statusFilter;
+  MaintenanceSeverity? _severityFilter;
+  String _assigneeFilter = 'All';
   String _targetStatus = 'Maintenance';
   bool _reporting = false;
   int _pageIndex = 0;
@@ -46,6 +49,7 @@ class _MaintenanceTabState extends ConsumerState<MaintenanceTab> {
   @override
   void dispose() {
     _roomSearch.dispose();
+    _requestRoomSearch.dispose();
     _description.dispose();
     super.dispose();
   }
@@ -148,20 +152,104 @@ class _MaintenanceTabState extends ConsumerState<MaintenanceTab> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<MaintenanceSeverity?>(
+                  initialValue: _severityFilter,
+                  decoration: const InputDecoration(
+                    labelText: 'Severity',
+                    prefixIcon: Icon(Icons.priority_high_rounded),
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('All severities'),
+                    ),
+                    for (final severity in MaintenanceSeverity.values)
+                      DropdownMenuItem(
+                        value: severity,
+                        child: Text(severity.apiValue),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _severityFilter = value;
+                      _pageIndex = 0;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: TextField(
+                  controller: _requestRoomSearch,
+                  decoration: const InputDecoration(
+                    labelText: 'Room filter',
+                    hintText: 'Room number',
+                    prefixIcon: Icon(Icons.meeting_room_outlined),
+                  ),
+                  onChanged: (_) {
+                    setState(() => _pageIndex = 0);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
           _MaintenanceStatusFilter(
             selectedStatus: _statusFilter,
             onChanged: _setStatusFilter,
           ),
+          const SizedBox(height: AppSpacing.sm),
+          DropdownButtonFormField<String>(
+            initialValue: _assigneeFilter,
+            decoration: const InputDecoration(
+              labelText: 'Assignee',
+              prefixIcon: Icon(Icons.engineering_outlined),
+            ),
+            items: const [
+              DropdownMenuItem(value: 'All', child: Text('All requests')),
+              DropdownMenuItem(value: 'Mine', child: Text('Assigned to me')),
+              DropdownMenuItem(
+                value: 'Unassigned',
+                child: Text('Unassigned'),
+              ),
+            ],
+            onChanged: (value) {
+              setState(() {
+                _assigneeFilter = value ?? 'All';
+                _pageIndex = 0;
+              });
+            },
+          ),
           const SizedBox(height: AppSpacing.md),
           requests.when(
             data: (items) {
-              if (items.isEmpty) {
+              final currentUserId =
+                  ref.read(authControllerProvider).userSession?.userId;
+              final roomTerm = _requestRoomSearch.text.trim().toLowerCase();
+              final filteredItems = items.where((item) {
+                final matchesSeverity = _severityFilter == null ||
+                    item.severity == _severityFilter!.apiValue;
+                final matchesRoom = roomTerm.isEmpty ||
+                    item.roomNumber.toLowerCase().contains(roomTerm);
+                final matchesAssignee = switch (_assigneeFilter) {
+                  'Mine' => item.assignedToUserAccountId == currentUserId,
+                  'Unassigned' => item.assignedToUserAccountId == null,
+                  _ => true,
+                };
+                return matchesSeverity && matchesRoom && matchesAssignee;
+              }).toList(growable: false);
+
+              if (filteredItems.isEmpty) {
                 return const _EmptyMaintenance();
               }
 
               return _MaintenanceRequestList(
                 hotelId: widget.hotelId,
-                items: items,
+                items: filteredItems,
                 pageIndex: _pageIndex,
                 pageSize: _pageSize,
                 onPageChanged: _goToPage,
@@ -696,6 +784,21 @@ class _MaintenanceCard extends ConsumerStatefulWidget {
 class _MaintenanceCardState extends ConsumerState<_MaintenanceCard> {
   bool _loading = false;
 
+  Future<void> _openDetails() async {
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _MaintenanceRequestSheet(
+        hotelId: widget.hotelId,
+        item: widget.item,
+      ),
+    );
+    if (changed == true) {
+      widget.onUpdated();
+    }
+  }
+
   Future<void> _setStatus(
     MaintenanceStatus status, {
     String? resolutionNote,
@@ -836,6 +939,12 @@ class _MaintenanceCardState extends ConsumerState<_MaintenanceCard> {
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
+            OutlinedButton.icon(
+              onPressed: _loading ? null : _openDetails,
+              icon: const Icon(Icons.open_in_new_rounded),
+              label: const Text('Open request'),
+            ),
+            const SizedBox(height: AppSpacing.sm),
             if (_loading)
               const LinearProgressIndicator()
             else
@@ -876,6 +985,304 @@ class _MaintenanceCardState extends ConsumerState<_MaintenanceCard> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _MaintenanceRequestSheet extends ConsumerStatefulWidget {
+  const _MaintenanceRequestSheet({
+    required this.hotelId,
+    required this.item,
+  });
+
+  final String hotelId;
+  final MaintenanceRequestItem item;
+
+  @override
+  ConsumerState<_MaintenanceRequestSheet> createState() =>
+      _MaintenanceRequestSheetState();
+}
+
+class _MaintenanceRequestSheetState
+    extends ConsumerState<_MaintenanceRequestSheet> {
+  late MaintenanceStatus _status;
+  late String? _assigneeId;
+  late final TextEditingController _resolutionNote;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _status = MaintenanceStatus.values.firstWhere(
+      (status) => status.apiValue == widget.item.status,
+      orElse: () => MaintenanceStatus.open,
+    );
+    _assigneeId = widget.item.assignedToUserAccountId;
+    _resolutionNote = TextEditingController(
+      text: widget.item.resolutionNote ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _resolutionNote.dispose();
+    super.dispose();
+  }
+
+  List<MaintenanceStatus> get _allowedStatuses {
+    return switch (widget.item.status) {
+      'Open' => const [
+          MaintenanceStatus.open,
+          MaintenanceStatus.inProgress,
+        ],
+      'InProgress' => const [
+          MaintenanceStatus.inProgress,
+          MaintenanceStatus.resolved,
+        ],
+      'Resolved' => const [
+          MaintenanceStatus.resolved,
+          MaintenanceStatus.released,
+        ],
+      _ => [_status],
+    };
+  }
+
+  Future<void> _save() async {
+    final note = _resolutionNote.text.trim();
+    if (_status == MaintenanceStatus.resolved && note.isEmpty) {
+      AppErrorPresenter.showSnackBar(
+        context,
+        'Enter a diagnosis or resolution note.',
+      );
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      if (_assigneeId != null &&
+          _assigneeId != widget.item.assignedToUserAccountId) {
+        await ref.read(operationsApiProvider).assignMaintenanceRequest(
+              hotelId: widget.hotelId,
+              requestId: widget.item.id,
+              assignedToUserAccountId: _assigneeId!,
+            );
+      }
+      if (_status.apiValue != widget.item.status) {
+        await ref.read(operationsApiProvider).updateMaintenanceRequestStatus(
+              hotelId: widget.hotelId,
+              requestId: widget.item.id,
+              status: _status,
+              resolutionNote:
+                  _status == MaintenanceStatus.resolved ? note : null,
+            );
+      }
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (error) {
+      if (mounted) {
+        await AppErrorPresenter.showBottomSheet(context, error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final staff = ref.watch(hotelStaffProvider(widget.hotelId));
+    final roles = ref.watch(authControllerProvider).userSession?.roles ??
+        const <String>[];
+    final canRelease =
+        roles.contains('HotelManager') || roles.contains('PropertyOwner');
+    final statusOptions = _allowedStatuses
+        .where(
+          (status) => status != MaintenanceStatus.released || canRelease,
+        )
+        .toList(growable: false);
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: AppSpacing.md,
+        top: AppSpacing.md,
+        right: AppSpacing.md,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + AppSpacing.md,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Maintenance request',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Room ${widget.item.roomNumber}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    _MaintenanceDetailRow(
+                      label: 'Severity',
+                      value: widget.item.severity,
+                    ),
+                    _MaintenanceDetailRow(
+                      label: 'Room status',
+                      value: widget.item.roomStatus,
+                    ),
+                    _MaintenanceDetailRow(
+                      label: 'Created',
+                      value: widget.item.displayCreatedAt,
+                    ),
+                    const Divider(),
+                    Text(widget.item.description),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            DropdownButtonFormField<MaintenanceStatus>(
+              initialValue: _status,
+              decoration: const InputDecoration(
+                labelText: 'Current status',
+                prefixIcon: Icon(Icons.sync_alt_rounded),
+              ),
+              items: [
+                for (final status in statusOptions)
+                  DropdownMenuItem(
+                    value: status,
+                    child: Text(_maintenanceStatusLabel(status.apiValue)),
+                  ),
+              ],
+              onChanged: _loading
+                  ? null
+                  : (value) {
+                      if (value != null) {
+                        setState(() => _status = value);
+                      }
+                    },
+            ),
+            const SizedBox(height: AppSpacing.md),
+            staff.when(
+              data: (items) {
+                final maintainers = items
+                    .where(
+                      (member) =>
+                          member.role == 'MaintenanceStaff' &&
+                          member.isAssignmentActive,
+                    )
+                    .toList(growable: false);
+                final knownIds =
+                    maintainers.map((member) => member.userAccountId).toSet();
+                final value =
+                    knownIds.contains(_assigneeId) ? _assigneeId : null;
+                return DropdownButtonFormField<String?>(
+                  initialValue: value,
+                  decoration: const InputDecoration(
+                    labelText: 'Assignee',
+                    prefixIcon: Icon(Icons.engineering_outlined),
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('Unassigned'),
+                    ),
+                    for (final member in maintainers)
+                      DropdownMenuItem(
+                        value: member.userAccountId,
+                        child: Text(member.fullName),
+                      ),
+                  ],
+                  onChanged: _loading
+                      ? null
+                      : (value) => setState(() => _assigneeId = value),
+                );
+              },
+              error: (error, stackTrace) => const Text(
+                'Assignee list is unavailable. Status can still be updated.',
+              ),
+              loading: () => const LinearProgressIndicator(),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: _resolutionNote,
+              enabled: !_loading,
+              maxLength: 500,
+              maxLines: 4,
+              decoration: InputDecoration(
+                labelText: _status == MaintenanceStatus.resolved
+                    ? 'Diagnosis / resolution note'
+                    : 'Resolution note',
+                hintText: 'Describe diagnosis, repair, and verification.',
+                alignLabelWithHint: true,
+              ),
+            ),
+            if (widget.item.status == 'Resolved' && !canRelease)
+              const Padding(
+                padding: EdgeInsets.only(bottom: AppSpacing.sm),
+                child: Text('Manager approval is required to release room.'),
+              ),
+            if (_loading)
+              const LinearProgressIndicator()
+            else
+              FilledButton.icon(
+                onPressed: _save,
+                icon: const Icon(Icons.save_rounded),
+                label: Text(
+                  _status == MaintenanceStatus.released
+                      ? 'Release room'
+                      : 'Save update',
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MaintenanceDetailRow extends StatelessWidget {
+  const _MaintenanceDetailRow({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 104,
+            child: Text(label, style: Theme.of(context).textTheme.bodySmall),
+          ),
+          Expanded(child: Text(value)),
+        ],
       ),
     );
   }

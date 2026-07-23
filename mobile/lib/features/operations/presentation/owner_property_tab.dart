@@ -188,6 +188,47 @@ class _HotelProfileCardState extends ConsumerState<_HotelProfileCard> {
                 subtitle:
                     'This information is visible to guests after approval.',
               ),
+              const SizedBox(height: AppSpacing.md),
+              Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceSoft,
+                  borderRadius: BorderRadius.circular(AppRadii.sm),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.verified_user_outlined,
+                      color: AppColors.brand,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Approval status',
+                            style: Theme.of(context).textTheme.labelMedium,
+                          ),
+                          Text(
+                            _readableHotelStatus(widget.hotel.approvalStatus),
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    _InventoryStatusPill(
+                      label: _readableHotelStatus(
+                        widget.hotel.publicationStatus,
+                      ),
+                      active: widget.hotel.publicationStatus.toLowerCase() ==
+                              'published' ||
+                          widget.hotel.publicationStatus.toLowerCase() ==
+                              'active',
+                    ),
+                  ],
+                ),
+              ),
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
                 value: _requiresRoomInspection,
@@ -800,17 +841,35 @@ class _PhysicalRoomSectionState extends ConsumerState<_PhysicalRoomSection> {
             if (widget.rooms.isEmpty)
               const Text('No physical rooms have been created yet.')
             else
-              Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: [
-                  for (final room in widget.rooms)
-                    ActionChip(
-                      avatar: const Icon(Icons.meeting_room_rounded, size: 16),
-                      label: Text('${room.roomNumber} - ${room.status}'),
-                      onPressed: () => _editRoom(room),
-                    ),
-                ],
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.outline),
+                  borderRadius: BorderRadius.circular(AppRadii.sm),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    for (var index = 0;
+                        index < widget.rooms.length;
+                        index++) ...[
+                      ListTile(
+                        leading: const CircleAvatar(
+                          child: Icon(Icons.meeting_room_outlined),
+                        ),
+                        title: Text('Room ${widget.rooms[index].roomNumber}'),
+                        subtitle: Text(
+                          'Floor ${widget.rooms[index].floor?.trim().isNotEmpty == true ? widget.rooms[index].floor : '-'}'
+                          '  |  ${_roomTypeName(widget.rooms[index].roomTypeId)}'
+                          '  |  ${_readableRoomStatus(widget.rooms[index].status)}',
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => _editRoom(widget.rooms[index]),
+                      ),
+                      if (index < widget.rooms.length - 1)
+                        const Divider(height: 1),
+                    ],
+                  ],
+                ),
               ),
             const Divider(height: AppSpacing.xl),
             DropdownButtonFormField<String>(
@@ -877,6 +936,14 @@ class _PhysicalRoomSectionState extends ConsumerState<_PhysicalRoomSection> {
       ),
     );
   }
+
+  String _roomTypeName(String roomTypeId) {
+    return widget.roomTypes
+            .where((item) => item.id == roomTypeId)
+            .firstOrNull
+            ?.displayName ??
+        'Room type';
+  }
 }
 
 class _RoomTypeTile extends StatelessWidget {
@@ -911,7 +978,8 @@ class _RoomTypeTile extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 Text(
-                  '${item.totalCapacity} guests - ${AppFormatters.money(item.basePricePerNight)}',
+                  'Adults: ${item.adultCapacity}  |  Children: ${item.childCapacity}'
+                  '  |  ${AppFormatters.money(item.basePricePerNight)}',
                 ),
                 if ((item.facilities ?? '').isNotEmpty)
                   Text(
@@ -921,6 +989,11 @@ class _RoomTypeTile extends StatelessWidget {
                   ),
               ],
             ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          _InventoryStatusPill(
+            label: item.status.isEmpty ? 'Active' : item.status,
+            active: item.status.isEmpty || item.status == 'Active',
           ),
           PopupMenuButton<String>(
             tooltip: 'Room type actions',
@@ -937,6 +1010,32 @@ class _RoomTypeTile extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _InventoryStatusPill extends StatelessWidget {
+  const _InventoryStatusPill({required this.label, required this.active});
+
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? AppColors.success : AppColors.warning;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xxs,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppRadii.xl),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color),
       ),
     );
   }
@@ -1014,6 +1113,23 @@ class _ErrorCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _readableHotelStatus(String value) {
+  if (value.trim().isEmpty) {
+    return 'Not available';
+  }
+  return value.replaceAllMapped(
+    RegExp(r'(?<=[a-z])(?=[A-Z])'),
+    (match) => ' ',
+  );
+}
+
+String _readableRoomStatus(String value) {
+  return value.replaceAllMapped(
+    RegExp(r'(?<=[a-z])(?=[A-Z])'),
+    (match) => ' ',
+  );
 }
 
 String? _required(String? value) {

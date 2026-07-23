@@ -128,6 +128,16 @@ class HotelCard extends StatelessWidget {
                         ),
                       ],
                     ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: onTap,
+                        icon: const Icon(Icons.chevron_right_rounded),
+                        iconAlignment: IconAlignment.end,
+                        label: const Text('Select hotel'),
+                      ),
+                    ),
                   ],
                 ),
               ),

@@ -211,49 +211,67 @@ class _AvailabilityCalendarTabState
           ),
         ),
         const SizedBox(height: AppSpacing.md),
-        DropdownButtonFormField<String?>(
-          initialValue: _roomTypeFilter,
-          decoration: const InputDecoration(
-            labelText: 'Room type',
-            prefixIcon: Icon(Icons.bed_rounded),
-          ),
-          items: [
-            const DropdownMenuItem<String?>(
-              value: null,
-              child: Text('All room types'),
-            ),
-            for (final roomType in calendar.roomTypes)
-              DropdownMenuItem<String?>(
-                value: roomType.id,
-                child: Text(roomType.name),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String?>(
+                initialValue: _roomTypeFilter,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Room type filter',
+                  prefixIcon: Icon(Icons.bed_rounded),
+                ),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('All types'),
+                  ),
+                  for (final roomType in calendar.roomTypes)
+                    DropdownMenuItem<String?>(
+                      value: roomType.id,
+                      child: Text(
+                        roomType.name,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _roomTypeFilter = value;
+                    _physicalRoomFilter = null;
+                  });
+                },
               ),
-          ],
-          onChanged: (value) {
-            setState(() {
-              _roomTypeFilter = value;
-              _physicalRoomFilter = null;
-            });
-          },
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        DropdownButtonFormField<String?>(
-          initialValue: effectivePhysicalRoomFilter,
-          decoration: const InputDecoration(
-            labelText: 'Physical room',
-            prefixIcon: Icon(Icons.meeting_room_rounded),
-          ),
-          items: [
-            const DropdownMenuItem<String?>(
-              value: null,
-              child: Text('All physical rooms'),
             ),
-            for (final room in rooms)
-              DropdownMenuItem<String?>(
-                value: room.id,
-                child: Text('Room ${room.roomNumber} - ${room.status}'),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: DropdownButtonFormField<String?>(
+                initialValue: effectivePhysicalRoomFilter,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Physical room filter',
+                  prefixIcon: Icon(Icons.meeting_room_rounded),
+                ),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('All rooms'),
+                  ),
+                  for (final room in rooms)
+                    DropdownMenuItem<String?>(
+                      value: room.id,
+                      child: Text(
+                        'Room ${room.roomNumber}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (value) =>
+                    setState(() => _physicalRoomFilter = value),
               ),
+            ),
           ],
-          onChanged: (value) => setState(() => _physicalRoomFilter = value),
         ),
         const SizedBox(height: AppSpacing.lg),
         _AvailabilitySummary(
@@ -262,9 +280,17 @@ class _AvailabilityCalendarTabState
           commitmentCount: commitments.length,
         ),
         const SizedBox(height: AppSpacing.lg),
-        _DateStrip(
+        _AvailabilityGrid(
           startDate: _startDate,
           endDate: _endDate,
+          roomTypes: calendar.roomTypes,
+          rooms: rooms
+              .where(
+                (room) =>
+                    effectivePhysicalRoomFilter == null ||
+                    room.id == effectivePhysicalRoomFilter,
+              )
+              .toList(growable: false),
           entries: entries,
           commitments: commitments,
         ),
@@ -314,6 +340,17 @@ class _AvailabilityCalendarTabState
             ),
             const SizedBox(height: AppSpacing.sm),
           ],
+        const SizedBox(height: AppSpacing.xl),
+        _RoomStatusBoard(
+          roomTypes: calendar.roomTypes,
+          rooms: rooms
+              .where(
+                (room) =>
+                    effectivePhysicalRoomFilter == null ||
+                    room.id == effectivePhysicalRoomFilter,
+              )
+              .toList(growable: false),
+        ),
       ],
     );
   }
@@ -661,70 +698,536 @@ class _SummaryTile extends StatelessWidget {
   }
 }
 
-class _DateStrip extends StatelessWidget {
-  const _DateStrip({
+class _AvailabilityGrid extends StatelessWidget {
+  const _AvailabilityGrid({
     required this.startDate,
     required this.endDate,
+    required this.roomTypes,
+    required this.rooms,
     required this.entries,
     required this.commitments,
   });
 
   final DateTime startDate;
   final DateTime endDate;
+  final List<AvailabilityRoomType> roomTypes;
+  final List<AvailabilityPhysicalRoom> rooms;
   final List<AvailabilityEntry> entries;
   final List<AvailabilityCommitment> commitments;
 
   @override
   Widget build(BuildContext context) {
     final requestedDays = endDate.difference(startDate).inDays;
-    final dayCount = requestedDays.clamp(1, 31);
+    final dayCount = requestedDays.clamp(1, 14);
+    final days = List.generate(
+      dayCount,
+      (index) => startDate.add(Duration(days: index)),
+    );
+    const roomWidth = 116.0;
+    const dayWidth = 88.0;
+    final roomTypeByRoomId = <String, AvailabilityRoomType>{
+      for (final roomType in roomTypes)
+        for (final room in roomType.physicalRooms) room.id: roomType,
+    };
 
-    return SizedBox(
-      height: 116,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: dayCount,
-        separatorBuilder: (context, index) =>
-            const SizedBox(width: AppSpacing.xs),
-        itemBuilder: (context, index) {
-          final day = startDate.add(Duration(days: index));
-          final nextDay = day.add(const Duration(days: 1));
-          final restrictionCount = entries.where((entry) {
-            return entry.startDate.isBefore(nextDay) &&
-                entry.endDate.isAfter(day);
-          }).length;
-          final bookingCount = commitments.where((commitment) {
-            return commitment.checkInDate.isBefore(nextDay) &&
-                commitment.checkOutDate.isAfter(day);
-          }).length;
+    if (rooms.isEmpty) {
+      return const _AvailabilityEmptyState(
+        icon: Icons.meeting_room_outlined,
+        message: 'No physical rooms match the selected filters.',
+      );
+    }
 
-          return Container(
-            width: 88,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Availability calendar',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            if (requestedDays > dayCount)
+              Text(
+                'First $dayCount days',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.outline),
+            borderRadius: BorderRadius.circular(AppRadii.sm),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: roomWidth + (dayWidth * days.length),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      const _CalendarHeaderCell(
+                        width: roomWidth,
+                        label: 'Room',
+                      ),
+                      for (final day in days)
+                        _CalendarHeaderCell(
+                          width: dayWidth,
+                          label: '${day.day}/${day.month}\n${_weekday(day)}',
+                        ),
+                    ],
+                  ),
+                  for (final room in rooms)
+                    Row(
+                      children: [
+                        _RoomHeaderCell(
+                          width: roomWidth,
+                          room: room,
+                          roomTypeName:
+                              roomTypeByRoomId[room.id]?.name ?? 'Room type',
+                        ),
+                        for (final day in days)
+                          _AvailabilityCell(
+                            width: dayWidth,
+                            state: _stateFor(
+                              room: room,
+                              roomTypeId: roomTypeByRoomId[room.id]?.id ?? '',
+                              day: day,
+                            ),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        const Wrap(
+          spacing: AppSpacing.md,
+          runSpacing: AppSpacing.xs,
+          children: [
+            _CalendarLegend(
+              icon: Icons.check_circle_outline_rounded,
+              label: 'Available',
+              color: AppColors.success,
+            ),
+            _CalendarLegend(
+              icon: Icons.book_online_outlined,
+              label: 'Booked',
+              color: AppColors.brand,
+            ),
+            _CalendarLegend(
+              icon: Icons.block_rounded,
+              label: 'Restricted',
+              color: AppColors.warning,
+            ),
+            _CalendarLegend(
+              icon: Icons.handyman_outlined,
+              label: 'Operational hold',
+              color: AppColors.danger,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  _CalendarState _stateFor({
+    required AvailabilityPhysicalRoom room,
+    required String roomTypeId,
+    required DateTime day,
+  }) {
+    final nextDay = day.add(const Duration(days: 1));
+    final restriction = entries.where((entry) {
+      final appliesToRoom = entry.roomTypeId == roomTypeId &&
+          (entry.physicalRoomId == null || entry.physicalRoomId == room.id);
+      return appliesToRoom &&
+          entry.startDate.isBefore(nextDay) &&
+          entry.endDate.isAfter(day);
+    }).firstOrNull;
+    if (restriction != null) {
+      return _CalendarState(
+        label: restriction.status,
+        icon: Icons.block_rounded,
+        color: AppColors.warning,
+      );
+    }
+
+    final booking = commitments.where((commitment) {
+      return commitment.roomTypeId == roomTypeId &&
+          commitment.assignedPhysicalRoomIds.contains(room.id) &&
+          commitment.checkInDate.isBefore(nextDay) &&
+          commitment.checkOutDate.isAfter(day);
+    }).firstOrNull;
+    if (booking != null) {
+      return const _CalendarState(
+        label: 'Booked',
+        icon: Icons.book_online_outlined,
+        color: AppColors.brand,
+      );
+    }
+
+    if (room.status != 'Available') {
+      return _CalendarState(
+        label: _readableStatus(room.status),
+        icon: _statusIcon(room.status),
+        color: AppColors.danger,
+      );
+    }
+
+    return const _CalendarState(
+      label: 'Available',
+      icon: Icons.check_circle_outline_rounded,
+      color: AppColors.success,
+    );
+  }
+}
+
+class _CalendarHeaderCell extends StatelessWidget {
+  const _CalendarHeaderCell({required this.width, required this.label});
+
+  final double width;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 58,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(AppSpacing.xs),
+      decoration: const BoxDecoration(
+        color: AppColors.surfaceSoft,
+        border: Border(
+          right: BorderSide(color: AppColors.outline),
+          bottom: BorderSide(color: AppColors.outline),
+        ),
+      ),
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.labelMedium,
+      ),
+    );
+  }
+}
+
+class _RoomHeaderCell extends StatelessWidget {
+  const _RoomHeaderCell({
+    required this.width,
+    required this.room,
+    required this.roomTypeName,
+  });
+
+  final double width;
+  final AvailabilityPhysicalRoom room;
+  final String roomTypeName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 72,
+      padding: const EdgeInsets.all(AppSpacing.xs),
+      decoration: const BoxDecoration(
+        border: Border(
+          right: BorderSide(color: AppColors.outline),
+          bottom: BorderSide(color: AppColors.outline),
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            room.roomNumber,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          Text(
+            roomTypeName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AvailabilityCell extends StatelessWidget {
+  const _AvailabilityCell({required this.width, required this.state});
+
+  final double width;
+  final _CalendarState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 72,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(AppSpacing.xxs),
+      decoration: BoxDecoration(
+        color: state.color.withValues(alpha: 0.08),
+        border: const Border(
+          right: BorderSide(color: AppColors.outline),
+          bottom: BorderSide(color: AppColors.outline),
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(state.icon, size: 20, color: state.color),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            state.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CalendarState {
+  const _CalendarState({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+}
+
+class _CalendarLegend extends StatelessWidget {
+  const _CalendarLegend({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: AppSpacing.xxs),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+class _RoomStatusBoard extends StatelessWidget {
+  const _RoomStatusBoard({required this.roomTypes, required this.rooms});
+
+  final List<AvailabilityRoomType> roomTypes;
+  final List<AvailabilityPhysicalRoom> rooms;
+
+  @override
+  Widget build(BuildContext context) {
+    final roomTypeByRoomId = <String, String>{
+      for (final roomType in roomTypes)
+        for (final room in roomType.physicalRooms) room.id: roomType.name,
+    };
+    final grouped = <String, List<AvailabilityPhysicalRoom>>{};
+    for (final room in rooms) {
+      grouped.putIfAbsent(room.status, () => []).add(room);
+    }
+    const preferredOrder = [
+      'Available',
+      'Assigned',
+      'Occupied',
+      'Dirty',
+      'Cleaning',
+      'InspectionRequired',
+      'Maintenance',
+      'OutOfService',
+      'Blocked',
+      'Inactive',
+    ];
+    final statuses = [
+      ...preferredOrder.where(grouped.containsKey),
+      ...grouped.keys.where((status) => !preferredOrder.contains(status)),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Room status board',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        for (final status in statuses)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: AppSpacing.sm),
             padding: const EdgeInsets.all(AppSpacing.sm),
             decoration: BoxDecoration(
-              color: restrictionCount > 0
-                  ? AppColors.warningSoft
-                  : AppColors.surface,
               border: Border.all(color: AppColors.outline),
               borderRadius: BorderRadius.circular(AppRadii.sm),
             ),
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${day.day}/${day.month}',
-                  style: Theme.of(context).textTheme.titleMedium,
+                Row(
+                  children: [
+                    Icon(_statusIcon(status), size: 20),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        '${_readableStatus(status)} (${grouped[status]!.length})',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text('$bookingCount booked'),
-                Text('$restrictionCount blocked'),
+                const SizedBox(height: AppSpacing.sm),
+                Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    for (final room in grouped[status]!)
+                      SizedBox(
+                        width: 104,
+                        child: OutlinedButton(
+                          onPressed: () => _showRoomDetail(
+                            context,
+                            room,
+                            roomTypeByRoomId[room.id] ?? 'Room type',
+                          ),
+                          child: Column(
+                            children: [
+                              Text(room.roomNumber),
+                              Text(
+                                roomTypeByRoomId[room.id] ?? 'Room type',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.labelSmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
-          );
-        },
+          ),
+        const Wrap(
+          spacing: AppSpacing.md,
+          runSpacing: AppSpacing.xs,
+          children: [
+            _StatusLegend(label: 'Available', icon: Icons.check_circle_outline),
+            _StatusLegend(label: 'Occupied', icon: Icons.bed_rounded),
+            _StatusLegend(label: 'Dirty', icon: Icons.delete_outline),
+            _StatusLegend(label: 'Cleaning', icon: Icons.cleaning_services),
+            _StatusLegend(label: 'Inspection', icon: Icons.fact_check_outlined),
+            _StatusLegend(label: 'Maintenance', icon: Icons.handyman_outlined),
+            _StatusLegend(label: 'Out of service', icon: Icons.block),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _showRoomDetail(
+    BuildContext context,
+    AvailabilityPhysicalRoom room,
+    String roomTypeName,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.lg,
+            AppSpacing.xl,
+          ),
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(_statusIcon(room.status), size: 32),
+            title: Text('Room ${room.roomNumber}'),
+            subtitle: Text('$roomTypeName\n${_readableStatus(room.status)}'),
+            isThreeLine: true,
+          ),
+        ),
       ),
     );
   }
+}
+
+class _StatusLegend extends StatelessWidget {
+  const _StatusLegend({required this.label, required this.icon});
+
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: AppSpacing.xxs),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+String _weekday(DateTime day) {
+  return const [
+    'Mon',
+    'Tue',
+    'Wed',
+    'Thu',
+    'Fri',
+    'Sat',
+    'Sun',
+  ][day.weekday - 1];
+}
+
+String _readableStatus(String status) {
+  return status
+      .replaceAllMapped(
+        RegExp(r'(?<=[a-z])(?=[A-Z])'),
+        (match) => ' ',
+      )
+      .trim();
+}
+
+IconData _statusIcon(String status) {
+  return switch (status) {
+    'Available' => Icons.check_circle_outline_rounded,
+    'Assigned' => Icons.person_outline_rounded,
+    'Occupied' => Icons.bed_rounded,
+    'Dirty' => Icons.delete_outline_rounded,
+    'Cleaning' => Icons.cleaning_services_rounded,
+    'InspectionRequired' => Icons.fact_check_outlined,
+    'Maintenance' => Icons.handyman_outlined,
+    'OutOfService' || 'Blocked' || 'Inactive' => Icons.block_rounded,
+    _ => Icons.meeting_room_outlined,
+  };
 }
 
 class _SectionHeader extends StatelessWidget {

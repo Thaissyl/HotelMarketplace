@@ -7,9 +7,11 @@ import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_radii.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../features/auth/application/auth_controller.dart';
+import '../../../features/auth/domain/auth_models.dart';
 import '../../../features/auth/presentation/auth_form_validators.dart';
 import '../../../features/bookings/application/booking_controller.dart';
 import '../../../features/bookings/domain/booking_models.dart';
+import '../../../features/bookings/presentation/pending_payment_screen.dart';
 import '../../../features/marketplace/application/marketplace_providers.dart';
 import '../../../features/marketplace/presentation/hotel_detail_screen.dart';
 import '../../../features/marketplace/presentation/marketplace_screen.dart';
@@ -19,6 +21,9 @@ import '../../../shared/widgets/app_text_form_field.dart';
 import '../application/customer_account_providers.dart';
 import '../application/customer_state.dart';
 import '../domain/customer_account_models.dart';
+
+final _bookingStatusFilterProvider =
+    StateProvider.autoDispose<String>((ref) => 'All');
 
 class CustomerHomeScreen extends ConsumerStatefulWidget {
   const CustomerHomeScreen({super.key});
@@ -204,6 +209,12 @@ class _TripsTab extends ConsumerWidget {
     return bookingsState.when(
       data: (backendBookings) {
         final bookings = _mergeBookings(backendBookings, localBookings);
+        final selectedStatus = ref.watch(_bookingStatusFilterProvider);
+        final visibleBookings = selectedStatus == 'All'
+            ? bookings
+            : bookings
+                .where((booking) => booking.status == selectedStatus)
+                .toList(growable: false);
 
         if (bookings.isEmpty) {
           return const _EmptyState(
@@ -218,7 +229,25 @@ class _TripsTab extends ConsumerWidget {
           child: ListView.separated(
             padding: const EdgeInsets.all(AppSpacing.xl),
             itemBuilder: (context, index) {
-              final booking = bookings[index];
+              if (index == 0) {
+                return _BookingStatusFilter(
+                  selectedStatus: selectedStatus,
+                  onSelected: (status) {
+                    ref.read(_bookingStatusFilterProvider.notifier).state =
+                        status;
+                  },
+                );
+              }
+
+              if (visibleBookings.isEmpty) {
+                return const _EmptyState(
+                  icon: Icons.filter_alt_off_outlined,
+                  title: 'No bookings match this status',
+                  body: 'Choose another status to view your bookings.',
+                );
+              }
+
+              final booking = visibleBookings[index - 1];
               return _TripCard(
                 booking: booking,
                 onTap: () => _showBookingDetails(context, ref, booking),
@@ -226,7 +255,7 @@ class _TripsTab extends ConsumerWidget {
             },
             separatorBuilder: (context, index) =>
                 const SizedBox(height: AppSpacing.sm),
-            itemCount: bookings.length,
+            itemCount: visibleBookings.isEmpty ? 2 : visibleBookings.length + 1,
           ),
         );
       },
@@ -291,88 +320,191 @@ class _TripsTab extends ConsumerWidget {
               AppSpacing.xl,
               AppSpacing.xl,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Booking ${booking.bookingCode}',
-                        style: Theme.of(context).textTheme.titleLarge,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Booking ${booking.bookingCode}',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ),
+                      _StatusPill(status: booking.status),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Text(
+                    'Booking summary',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _BookingDetailRow(
+                    label: 'Guest',
+                    value: booking.guestFullName,
+                  ),
+                  _BookingDetailRow(
+                    label: 'Booked at',
+                    value: AppFormatters.displayDate(booking.createdAtUtc),
+                  ),
+                  _BookingDetailRow(
+                    label: 'Check-in',
+                    value: AppFormatters.displayDate(booking.checkInDate),
+                  ),
+                  _BookingDetailRow(
+                    label: 'Check-out',
+                    value: AppFormatters.displayDate(booking.checkOutDate),
+                  ),
+                  _BookingDetailRow(
+                    label: 'Nights',
+                    value: '${booking.nights}',
+                  ),
+                  _BookingDetailRow(
+                    label: 'Guests',
+                    value: '${booking.guestCount}',
+                  ),
+                  _BookingDetailRow(
+                    label: 'Rooms',
+                    value: '${booking.roomCount}',
+                  ),
+                  const Divider(height: AppSpacing.xxl),
+                  Text(
+                    'Receipt summary',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _BookingDetailRow(
+                    label: 'Nightly rate',
+                    value: AppFormatters.money(booking.unitPricePerNight),
+                  ),
+                  _BookingDetailRow(
+                    label: 'Booking total',
+                    value: AppFormatters.money(booking.totalAmount),
+                  ),
+                  const Divider(height: AppSpacing.xxl),
+                  Text(
+                    'Payment status',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _BookingDetailRow(
+                    label: 'Payment mode',
+                    value: booking.paymentMode == 'PlatformCollect'
+                        ? 'Platform Collect'
+                        : 'Pay at property',
+                  ),
+                  _BookingDetailRow(
+                    label: 'Status',
+                    value: _customerPaymentStatus(booking),
+                  ),
+                  if (booking.paymentExpiresAtUtc != null)
+                    _BookingDetailRow(
+                      label: 'Payment deadline',
+                      value: AppFormatters.displayDate(
+                        booking.paymentExpiresAtUtc!,
                       ),
                     ),
-                    _StatusPill(status: booking.status),
+                  const Divider(height: AppSpacing.xxl),
+                  Text(
+                    'Cancellation policy',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  FutureBuilder<BookingCancellationQuote>(
+                    future: ref
+                        .read(bookingApiProvider)
+                        .getCancellationQuote(booking.id),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasData) {
+                        final quote = snapshot.data!;
+                        return Column(
+                          children: [
+                            _BookingDetailRow(
+                              label: 'Policy',
+                              value: quote.policyName ?? 'Standard policy',
+                            ),
+                            _BookingDetailRow(
+                              label: 'Cancellation',
+                              value:
+                                  quote.canCancel ? 'Allowed' : 'Not allowed',
+                            ),
+                            _BookingDetailRow(
+                              label: 'Estimated refund',
+                              value: AppFormatters.money(
+                                quote.estimatedRefundAmount,
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                      if (snapshot.hasError) {
+                        return const Text(
+                          'Cancellation policy is unavailable for this booking.',
+                        );
+                      }
+                      return const LinearProgressIndicator();
+                    },
+                  ),
+                  if (booking.refundStatus != null) ...[
+                    const Divider(height: AppSpacing.xxl),
+                    Text(
+                      'Refund status',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    _BookingDetailRow(
+                      label: 'Refund eligibility',
+                      value: (booking.refundRequestedAmount ?? 0) > 0
+                          ? 'Eligible'
+                          : 'Not required',
+                    ),
+                    _BookingDetailRow(
+                      label: 'Refund status',
+                      value: booking.refundStatus!,
+                    ),
+                    _BookingDetailRow(
+                      label: 'Requested amount',
+                      value: AppFormatters.money(
+                        booking.refundRequestedAmount ?? 0,
+                      ),
+                    ),
+                    Text(
+                      _refundCustomerNote(booking.refundStatus!),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ],
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                _BookingDetailRow(
-                  label: 'Guest',
-                  value: booking.guestFullName,
-                ),
-                _BookingDetailRow(
-                  label: 'Booked at',
-                  value: AppFormatters.displayDate(booking.createdAtUtc),
-                ),
-                _BookingDetailRow(
-                  label: 'Check-in',
-                  value: AppFormatters.displayDate(booking.checkInDate),
-                ),
-                _BookingDetailRow(
-                  label: 'Check-out',
-                  value: AppFormatters.displayDate(booking.checkOutDate),
-                ),
-                _BookingDetailRow(label: 'Nights', value: '${booking.nights}'),
-                _BookingDetailRow(
-                  label: 'Guests',
-                  value: '${booking.guestCount}',
-                ),
-                _BookingDetailRow(
-                  label: 'Rooms',
-                  value: '${booking.roomCount}',
-                ),
-                _BookingDetailRow(
-                  label: 'Nightly rate',
-                  value: AppFormatters.money(booking.unitPricePerNight),
-                ),
-                _BookingDetailRow(
-                  label: 'Booking total',
-                  value: AppFormatters.money(booking.totalAmount),
-                ),
-                if (booking.paymentExpiresAtUtc != null)
-                  _BookingDetailRow(
-                    label: 'Payment deadline',
-                    value: AppFormatters.displayDate(
-                      booking.paymentExpiresAtUtc!,
-                    ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Text(
+                    'Allowed actions',
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                if (booking.refundStatus != null) ...[
-                  _BookingDetailRow(
-                    label: 'Refund status',
-                    value: booking.refundStatus!,
-                  ),
-                  _BookingDetailRow(
-                    label: 'Refund requested',
-                    value: AppFormatters.money(
-                      booking.refundRequestedAmount ?? 0,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: AppSpacing.lg),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
+                  const SizedBox(height: AppSpacing.sm),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    children: [
+                      OutlinedButton(
                         onPressed: () => Navigator.of(context).pop(),
                         child: const Text('Close'),
                       ),
-                    ),
-                    if (booking.status == 'PendingPayment' ||
-                        booking.status == 'Confirmed') ...[
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: FilledButton.icon(
+                      if (booking.status == 'PendingPayment')
+                        FilledButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            parentContext.push(
+                              PendingPaymentScreen.pathFor(booking.id),
+                              extra: booking,
+                            );
+                          },
+                          icon: const Icon(Icons.payment_rounded),
+                          label: const Text('Retry payment'),
+                        ),
+                      if (booking.status == 'PendingPayment' ||
+                          booking.status == 'Confirmed')
+                        FilledButton.icon(
                           onPressed: () async {
                             Navigator.of(context).pop();
                             await _showCancellationFlow(
@@ -384,11 +516,10 @@ class _TripsTab extends ConsumerWidget {
                           icon: const Icon(Icons.event_busy_rounded),
                           label: const Text('Cancel booking'),
                         ),
-                      ),
                     ],
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -573,13 +704,81 @@ class _BookingDetailRow extends StatelessWidget {
   }
 }
 
+class _BookingStatusFilter extends StatelessWidget {
+  const _BookingStatusFilter({
+    required this.selectedStatus,
+    required this.onSelected,
+  });
+
+  final String selectedStatus;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    const statuses = ['All', 'PendingPayment', 'Confirmed', 'Cancelled'];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Status filter',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final status in statuses)
+                Padding(
+                  padding: const EdgeInsets.only(right: AppSpacing.sm),
+                  child: ChoiceChip(
+                    label: Text(
+                      status == 'PendingPayment' ? 'Pending payment' : status,
+                    ),
+                    selected: selectedStatus == status,
+                    onSelected: (_) => onSelected(status),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _refundCustomerNote(String status) {
+  return switch (status) {
+    'Requested' => 'Your refund request is waiting for platform review.',
+    'Approved' => 'Your refund has been approved and is awaiting processing.',
+    'Processed' => 'Your refund has been processed.',
+    'Rejected' => 'Your refund request was not approved.',
+    'Failed' => 'Refund processing failed. Please contact support.',
+    _ => 'Refund information will update when processing changes.',
+  };
+}
+
+String _customerPaymentStatus(Booking booking) {
+  if (booking.status == 'PendingPayment') {
+    return 'Pending';
+  }
+  if (booking.paymentMode == 'PayAtProperty' && booking.status == 'Confirmed') {
+    return 'Pay at property';
+  }
+  if (booking.paymentMode == 'PlatformCollect' &&
+      booking.status == 'Confirmed') {
+    return 'Processed';
+  }
+  return 'Not provided';
+}
+
 class _TripCard extends StatelessWidget {
   const _TripCard({
     required this.booking,
     required this.onTap,
   });
 
-  final dynamic booking;
+  final Booking booking;
   final VoidCallback onTap;
 
   @override
@@ -613,9 +812,14 @@ class _TripCard extends StatelessWidget {
                 '${booking.roomCount} room - ${booking.guestCount} guest${booking.guestCount == 1 ? '' : 's'} - ${AppFormatters.money(booking.totalAmount)}',
               ),
               const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Tap to view stay and payment details',
-                style: Theme.of(context).textTheme.bodySmall,
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: onTap,
+                  icon: const Icon(Icons.chevron_right_rounded),
+                  iconAlignment: IconAlignment.end,
+                  label: const Text('View detail'),
+                ),
               ),
             ],
           ),
@@ -846,20 +1050,13 @@ class _SettingsTabState extends ConsumerState<_SettingsTab> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Account profile',
+                    'User profile',
                     style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  profileState.when(
-                    data: (profile) => Text(profile.email),
-                    error: (error, stackTrace) =>
-                        Text(session?.email ?? 'Signed in customer'),
-                    loading: () => const LinearProgressIndicator(),
                   ),
                   const SizedBox(height: AppSpacing.xl),
                   AppTextFormField(
                     controller: _nameController,
-                    labelText: 'Display name',
+                    labelText: 'Full name',
                     prefixIcon: const Icon(Icons.person_outline_rounded),
                     textInputAction: TextInputAction.next,
                     validator: AuthFormValidators.fullName,
@@ -876,6 +1073,33 @@ class _SettingsTabState extends ConsumerState<_SettingsTab> {
                     ],
                     validator: AuthFormValidators.phoneNumber,
                   ),
+                  const SizedBox(height: AppSpacing.md),
+                  InputDecorator(
+                    decoration: const InputDecoration(labelText: 'Email'),
+                    child: Text(
+                      profileState.valueOrNull?.email ?? session?.email ?? '',
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  InputDecorator(
+                    decoration: const InputDecoration(labelText: 'Role'),
+                    child: Text(_customerRoleLabels(session?.roles)),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Hotel assignments',
+                    ),
+                    child: Text(
+                      session?.hotelIds.isEmpty ?? true
+                          ? 'No hotel assignments'
+                          : session!.hotelIds.join('\n'),
+                    ),
+                  ),
+                  if (profileState.isLoading) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    const LinearProgressIndicator(),
+                  ],
                   const SizedBox(height: AppSpacing.xl),
                   FilledButton.icon(
                     onPressed: _savingProfile ? null : _saveProfile,
@@ -989,6 +1213,24 @@ class _SettingsTabState extends ConsumerState<_SettingsTab> {
       ],
     );
   }
+}
+
+String _customerRoleLabels(List<String>? roles) {
+  if (roles == null || roles.isEmpty) {
+    return 'No role assigned';
+  }
+
+  return roles.map((value) {
+    return switch (UserRoleCode.fromApiValue(value)) {
+      UserRoleCode.customer => 'Customer',
+      UserRoleCode.propertyOwner => 'Property owner',
+      UserRoleCode.hotelManager => 'Hotel manager',
+      UserRoleCode.receptionist => 'Receptionist',
+      UserRoleCode.housekeepingStaff => 'Housekeeping staff',
+      UserRoleCode.maintenanceStaff => 'Maintenance staff',
+      UserRoleCode.platformAdministrator => 'Platform administrator',
+    };
+  }).join(', ');
 }
 
 class _StatusPill extends StatelessWidget {

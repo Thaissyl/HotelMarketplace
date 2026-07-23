@@ -147,18 +147,41 @@ class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadii.lg),
             ),
-            title: const Text('Demo payment completed'),
-            content: Text(
-              result.message.isEmpty
-                  ? 'Your booking has been confirmed.'
-                  : result.message,
+            title: const Text('Payment result'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.check_circle_outline_rounded,
+                  color: AppColors.success,
+                  size: 64,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  result.message.isEmpty
+                      ? 'Payment successful'
+                      : result.message,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                _PaymentRow(
+                  label: 'Gateway reference',
+                  value: result.paymentTransactionId.isEmpty
+                      ? 'Not provided'
+                      : result.paymentTransactionId,
+                ),
+                const _PaymentRow(
+                  label: 'Booking status',
+                  value: 'Confirmed',
+                ),
+              ],
             ),
             actions: [
               FilledButton(
                 onPressed: () {
                   Navigator.of(context).pop();
                 },
-                child: const Text('Continue'),
+                child: const Text('View booking'),
               ),
             ],
           );
@@ -185,7 +208,7 @@ class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Reservation held'),
+        title: const Text('Payment instructions'),
       ),
       body: SafeArea(
         child: ListView(
@@ -196,31 +219,40 @@ class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
                 padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Column(
                   children: [
-                    Container(
-                      width: 76,
-                      height: 76,
-                      decoration: BoxDecoration(
-                        color: AppColors.brand,
-                        borderRadius: BorderRadius.circular(AppRadii.xl),
-                      ),
-                      child: const Icon(
-                        Icons.lock_clock_rounded,
-                        color: Colors.white,
-                        size: 34,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
                     Text(
-                      'Your room is on hold',
+                      'payOS payment instruction',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      'Booking ${widget.booking.bookingCode}',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                    const SizedBox(height: AppSpacing.xl),
+                    _PaymentRow(
+                      label: 'Booking code',
+                      value: widget.booking.bookingCode,
                     ),
-                    const SizedBox(height: AppSpacing.xxl),
+                    _PaymentRow(
+                      label: 'Amount',
+                      value: AppFormatters.money(widget.booking.totalAmount),
+                    ),
+                    _PaymentRow(
+                      label: 'Payment deadline',
+                      value: widget.booking.paymentExpiresAtUtc == null
+                          ? '15 minutes'
+                          : AppFormatters.displayDate(
+                              widget.booking.paymentExpiresAtUtc!,
+                            ),
+                    ),
+                    const Divider(height: AppSpacing.xxl),
+                    Text(
+                      'Complete payment before the hold expires',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    const Text(
+                      '1. Review the booking code and amount.\n'
+                      '2. Continue to the configured payment gateway.\n'
+                      '3. Wait for the final payment result before leaving.',
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
                     SizedBox(
                       height: 72,
                       child: Center(
@@ -239,23 +271,9 @@ class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      'Confirm the demo payment before the timer ends.',
+                      'Time remaining',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const Divider(height: AppSpacing.xxl),
-                    _PaymentRow(
-                      label: 'Total amount',
-                      value: AppFormatters.money(widget.booking.totalAmount),
-                    ),
-                    _PaymentRow(
-                      label: 'Guest',
-                      value: widget.booking.guestFullName,
-                    ),
-                    _PaymentRow(
-                      label: 'Stay',
-                      value:
-                          '${AppFormatters.displayDate(widget.booking.checkInDate)} - ${AppFormatters.displayDate(widget.booking.checkOutDate)}',
                     ),
                     const SizedBox(height: AppSpacing.xl),
                     FilledButton.icon(
@@ -273,14 +291,14 @@ class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
                                 ),
                               )
                             : const Text(
-                                'Confirm demo payment',
+                                'Continue payment',
                                 key: ValueKey('payment-label'),
                               ),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      'Demo only. No bank account or real money is charged.',
+                      'The current backend uses its configured demo gateway; no real charge is made.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
@@ -289,7 +307,7 @@ class _PendingPaymentScreenState extends ConsumerState<PendingPaymentScreen> {
                       onPressed: () {
                         context.go(CustomerHomeScreen.routePath);
                       },
-                      child: const Text('Back to search'),
+                      child: const Text('Return to booking'),
                     ),
                   ],
                 ),
