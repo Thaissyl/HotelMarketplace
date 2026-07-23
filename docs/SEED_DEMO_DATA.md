@@ -37,7 +37,8 @@ local `.env` file. Credentials are not embedded in the script.
 The resulting database contains at least:
 
 - One primary operations hotel with arrivals, an in-house stay, room status
-  variety, a housekeeping task, and a maintenance request.
+  variety, a refundable cancelled booking, a housekeeping task, and a
+  maintenance request.
 - Twenty-four additional published marketplace hotels across major Vietnamese
   destinations.
 - Two active room types for each additional hotel.
@@ -45,10 +46,11 @@ The resulting database contains at least:
 - Enough records to demonstrate search, city filtering, hotel details, room
   availability, and pagination.
 
-The primary operations hotel remains the only hotel assigned to the seeded
-Manager, Receptionist, Housekeeping, and Maintenance accounts. This preserves
-hotel-scoped authorization while the additional hotels enrich Customer and
-Platform Administrator screens.
+The primary operations hotel remains the only hotel owned by or assigned to the
+seeded Property Owner, Manager, Receptionist, Housekeeping, and Maintenance
+accounts. The additional marketplace hotels use a non-interactive system owner.
+This preserves hotel-scoped authorization while the additional hotels enrich
+Customer and Platform Administrator screens.
 
 ## Test Accounts
 
@@ -90,3 +92,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\seed-local-test-ac
 6. Sign in as `admin@test.com` to verify the global hotel list.
 7. Sign in as `reception@test.com` to verify that operational access remains
    limited to the primary hotel.
+8. Sign in as `customer@test.com`, open `My Bookings`, and select
+   `DEMO-REFUND` to verify the customer refund status flow.

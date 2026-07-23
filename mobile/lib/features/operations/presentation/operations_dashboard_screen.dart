@@ -17,7 +17,6 @@ import 'maintenance_tab.dart';
 import 'owner_hotel_onboarding.dart';
 import 'owner_property_tab.dart';
 import 'staff_management_tab.dart';
-import 'widgets/hotel_scope_selector.dart';
 
 class OperationsDashboardScreen extends ConsumerStatefulWidget {
   const OperationsDashboardScreen({super.key});
@@ -33,6 +32,7 @@ class OperationsDashboardScreen extends ConsumerStatefulWidget {
 class _OperationsDashboardScreenState
     extends ConsumerState<OperationsDashboardScreen> {
   int _selectedSectionIndex = 0;
+  bool _showHotelRegistration = false;
 
   @override
   Widget build(BuildContext context) {
@@ -70,10 +70,14 @@ class _OperationsDashboardScreenState
     final canReturnToOverview = sections.first == _OperationSection.overview &&
         selectedSection != _OperationSection.overview;
     final isOwnerOnboarding = isPropertyOwner && selectedHotelId == null;
+    final isHotelRegistration =
+        isPropertyOwner && (isOwnerOnboarding || _showHotelRegistration);
+    final canReturnFromHotelRegistration =
+        _showHotelRegistration && selectedHotelId != null;
 
     return Scaffold(
       appBar: AppBar(
-        title: isOwnerOnboarding
+        title: isHotelRegistration
             ? const Text('Hotel Registration Screen')
             : selectedSection != _OperationSection.overview &&
                     selectedHotelId != null
@@ -91,72 +95,80 @@ class _OperationsDashboardScreenState
                     ],
                   )
                 : Text(selectedSection.screenTitle),
-        automaticallyImplyLeading:
-            canReturnToOverview || canUseCustomerMarketplace,
-        leading: canReturnToOverview
+        automaticallyImplyLeading: canReturnFromHotelRegistration ||
+            canReturnToOverview ||
+            canUseCustomerMarketplace,
+        leading: canReturnFromHotelRegistration
             ? IconButton(
                 tooltip: 'Back to dashboard',
-                onPressed: () => setState(() => _selectedSectionIndex = 0),
+                onPressed: () {
+                  setState(() {
+                    _showHotelRegistration = false;
+                    _selectedSectionIndex = 0;
+                  });
+                },
                 icon: const Icon(Icons.arrow_back_rounded),
               )
-            : canUseCustomerMarketplace
+            : canReturnToOverview
                 ? IconButton(
-                    tooltip: 'Back',
-                    onPressed: () {
-                      if (context.canPop()) {
-                        context.pop();
-                        return;
-                      }
-                      context.go(MarketplaceScreen.routePath);
-                    },
+                    tooltip: 'Back to dashboard',
+                    onPressed: () => setState(() => _selectedSectionIndex = 0),
                     icon: const Icon(Icons.arrow_back_rounded),
                   )
-                : null,
-        actions: [_workspaceMenu(sections)],
+                : canUseCustomerMarketplace
+                    ? IconButton(
+                        tooltip: 'Back',
+                        onPressed: () {
+                          if (context.canPop()) {
+                            context.pop();
+                            return;
+                          }
+                          context.go(MarketplaceScreen.routePath);
+                        },
+                        icon: const Icon(Icons.arrow_back_rounded),
+                      )
+                    : null,
+        actions: [
+          _workspaceMenu(
+            sections,
+            canRegisterHotel: isPropertyOwner,
+          ),
+        ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            if (selectedSection == _OperationSection.overview &&
-                selectedHotelId != null) ...[
-              const Padding(
-                padding: EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  AppSpacing.lg,
-                  AppSpacing.lg,
-                  AppSpacing.md,
-                ),
-                child: HotelScopeSelector(),
-              ),
-              const Divider(height: 1),
-            ],
-            Expanded(
-              child: selectedHotelId == null
-                  ? isPropertyOwner
-                      ? const OwnerHotelOnboarding()
-                      : const _NoHotelScope()
-                  : KeyedSubtree(
-                      key: ValueKey(
-                        '${selectedSection.name}-$selectedHotelId',
-                      ),
-                      child: selectedSection == _OperationSection.overview
-                          ? ManagerOverviewTab(
-                              hotelId: selectedHotelId,
-                              roles: roles,
-                              onOpenSection: (sectionIndex) {
-                                if (sectionIndex >= 0 &&
-                                    sectionIndex < sections.length) {
-                                  setState(
-                                    () => _selectedSectionIndex = sectionIndex,
-                                  );
-                                }
-                              },
-                            )
-                          : selectedSection.buildTab(selectedHotelId, roles),
+        child: isHotelRegistration
+            ? OwnerHotelOnboarding(
+                onRegistered: () {
+                  if (!mounted) {
+                    return;
+                  }
+                  setState(() {
+                    _showHotelRegistration = false;
+                    _selectedSectionIndex = 0;
+                  });
+                },
+              )
+            : selectedHotelId == null
+                ? const _NoHotelScope()
+                : KeyedSubtree(
+                    key: ValueKey(
+                      '${selectedSection.name}-$selectedHotelId',
                     ),
-            ),
-          ],
-        ),
+                    child: selectedSection == _OperationSection.overview
+                        ? ManagerOverviewTab(
+                            hotelId: selectedHotelId,
+                            roles: roles,
+                            onOpenSection: (sectionIndex) {
+                              if (sectionIndex >= 0 &&
+                                  sectionIndex < sections.length) {
+                                setState(
+                                  () => _selectedSectionIndex = sectionIndex,
+                                );
+                              }
+                            },
+                          )
+                        : selectedSection.buildTab(selectedHotelId, roles),
+                  ),
       ),
     );
   }
@@ -178,7 +190,10 @@ class _OperationsDashboardScreenState
     );
   }
 
-  Widget _workspaceMenu(List<_OperationSection> sections) {
+  Widget _workspaceMenu(
+    List<_OperationSection> sections, {
+    required bool canRegisterHotel,
+  }) {
     return PopupMenuButton<String>(
       tooltip: 'Workspace menu',
       onSelected: _handleMenuSelection,
@@ -190,6 +205,12 @@ class _OperationsDashboardScreenState
               child: Text(sections[index].label),
             ),
         if (sections.length > 1) const PopupMenuDivider(),
+        if (canRegisterHotel)
+          const PopupMenuItem<String>(
+            value: 'register-hotel',
+            child: Text('Register New Hotel'),
+          ),
+        if (canRegisterHotel) const PopupMenuDivider(),
         const PopupMenuItem<String>(
           value: 'profile',
           child: Text('User Profile'),
@@ -213,10 +234,18 @@ class _OperationsDashboardScreenState
       return;
     }
 
+    if (value == 'register-hotel') {
+      setState(() => _showHotelRegistration = true);
+      return;
+    }
+
     if (value.startsWith('section:')) {
       final index = int.tryParse(value.substring('section:'.length));
       if (index != null) {
-        setState(() => _selectedSectionIndex = index);
+        setState(() {
+          _showHotelRegistration = false;
+          _selectedSectionIndex = index;
+        });
       }
     }
   }
@@ -226,7 +255,7 @@ enum _OperationSection {
   overview(label: 'Overview'),
   frontDesk(label: 'Front Desk'),
   availability(label: 'Availability'),
-  housekeeping(label: 'Rooms'),
+  housekeeping(label: 'Housekeeping'),
   maintenance(label: 'Maintenance'),
   staff(label: 'Staff'),
   property(label: 'Property');

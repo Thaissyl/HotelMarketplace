@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../shared/widgets/srs_screen.dart';
-import '../../../auth/application/auth_controller.dart';
 import '../../application/operations_providers.dart';
 import '../../application/selected_hotel_controller.dart';
 import '../../domain/operations_models.dart';
@@ -13,8 +12,6 @@ class HotelScopeSelector extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final assignedHotelIds =
-        ref.watch(authControllerProvider).userSession?.hotelIds ?? const [];
     final selectedHotel = ref.watch(selectedHotelControllerProvider);
     final workingHotels = ref.watch(workingHotelsProvider);
 
@@ -24,7 +21,7 @@ class HotelScopeSelector extends ConsumerWidget {
         const SrsFieldLabel('Hotel Selector'),
         workingHotels.when(
           data: (hotels) {
-            final items = _buildItems(hotels, assignedHotelIds);
+            final items = _buildItems(hotels);
             if (items.isEmpty) {
               return const _HotelSelectorMessage(
                 message: 'No hotel has been assigned to this account.',
@@ -63,15 +60,13 @@ class HotelScopeSelector extends ConsumerWidget {
                     ),
                   ),
               ],
-              onChanged: items.length == 1
-                  ? null
-                  : (hotelId) {
-                      if (hotelId != null) {
-                        ref
-                            .read(selectedHotelControllerProvider.notifier)
-                            .selectHotel(hotelId);
-                      }
-                    },
+              onChanged: (hotelId) {
+                if (hotelId != null && hotelId != selectedHotelId) {
+                  ref
+                      .read(selectedHotelControllerProvider.notifier)
+                      .selectHotel(hotelId);
+                }
+              },
             );
           },
           error: (error, stackTrace) => const _HotelSelectorMessage(
@@ -88,10 +83,12 @@ class HotelScopeSelector extends ConsumerWidget {
 
   List<_HotelSelectorItem> _buildItems(
     List<WorkingHotel> hotels,
-    List<String> assignedHotelIds,
   ) {
-    final loadedItems = hotels
-        .where((hotel) => hotel.id.isNotEmpty)
+    final seenHotelIds = <String>{};
+    return hotels
+        .where(
+          (hotel) => hotel.id.isNotEmpty && seenHotelIds.add(hotel.id),
+        )
         .map(
           (hotel) => _HotelSelectorItem(
             id: hotel.id,
@@ -100,20 +97,7 @@ class HotelScopeSelector extends ConsumerWidget {
                 : hotel.displayName.trim(),
           ),
         )
-        .toList(growable: true);
-
-    for (final hotelId in assignedHotelIds) {
-      if (loadedItems.every((hotel) => hotel.id != hotelId)) {
-        loadedItems.add(
-          _HotelSelectorItem(
-            id: hotelId,
-            displayName: 'Assigned hotel',
-          ),
-        );
-      }
-    }
-
-    return loadedItems;
+        .toList(growable: false);
   }
 }
 

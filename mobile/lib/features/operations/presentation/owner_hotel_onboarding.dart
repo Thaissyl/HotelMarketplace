@@ -13,7 +13,12 @@ import '../application/selected_hotel_controller.dart';
 import '../domain/operations_models.dart';
 
 class OwnerHotelOnboarding extends ConsumerStatefulWidget {
-  const OwnerHotelOnboarding({super.key});
+  const OwnerHotelOnboarding({
+    super.key,
+    this.onRegistered,
+  });
+
+  final VoidCallback? onRegistered;
 
   @override
   ConsumerState<OwnerHotelOnboarding> createState() =>
@@ -117,6 +122,7 @@ class _OwnerHotelOnboardingState extends ConsumerState<OwnerHotelOnboarding> {
           context,
           'Hotel registered and submitted for platform review.',
         );
+        widget.onRegistered?.call();
       }
     } catch (error) {
       if (mounted) {

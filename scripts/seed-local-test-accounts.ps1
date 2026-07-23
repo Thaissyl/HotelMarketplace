@@ -161,13 +161,64 @@ DECLARE @OwnerUserAccountId uniqueidentifier =
     WHERE Email = 'owner@test.com'
 );
 
+DECLARE @MarketplaceSeedOwnerUserAccountId uniqueidentifier =
+(
+    SELECT Id
+    FROM UserAccounts
+    WHERE Email = 'marketplace-seed-owner@system.local'
+);
+
+IF @MarketplaceSeedOwnerUserAccountId IS NULL
+BEGIN
+    SET @MarketplaceSeedOwnerUserAccountId = NEWID();
+
+    INSERT INTO UserAccounts
+    (
+        Id,
+        Email,
+        PhoneNumber,
+        PasswordHash,
+        FullName,
+        Status,
+        IsSystemAccount,
+        CreatedAtUtc
+    )
+    VALUES
+    (
+        @MarketplaceSeedOwnerUserAccountId,
+        'marketplace-seed-owner@system.local',
+        NULL,
+        'LOGIN-DISABLED',
+        'Marketplace Seed Owner',
+        'Active',
+        1,
+        @Now
+    );
+END;
+ELSE
+BEGIN
+    UPDATE UserAccounts
+    SET
+        PasswordHash = 'LOGIN-DISABLED',
+        FullName = 'Marketplace Seed Owner',
+        Status = 'Active',
+        IsSystemAccount = 1
+    WHERE Id = @MarketplaceSeedOwnerUserAccountId;
+END;
+
 DECLARE @HotelId uniqueidentifier =
 (
     SELECT TOP (1) Id
     FROM HotelProperties
-    WHERE ApprovalStatus = 'Approved'
-      AND PublicationStatus = 'Published'
-    ORDER BY CreatedAtUtc, Id
+    WHERE Name IN ('Demo Central Hotel', 'Saigon Central Hotel')
+    ORDER BY
+        CASE Name
+            WHEN 'Demo Central Hotel' THEN 1
+            WHEN 'Saigon Central Hotel' THEN 2
+            ELSE 3
+        END,
+        CreatedAtUtc,
+        Id
 );
 
 IF @HotelId IS NULL
@@ -497,7 +548,7 @@ INSERT INTO HotelProperties
 )
 SELECT
     NEWID(),
-    @OwnerUserAccountId,
+    @MarketplaceSeedOwnerUserAccountId,
     source.Name,
     source.City,
     source.AddressLine,
@@ -519,7 +570,7 @@ WHERE NOT EXISTS
 
 UPDATE hotel
 SET
-    hotel.OwnerUserAccountId = @OwnerUserAccountId,
+    hotel.OwnerUserAccountId = @MarketplaceSeedOwnerUserAccountId,
     hotel.City = source.City,
     hotel.AddressLine = source.AddressLine,
     hotel.ContactEmail = source.ContactEmail,
@@ -827,6 +878,107 @@ BEGIN
         1250000.00,
         2,
         2500000.00
+    );
+END;
+
+DECLARE @RefundBookingId uniqueidentifier =
+(
+    SELECT Id
+    FROM Bookings
+    WHERE BookingCode = 'DEMO-REFUND'
+);
+
+IF @RefundBookingId IS NULL
+BEGIN
+    SET @RefundBookingId = NEWID();
+
+    INSERT INTO Bookings
+    (
+        Id,
+        BookingCode,
+        CustomerUserAccountId,
+        HotelId,
+        CheckInDate,
+        CheckOutDate,
+        PaymentMode,
+        Source,
+        Status,
+        TotalAmount,
+        GuestFullName,
+        GuestPhone,
+        CreatedAtUtc,
+        PaymentExpiresAtUtc,
+        CancellationReason
+    )
+    VALUES
+    (
+        @RefundBookingId,
+        'DEMO-REFUND',
+        @CustomerUserAccountId,
+        @HotelId,
+        CONVERT(date, DATEADD(day, 7, @Now)),
+        CONVERT(date, DATEADD(day, 9, @Now)),
+        'PlatformCollect',
+        'Marketplace',
+        'Cancelled',
+        2500000.00,
+        'Mai Nguyen',
+        '0900000333',
+        @Now,
+        NULL,
+        'Customer requested cancellation within the refundable period.'
+    );
+
+    INSERT INTO BookingRooms
+    (
+        Id,
+        BookingId,
+        RoomTypeId,
+        Quantity,
+        UnitPricePerNight,
+        Nights,
+        LineAmount
+    )
+    VALUES
+    (
+        NEWID(),
+        @RefundBookingId,
+        @StandardRoomTypeId,
+        1,
+        1250000.00,
+        2,
+        2500000.00
+    );
+END;
+
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM RefundRecords
+    WHERE BookingId = @RefundBookingId
+)
+BEGIN
+    INSERT INTO RefundRecords
+    (
+        Id,
+        HotelId,
+        BookingId,
+        RequestedAmount,
+        ApprovedAmount,
+        Reason,
+        Status,
+        CreatedAtUtc
+    )
+    VALUES
+    (
+        NEWID(),
+        @HotelId,
+        @RefundBookingId,
+        2000000.00,
+        0.00,
+        'Customer cancelled within the refundable period.',
+        'PendingReview',
+        @Now
     );
 END;
 

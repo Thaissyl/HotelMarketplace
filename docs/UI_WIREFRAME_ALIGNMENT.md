@@ -101,12 +101,14 @@ on the existing Pixel 7 emulator.
 
 ### Latest Verification
 
-The July 23, 2026 alignment pass completed the following checks:
+The July 24, 2026 alignment pass completed the following checks:
 
 - All 41 SRS screens are mapped to concrete Flutter screens or role-specific
   navigation states.
 - `flutter analyze` completed with no findings.
-- All 15 Flutter tests passed.
+- All 17 Flutter tests passed, including SCR-013 and SCR-014 regression tests
+  that verify the refund cards, semantic icons, complete dashboard, and mobile
+  layout constraints.
 - All 68 .NET tests passed: 25 Domain, 2 Application, and 41 API integration
   tests.
 - A profile APK built successfully and was exercised on the existing Pixel 7
@@ -116,3 +118,9 @@ The July 23, 2026 alignment pass completed the following checks:
   Platform Administrator sections were verified against the running API.
 - Local demonstration data was normalized and reseeded so technical test names
   such as `Bookable Hotel <identifier>` are not shown to users.
+- The customer demonstration account includes the `DEMO-REFUND` cancellation
+  with a pending refund so SCR-013 is reachable through the real My Bookings
+  flow.
+- Marketplace seed properties use a non-interactive system owner. The
+  `owner@test.com` demonstration account owns only `Saigon Central Hotel`, and
+  its Hotel Selector displays only that authorized property.
