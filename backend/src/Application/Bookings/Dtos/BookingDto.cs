@@ -21,4 +21,7 @@ public sealed record BookingDto(
     string GuestFullName,
     string GuestPhone,
     RefundStatus? RefundStatus = null,
-    decimal? RefundRequestedAmount = null);
+    decimal? RefundRequestedAmount = null,
+    string? HotelName = null,
+    string? RoomTypeName = null,
+    decimal? RefundApprovedAmount = null);

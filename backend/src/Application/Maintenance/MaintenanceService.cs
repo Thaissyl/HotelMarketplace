@@ -27,6 +27,15 @@ internal sealed class MaintenanceService : IMaintenanceService
         UserRoleCode.PropertyOwner
     };
 
+    private static readonly UserRoleCode[] RoomInventoryRoles =
+    {
+        UserRoleCode.Receptionist,
+        UserRoleCode.HousekeepingStaff,
+        UserRoleCode.MaintenanceStaff,
+        UserRoleCode.HotelManager,
+        UserRoleCode.PropertyOwner
+    };
+
     private readonly ICurrentUserService _currentUserService;
     private readonly IHotelAccessAuthorizer _hotelAccessAuthorizer;
     private readonly IMaintenanceRepository _maintenanceRepository;
@@ -81,9 +90,10 @@ internal sealed class MaintenanceService : IMaintenanceService
 
     public async Task<Result<IReadOnlyCollection<PhysicalRoomDto>>> GetRoomsAsync(
         Guid hotelId,
+        Guid? roomTypeId,
         CancellationToken cancellationToken)
     {
-        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, ReportIssueRoles, cancellationToken);
+        Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, RoomInventoryRoles, cancellationToken);
         if (authorizationFailure is not null)
         {
             return Result.Failure<IReadOnlyCollection<PhysicalRoomDto>>(authorizationFailure.Error);
@@ -91,6 +101,7 @@ internal sealed class MaintenanceService : IMaintenanceService
 
         IReadOnlyCollection<PhysicalRoomDto> rooms = await _maintenanceRepository.GetRoomsAsync(
             hotelId,
+            roomTypeId,
             cancellationToken);
 
         return Result.Success(rooms);
@@ -159,7 +170,12 @@ internal sealed class MaintenanceService : IMaintenanceService
         CancellationToken cancellationToken)
     {
         IReadOnlyCollection<UserRoleCode> allowedRoles = request.Status == MaintenanceStatus.Released
-            ? new[] { UserRoleCode.HotelManager, UserRoleCode.PropertyOwner }
+            ? new[]
+            {
+                UserRoleCode.MaintenanceStaff,
+                UserRoleCode.HotelManager,
+                UserRoleCode.PropertyOwner
+            }
             : ViewAndUpdateRoles;
         Result? authorizationFailure = await ValidateAuthorizationAsync(hotelId, allowedRoles, cancellationToken);
         if (authorizationFailure is not null)

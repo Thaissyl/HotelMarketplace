@@ -23,7 +23,8 @@ public sealed class MaintenanceController : ControllerBase
     }
 
     [HttpGet("rooms")]
-    [Authorize(Roles = nameof(UserRoleCode.HousekeepingStaff) + "," +
+    [Authorize(Roles = nameof(UserRoleCode.Receptionist) + "," +
+        nameof(UserRoleCode.HousekeepingStaff) + "," +
         nameof(UserRoleCode.MaintenanceStaff) + "," +
         nameof(UserRoleCode.HotelManager) + "," +
         nameof(UserRoleCode.PropertyOwner))]
@@ -32,10 +33,12 @@ public sealed class MaintenanceController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetRooms(
         Guid hotelId,
+        [FromQuery] Guid? roomTypeId,
         CancellationToken cancellationToken)
     {
         Result<IReadOnlyCollection<PhysicalRoomDto>> result = await _maintenanceService.GetRoomsAsync(
             hotelId,
+            roomTypeId,
             cancellationToken);
 
         return result.IsFailure ? ToProblem(result.Error) : Ok(result.Value);

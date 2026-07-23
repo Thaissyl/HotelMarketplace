@@ -1,3 +1,4 @@
+using System.Net.Mail;
 using FluentValidation;
 using HotelMarketplace.Application.Common.Validation;
 using HotelMarketplace.Domain.Enums;
@@ -46,11 +47,24 @@ internal sealed class LoginRequestValidator : AbstractValidator<LoginRequest>
     {
         RuleFor(request => request.Email)
             .NotEmpty()
-            .EmailAddress()
-            .MaximumLength(256);
+            .MaximumLength(256)
+            .Must(BeValidEmailOrPhoneNumber)
+            .WithMessage("Enter a valid email address or a 10-digit phone number.");
 
         RuleFor(request => request.Password)
             .NotEmpty()
             .MaximumLength(100);
+    }
+
+    private static bool BeValidEmailOrPhoneNumber(string value)
+    {
+        string identifier = value.Trim();
+        if (identifier.Length == 10 && identifier.All(char.IsDigit))
+        {
+            return true;
+        }
+
+        return MailAddress.TryCreate(identifier, out MailAddress? address) &&
+               string.Equals(address.Address, identifier, StringComparison.OrdinalIgnoreCase);
     }
 }

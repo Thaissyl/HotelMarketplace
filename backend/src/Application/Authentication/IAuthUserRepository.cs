@@ -13,5 +13,7 @@ public interface IAuthUserRepository
 
     Task AddUserWithRoleAsync(UserAccount userAccount, Guid roleId, CancellationToken cancellationToken);
 
-    Task<AuthUserSnapshot?> GetAuthUserByEmailAsync(string email, CancellationToken cancellationToken);
+    Task<AuthUserSnapshot?> GetAuthUserByIdentifierAsync(
+        string emailOrPhoneNumber,
+        CancellationToken cancellationToken);
 }

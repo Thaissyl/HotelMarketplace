@@ -224,6 +224,10 @@ internal sealed class EfBookingRepository : IBookingRepository
             from booking in _dbContext.Bookings.IgnoreQueryFilters().AsNoTracking()
             join bookingRoom in _dbContext.BookingRooms.IgnoreQueryFilters().AsNoTracking()
                 on booking.Id equals bookingRoom.BookingId
+            join hotel in _dbContext.HotelProperties.IgnoreQueryFilters().AsNoTracking()
+                on booking.HotelId equals hotel.Id
+            join roomType in _dbContext.RoomTypes.IgnoreQueryFilters().AsNoTracking()
+                on bookingRoom.RoomTypeId equals roomType.Id
             join refund in _dbContext.RefundRecords.IgnoreQueryFilters().AsNoTracking()
                 on booking.Id equals refund.BookingId into refunds
             from refund in refunds.DefaultIfEmpty()
@@ -248,7 +252,10 @@ internal sealed class EfBookingRepository : IBookingRepository
                 booking.GuestFullName,
                 booking.GuestPhone,
                 refund == null ? null : refund.Status,
-                refund == null ? null : refund.RequestedAmount))
+                refund == null ? null : refund.RequestedAmount,
+                hotel.Name,
+                roomType.Name,
+                refund == null ? null : refund.ApprovedAmount))
             .ToListAsync(cancellationToken);
 
         return rows
@@ -271,7 +278,10 @@ internal sealed class EfBookingRepository : IBookingRepository
                 row.GuestFullName,
                 row.GuestPhone,
                 row.RefundStatus,
-                row.RefundRequestedAmount))
+                row.RefundRequestedAmount,
+                row.HotelName,
+                row.RoomTypeName,
+                row.RefundApprovedAmount))
             .ToArray();
     }
 
@@ -637,7 +647,10 @@ internal sealed class EfBookingRepository : IBookingRepository
         string GuestFullName,
         string GuestPhone,
         RefundStatus? RefundStatus,
-        decimal? RefundRequestedAmount);
+        decimal? RefundRequestedAmount,
+        string HotelName,
+        string RoomTypeName,
+        decimal? RefundApprovedAmount);
 
     private sealed record CancellationBookingReadModel(
         Guid Id,

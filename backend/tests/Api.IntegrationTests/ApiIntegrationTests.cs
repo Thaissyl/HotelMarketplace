@@ -65,6 +65,40 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
     }
 
     [Fact]
+    public async Task LoginAcceptsRegisteredTenDigitPhoneNumber()
+    {
+        using HttpClient client = _factory.CreateClient();
+        string suffix = Guid.NewGuid().ToString("N");
+        string phoneNumber = TestPhoneNumber(suffix);
+
+        TestAuthResponse registeredCustomer = await PostJsonAsync<TestAuthResponse>(
+            client,
+            "/api/auth/register",
+            new
+            {
+                email = $"phone-login-{suffix}@example.com",
+                password = "CustomerPassword123!",
+                fullName = "Phone Login Customer",
+                phoneNumber,
+                role = UserRoleCode.Customer
+            },
+            HttpStatusCode.Created);
+
+        TestAuthResponse loggedInCustomer = await PostJsonAsync<TestAuthResponse>(
+            client,
+            "/api/auth/login",
+            new
+            {
+                email = phoneNumber,
+                password = "CustomerPassword123!"
+            },
+            HttpStatusCode.OK);
+
+        loggedInCustomer.UserId.Should().Be(registeredCustomer.UserId);
+        loggedInCustomer.Email.Should().Be(registeredCustomer.Email);
+    }
+
+    [Fact]
     public async Task RegisterLoginAndHotelScopedMiddlewareReturnsForbiddenForAnotherHotel()
     {
         using HttpClient client = _factory.CreateClient();
@@ -2265,6 +2299,17 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
         TestAuthResponse housekeeper = await SeedUserAndLoginAsync(client, UserRoleCode.HousekeepingStaff, "smoke-housekeeper", hotel.Id);
         TestAuthResponse maintenance = await SeedUserAndLoginAsync(client, UserRoleCode.MaintenanceStaff, "smoke-maintenance", hotel.Id);
 
+        foreach (TestAuthResponse operationsUser in new[] { receptionist, housekeeper, maintenance })
+        {
+            IReadOnlyCollection<PhysicalRoomDto> visibleRooms =
+                await GetJsonAsync<IReadOnlyCollection<PhysicalRoomDto>>(
+                    client,
+                    $"/api/hotels/{hotel.Id}/maintenance/rooms",
+                    HttpStatusCode.OK,
+                    operationsUser.AccessToken);
+            visibleRooms.Should().Contain(item => item.Id == firstRoom.Id);
+        }
+
         IReadOnlyCollection<RoomTypeDto> operationRoomTypes = await GetJsonAsync<IReadOnlyCollection<RoomTypeDto>>(
             client,
             $"/api/operations/hotels/{hotel.Id}/room-types",
@@ -2407,7 +2452,7 @@ public sealed class ApiIntegrationTests : IClassFixture<HotelMarketplaceApiFacto
             $"/api/hotels/{hotel.Id}/maintenance/requests/{maintenanceRequest.Id}/status",
             new { status = MaintenanceStatus.Released },
             HttpStatusCode.OK,
-            owner.AccessToken);
+            maintenance.AccessToken);
         repairReleased.Status.Should().Be(MaintenanceStatus.Released);
         repairReleased.RoomStatus.Should().Be(RoomOperationalStatus.Available);
 

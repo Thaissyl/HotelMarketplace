@@ -25,12 +25,20 @@ internal sealed class EfMaintenanceRepository : IMaintenanceRepository
 
     public async Task<IReadOnlyCollection<PhysicalRoomDto>> GetRoomsAsync(
         Guid hotelId,
+        Guid? roomTypeId,
         CancellationToken cancellationToken)
     {
-        return await _dbContext.PhysicalRooms
+        IQueryable<PhysicalRoom> query = _dbContext.PhysicalRooms
             .IgnoreQueryFilters()
             .AsNoTracking()
-            .Where(room => room.HotelId == hotelId)
+            .Where(room => room.HotelId == hotelId);
+
+        if (roomTypeId.HasValue)
+        {
+            query = query.Where(room => room.RoomTypeId == roomTypeId.Value);
+        }
+
+        return await query
             .OrderBy(room => room.RoomNumber)
             .Select(room => new PhysicalRoomDto(
                 room.Id,
